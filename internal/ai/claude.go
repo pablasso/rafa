@@ -6,10 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/pablasso/rafa/internal/plan"
 )
+
+// claudeResponse represents the JSON structure returned by Claude Code CLI
+// when using --output-format json.
+type claudeResponse struct {
+	Type    string `json:"type"`
+	Result  string `json:"result"`
+	IsError bool   `json:"is_error"`
+}
 
 // CommandContext is the function used to create exec.Cmd instances.
 // It can be replaced in tests to mock command execution.
@@ -117,38 +126,52 @@ Return ONLY the JSON, no markdown formatting or explanation.`, designContent)
 
 // extractJSON defensively extracts a JSON object from potentially noisy output.
 func extractJSON(data []byte) ([]byte, error) {
-	// First, try if the entire data is valid JSON
-	if json.Valid(data) {
-		return data, nil
-	}
-
-	// Find first '{' and last '}' to extract JSON object
-	str := string(data)
-	start := -1
-	end := -1
-
-	for i, c := range str {
-		if c == '{' {
-			start = i
-			break
+	// First, try to parse as Claude Code CLI response wrapper
+	var claudeResp claudeResponse
+	if err := json.Unmarshal(data, &claudeResp); err == nil && claudeResp.Type == "result" {
+		if claudeResp.IsError {
+			return nil, errors.New("claude returned an error: " + claudeResp.Result)
 		}
+		// Extract the result field and process it
+		data = []byte(claudeResp.Result)
 	}
 
-	for i := len(str) - 1; i >= 0; i-- {
-		if str[i] == '}' {
-			end = i
-			break
-		}
+	// Strip markdown code blocks if present (```json ... ``` or ``` ... ```)
+	str := stripMarkdownCodeBlocks(string(data))
+
+	// Try direct parse
+	if json.Valid([]byte(str)) {
+		return []byte(str), nil
 	}
+
+	// Find JSON object boundaries as fallback
+	start := strings.Index(str, "{")
+	end := strings.LastIndex(str, "}")
 
 	if start == -1 || end == -1 || start >= end {
 		return nil, errors.New("no JSON object found in response")
 	}
 
-	extracted := []byte(str[start : end+1])
-	if !json.Valid(extracted) {
+	extracted := str[start : end+1]
+	if !json.Valid([]byte(extracted)) {
 		return nil, errors.New("extracted content is not valid JSON")
 	}
 
-	return extracted, nil
+	return []byte(extracted), nil
+}
+
+// stripMarkdownCodeBlocks removes markdown code block markers from a string.
+func stripMarkdownCodeBlocks(s string) string {
+	s = strings.TrimSpace(s)
+	// Check for ```json or ``` at start
+	if cut, found := strings.CutPrefix(s, "```json"); found {
+		s = cut
+	} else if cut, found := strings.CutPrefix(s, "```"); found {
+		s = cut
+	}
+	// Check for ``` at end
+	if cut, found := strings.CutSuffix(s, "```"); found {
+		s = cut
+	}
+	return strings.TrimSpace(s)
 }

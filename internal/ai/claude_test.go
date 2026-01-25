@@ -68,6 +68,29 @@ func TestExtractJSON(t *testing.T) {
 			input:   []byte(`{invalid json content}`),
 			wantErr: true,
 		},
+		{
+			name:    "Claude Code CLI JSON wrapper",
+			input:   []byte(`{"type":"result","subtype":"success","result":"{\"name\":\"test\",\"tasks\":[]}"}`),
+			want:    `{"name":"test","tasks":[]}`,
+			wantErr: false,
+		},
+		{
+			name:    "Claude Code CLI wrapper with markdown code block",
+			input:   []byte(`{"type":"result","subtype":"success","result":"` + "```json\\n{\\\"name\\\":\\\"test\\\",\\\"tasks\\\":[]}\\n```" + `"}`),
+			want:    `{"name":"test","tasks":[]}`,
+			wantErr: false,
+		},
+		{
+			name:    "Claude Code CLI wrapper with nested JSON in tasks",
+			input:   []byte(`{"type":"result","result":"{\"name\":\"test\",\"description\":\"A plan\",\"tasks\":[{\"title\":\"Task 1\",\"description\":\"Do it\",\"acceptanceCriteria\":[\"works\"]}]}"}`),
+			want:    `{"name":"test","description":"A plan","tasks":[{"title":"Task 1","description":"Do it","acceptanceCriteria":["works"]}]}`,
+			wantErr: false,
+		},
+		{
+			name:    "Claude Code CLI wrapper with is_error true",
+			input:   []byte(`{"type":"result","is_error":true,"result":"Something went wrong"}`),
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -121,4 +144,22 @@ func TestIsClaudeAvailable(t *testing.T) {
 	// Just verify it runs without panic
 	// The actual result depends on whether claude is installed
 	_ = IsClaudeAvailable()
+}
+
+func TestStripMarkdownCodeBlocks(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`{"name":"test"}`, `{"name":"test"}`},
+		{"```json\n{\"name\":\"test\"}\n```", `{"name":"test"}`},
+		{"```\n{\"name\":\"test\"}\n```", `{"name":"test"}`},
+		{"  ```json\n{\"name\":\"test\"}\n```  ", `{"name":"test"}`},
+	}
+	for _, tt := range tests {
+		got := stripMarkdownCodeBlocks(tt.input)
+		if got != tt.want {
+			t.Errorf("stripMarkdownCodeBlocks(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
 }
