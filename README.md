@@ -1,6 +1,6 @@
 # Rafa
 
-A task loop runner for AI coding agents. Implements Geoffrey Huntley's [Ralph Wiggum](https://ghuntley.com/ralph/) technique with structure and monitoring.
+A task loop runner for AI coding agents. Implements Geoffrey Huntley's [Ralph Wiggum](https://ghuntley.com/ralph/) technique and Anthropic's [recommendations for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) with structure and monitoring.
 
 ## What it does
 
@@ -20,8 +20,3 @@ Fresh context on every retry. Agents commit after each completed task. Progress 
 ## Status
 
 Work in progress.
-
-## Inspiration
-
-- [Ralph Wiggum](https://ghuntley.com/ralph/) by Geoffrey Huntley
-- [Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) by Anthropic
