@@ -1,0 +1,50 @@
+# .goreleaser.yaml
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go fmt ./...
+
+builds:
+  - id: rafa
+    main: ./cmd/rafa
+    binary: rafa
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/pablasso/rafa/internal/version.Version={{.Version}}
+      - -X github.com/pablasso/rafa/internal/version.CommitSHA={{.ShortCommit}}
+      - -X github.com/pablasso/rafa/internal/version.BuildDate={{.Date}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: 'checksums.txt'
+
+release:
+  github:
+    owner: pablasso
+    name: rafa
+  extra_files:
+    - glob: ./scripts/install.sh
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'

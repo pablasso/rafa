@@ -1,4 +1,4 @@
-.PHONY: fmt check-fmt test build clean
+.PHONY: fmt check-fmt test build clean release-dry-run
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -32,3 +32,7 @@ build:
 # Clean build artifacts
 clean:
 	rm -rf $(BUILD_DIR)
+
+# Test goreleaser configuration (requires goreleaser installed)
+release-dry-run:
+	goreleaser release --snapshot --clean
