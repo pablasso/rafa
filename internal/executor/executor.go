@@ -88,14 +88,16 @@ func (e *Executor) Run(ctx context.Context) error {
 	}
 	defer e.lock.Release()
 
-	// Check workspace cleanliness before starting
+	// Check workspace cleanliness before starting (excluding our lock file)
 	if !e.allowDirty {
 		status, err := git.GetStatus(e.repoRoot)
 		if err != nil {
 			return fmt.Errorf("failed to check git status: %w", err)
 		}
-		if !status.Clean {
-			return e.workspaceDirtyError(status.Files)
+		// Filter out our lock file from the dirty files list
+		dirtyFiles := e.filterOutLockFile(status.Files)
+		if len(dirtyFiles) > 0 {
+			return e.workspaceDirtyError(dirtyFiles)
 		}
 	}
 
@@ -198,6 +200,15 @@ func (e *Executor) Run(ctx context.Context) error {
 	duration := time.Since(e.startTime)
 	e.logger.PlanCompleted(len(e.plan.Tasks), e.countCompleted(), duration)
 
+	// Commit any remaining metadata (plan completion status)
+	// CommitAll returns nil when there's nothing to commit (e.g., agent already committed)
+	if !e.allowDirty {
+		msg := fmt.Sprintf("[rafa] Complete plan: %s (%d tasks)", e.plan.Name, len(e.plan.Tasks))
+		if err := git.CommitAll(e.repoRoot, msg); err != nil {
+			return fmt.Errorf("failed to commit plan completion: %w", err)
+		}
+	}
+
 	fmt.Printf("\nPlan completed! (%s)\n", e.formatDuration(duration))
 	return nil
 }
@@ -246,23 +257,7 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		// Run the task
 		err := e.runner.Run(ctx, task, planContext, task.Attempts, MaxAttempts, output)
 		if err == nil {
-			// Verify workspace is clean before marking task complete
-			if !e.allowDirty {
-				status, checkErr := git.GetStatus(e.repoRoot)
-				if checkErr != nil {
-					return fmt.Errorf("failed to check git status: %w", checkErr)
-				}
-				if !status.Clean {
-					e.logger.TaskFailed(task.ID, task.Attempts)
-					e.printUncommittedChanges(status.Files)
-					if output != nil {
-						output.WriteTaskFooter(task.ID, false)
-					}
-					continue // retry - agent sees this output
-				}
-			}
-
-			// Task succeeded
+			// Task succeeded - update metadata and commit everything
 			task.Status = plan.TaskStatusCompleted
 			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
 				return fmt.Errorf("failed to save plan: %w", saveErr)
@@ -271,6 +266,24 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			if logErr := e.logger.TaskCompleted(task.ID); logErr != nil {
 				return fmt.Errorf("failed to log task completed: %w", logErr)
 			}
+
+			// Commit all changes (implementation + metadata) unless allowDirty
+			if !e.allowDirty {
+				commitMsg := e.getCommitMessage(task, output)
+				if commitErr := git.CommitAll(e.repoRoot, commitMsg); commitErr != nil {
+					return fmt.Errorf("failed to commit: %w", commitErr)
+				}
+
+				// Verify workspace is clean after commit (catches git hooks, etc.)
+				status, checkErr := git.GetStatus(e.repoRoot)
+				if checkErr != nil {
+					return fmt.Errorf("failed to check git status after commit: %w", checkErr)
+				}
+				if !status.Clean {
+					return fmt.Errorf("workspace not clean after commit (possibly git hooks modified files): %v", status.Files)
+				}
+			}
+
 			if output != nil {
 				output.WriteTaskFooter(task.ID, true)
 			}
@@ -357,13 +370,17 @@ func (e *Executor) workspaceDirtyError(files []string) error {
 	return fmt.Errorf("%s", msg)
 }
 
-// printUncommittedChanges prints a message about uncommitted changes after task completion.
-func (e *Executor) printUncommittedChanges(files []string) {
-	fmt.Printf("Task completed but left uncommitted changes:\n")
+// filterOutLockFile removes the run.lock file from a list of dirty files.
+// This is needed because the lock is created before we check workspace cleanliness.
+func (e *Executor) filterOutLockFile(files []string) []string {
+	lockPath := ".rafa/plans/" + filepath.Base(e.planDir) + "/run.lock"
+	var filtered []string
 	for _, f := range files {
-		fmt.Printf("  %s\n", f)
+		if f != lockPath {
+			filtered = append(filtered, f)
+		}
 	}
-	fmt.Println("Retrying...")
+	return filtered
 }
 
 // getCommitMessage extracts the agent's suggested commit message from OutputCapture,

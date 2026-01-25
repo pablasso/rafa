@@ -24,3 +24,5 @@
 {"timestamp":"2026-01-25T17:18:26.123378-06:00","event":"task_started","data":{"attempt":1,"task_id":"t03"}}
 {"timestamp":"2026-01-25T17:20:01.58566-06:00","event":"task_completed","data":{"task_id":"t03"}}
 {"timestamp":"2026-01-25T17:20:01.586305-06:00","event":"task_started","data":{"attempt":1,"task_id":"t04"}}
+{"timestamp":"2026-01-25T17:21:29.25358-06:00","event":"task_completed","data":{"task_id":"t04"}}
+{"timestamp":"2026-01-25T17:21:29.25415-06:00","event":"task_started","data":{"attempt":1,"task_id":"t05"}}

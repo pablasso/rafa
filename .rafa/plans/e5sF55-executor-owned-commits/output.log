@@ -188,3 +188,26 @@ SUGGESTED_COMMIT_MESSAGE: Update agent prompt to not commit and suggest commit m
 === Task t04, Attempt 1 ===
 Started: 2026-01-25T17:20:01-06:00
 
+All acceptance criteria have been met:
+
+1. ✅ `getCommitMessage` method exists on Executor with signature: `func (e *Executor) getCommitMessage(task *plan.Task, output *OutputCapture) string`
+2. ✅ Method returns agent's suggested message if available via `output.ExtractCommitMessage()`
+3. ✅ Method returns default format `[rafa] Complete task <id>: <title>` when no suggestion available
+4. ✅ Method handles nil output gracefully
+5. ✅ Unit tests exist covering:
+   - `TestExecutor_GetCommitMessage_UsesAgentSuggestion` - uses agent suggested message
+   - `TestExecutor_GetCommitMessage_FallbackToDefault` - falls back to default when no suggestion
+   - `TestExecutor_GetCommitMessage_HandlesNilOutput` - handles nil output
+6. ✅ `make test` passes
+7. ✅ `make fmt` passes
+
+The workspace is clean with no uncommitted changes.
+
+SUGGESTED_COMMIT_MESSAGE: Add getCommitMessage helper to Executor
+
+=== Task t04: SUCCESS ===
+
+
+=== Task t05, Attempt 1 ===
+Started: 2026-01-25T17:21:29-06:00
+
