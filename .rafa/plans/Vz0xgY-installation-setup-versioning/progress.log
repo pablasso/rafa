@@ -1,0 +1,16 @@
+{"timestamp":"2026-01-25T12:27:56.99028-06:00","event":"plan_started","data":{"plan_id":"Vz0xgY"}}
+{"timestamp":"2026-01-25T12:27:56.991318-06:00","event":"task_started","data":{"attempt":1,"task_id":"t01"}}
+{"timestamp":"2026-01-25T12:29:40.344002-06:00","event":"task_completed","data":{"task_id":"t01"}}
+{"timestamp":"2026-01-25T12:29:40.344504-06:00","event":"task_started","data":{"attempt":1,"task_id":"t02"}}
+{"timestamp":"2026-01-25T12:32:49.848176-06:00","event":"task_completed","data":{"task_id":"t02"}}
+{"timestamp":"2026-01-25T12:32:49.848734-06:00","event":"task_started","data":{"attempt":1,"task_id":"t03"}}
+{"timestamp":"2026-01-25T12:35:15.059056-06:00","event":"task_completed","data":{"task_id":"t03"}}
+{"timestamp":"2026-01-25T12:35:15.059659-06:00","event":"task_started","data":{"attempt":1,"task_id":"t04"}}
+{"timestamp":"2026-01-25T12:38:17.843368-06:00","event":"task_completed","data":{"task_id":"t04"}}
+{"timestamp":"2026-01-25T12:38:17.843901-06:00","event":"task_started","data":{"attempt":1,"task_id":"t05"}}
+{"timestamp":"2026-01-25T12:41:25.261859-06:00","event":"task_completed","data":{"task_id":"t05"}}
+{"timestamp":"2026-01-25T12:41:25.262679-06:00","event":"task_started","data":{"attempt":1,"task_id":"t06"}}
+{"timestamp":"2026-01-25T12:42:10.176956-06:00","event":"task_completed","data":{"task_id":"t06"}}
+{"timestamp":"2026-01-25T12:42:10.17749-06:00","event":"task_started","data":{"attempt":1,"task_id":"t07"}}
+{"timestamp":"2026-01-25T12:43:04.843313-06:00","event":"task_completed","data":{"task_id":"t07"}}
+{"timestamp":"2026-01-25T12:43:04.844394-06:00","event":"plan_completed","data":{"duration_ms":907853,"succeeded_tasks":7,"total_tasks":7}}

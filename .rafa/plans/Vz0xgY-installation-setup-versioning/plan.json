@@ -4,7 +4,7 @@
   "description": "Add installation/uninstallation support, repository initialization, and proper versioning for Rafa's first public release (v0.1.1).",
   "sourceFile": "docs/designs/installation-versioning.md",
   "createdAt": "2026-01-25T12:20:01.508894-06:00",
-  "status": "not_started",
+  "status": "completed",
   "tasks": [
     {
       "id": "t01",
@@ -18,8 +18,8 @@
         "make test passes",
         "make fmt \u0026\u0026 make check-fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t02",
@@ -36,8 +36,8 @@
         "make test passes",
         "make fmt \u0026\u0026 make check-fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t03",
@@ -54,8 +54,8 @@
         "make test passes",
         "make fmt \u0026\u0026 make check-fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t04",
@@ -75,8 +75,8 @@
         "make test passes",
         "make fmt \u0026\u0026 make check-fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t05",
@@ -99,8 +99,8 @@
         "'make release-dry-run' completes successfully (requires goreleaser installed)",
         "make fmt \u0026\u0026 make check-fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t06",
@@ -117,8 +117,8 @@
         "Workflow passes GITHUB_TOKEN to goreleaser",
         "YAML syntax is valid (no syntax errors)"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t07",
@@ -134,8 +134,8 @@
         "README.md has Releasing section for contributors explaining tag-based releases",
         "make fmt \u0026\u0026 make check-fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     }
   ]
 }
