@@ -8,7 +8,10 @@
       "Skill(code-review)",
       "WebFetch(domain:github.com)",
       "Bash(go test:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(make fmt:*)",
+      "Bash(make check-fmt:*)",
+      "Bash(make test:*)"
     ]
   }
 }
