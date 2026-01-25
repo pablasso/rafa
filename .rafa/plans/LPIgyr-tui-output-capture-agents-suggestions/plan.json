@@ -4,7 +4,7 @@
   "description": "Implement TUI status line display, output capture to log file, and AGENTS.md suggestions for completed plans",
   "sourceFile": "docs/designs/tui-output-capture-completion.md",
   "createdAt": "2026-01-25T15:58:03.541393-06:00",
-  "status": "not_started",
+  "status": "in_progress",
   "tasks": [
     {
       "id": "t01",
@@ -17,8 +17,8 @@
         "Unit tests in internal/display/display_test.go cover: TestFormatDuration (MM:SS and HH:MM:SS formats), TestFormatLine (correct status line format), TestFormatLine_LongTitle (truncates at 40 chars with '...'), TestUpdateTask, TestUpdateAttempt",
         "make test passes and make check-fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "in_progress",
+      "attempts": 1
     },
     {
       "id": "t02",
