@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/pablasso/rafa/internal/plan"
 )
 
 // MockCommandFunc creates a mock command that outputs the given response.
@@ -63,4 +65,36 @@ func SetupTestDir(t *testing.T) string {
 	})
 
 	return tmpDir
+}
+
+// MockRunnerCall records the arguments of a MockRunner.Run call.
+type MockRunnerCall struct {
+	Task        *plan.Task
+	PlanContext string
+	Attempt     int
+	MaxAttempts int
+}
+
+// MockRunner is a test double for executor.Runner.
+type MockRunner struct {
+	Responses []error
+	CallCount int
+	Calls     []MockRunnerCall
+}
+
+// Run records the call and returns the next error from Responses.
+func (m *MockRunner) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error {
+	m.Calls = append(m.Calls, MockRunnerCall{
+		Task:        task,
+		PlanContext: planContext,
+		Attempt:     attempt,
+		MaxAttempts: maxAttempts,
+	})
+
+	var err error
+	if m.CallCount < len(m.Responses) {
+		err = m.Responses[m.CallCount]
+	}
+	m.CallCount++
+	return err
 }
