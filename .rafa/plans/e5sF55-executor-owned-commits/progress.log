@@ -8,3 +8,13 @@
 {"timestamp":"2026-01-25T17:07:07.224297-06:00","event":"task_started","data":{"attempt":4,"task_id":"t01"}}
 {"timestamp":"2026-01-25T17:07:59.863568-06:00","event":"task_failed","data":{"attempt":4,"task_id":"t01"}}
 {"timestamp":"2026-01-25T17:07:59.864234-06:00","event":"task_started","data":{"attempt":5,"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:08:49.330227-06:00","event":"task_failed","data":{"attempt":5,"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:08:49.330895-06:00","event":"plan_failed","data":{"attempts":5,"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:09:17.782136-06:00","event":"plan_started","data":{"plan_id":"e5sF55"}}
+{"timestamp":"2026-01-25T17:09:17.783051-06:00","event":"plan_failed","data":{"attempts":5,"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:09:28.370997-06:00","event":"plan_started","data":{"plan_id":"e5sF55"}}
+{"timestamp":"2026-01-25T17:09:28.371674-06:00","event":"plan_failed","data":{"attempts":5,"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:10:04.822812-06:00","event":"plan_started","data":{"plan_id":"e5sF55"}}
+{"timestamp":"2026-01-25T17:10:04.823887-06:00","event":"plan_failed","data":{"attempts":5,"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:15:26.664636-06:00","event":"plan_started","data":{"plan_id":"e5sF55"}}
+{"timestamp":"2026-01-25T17:15:26.665116-06:00","event":"task_started","data":{"attempt":1,"task_id":"t01"}}

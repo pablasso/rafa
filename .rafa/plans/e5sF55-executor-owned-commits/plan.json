@@ -4,7 +4,7 @@
   "description": "Refactor the executor to own all git commits during plan execution, ensuring metadata is always committed atomically with implementation changes.",
   "sourceFile": "docs/designs/metadata-commit-on-completion.md",
   "createdAt": "2026-01-25T17:00:27.488694-06:00",
-  "status": "in_progress",
+  "status": "failed",
   "tasks": [
     {
       "id": "t01",
@@ -21,7 +21,7 @@
         "make fmt passes"
       ],
       "status": "in_progress",
-      "attempts": 5
+      "attempts": 1
     },
     {
       "id": "t02",
