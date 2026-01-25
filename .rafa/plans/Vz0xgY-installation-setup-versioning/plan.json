@@ -1,0 +1,141 @@
+{
+  "id": "Vz0xgY",
+  "name": "installation-setup-versioning",
+  "description": "Add installation/uninstallation support, repository initialization, and proper versioning for Rafa's first public release (v0.1.1).",
+  "sourceFile": "docs/designs/installation-versioning.md",
+  "createdAt": "2026-01-25T12:20:01.508894-06:00",
+  "status": "not_started",
+  "tasks": [
+    {
+      "id": "t01",
+      "title": "Implement version injection system",
+      "description": "Create the version package that supports build-time injection via ldflags, and update the root CLI command to display version information. This includes creating internal/version/version.go with Version, CommitSHA, and BuildDate variables, updating internal/cli/root.go to use the version package and set a custom version template showing all version details, and updating the Makefile with build targets that inject version information via ldflags.",
+      "acceptanceCriteria": [
+        "internal/version/version.go exists with Version, CommitSHA, and BuildDate variables defaulting to 'dev', 'unknown', 'unknown'",
+        "Running 'make build' produces a binary in bin/rafa",
+        "Running 'bin/rafa --version' displays version, commit SHA, and build date",
+        "Running 'make build VERSION=v0.1.1' produces binary that shows 'v0.1.1' in version output",
+        "make test passes",
+        "make fmt \u0026\u0026 make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t02",
+      "title": "Implement prerequisite checks",
+      "description": "Create the prerequisites checking system that validates the environment before init and plan run commands. This includes implementing checkGitRepo() to verify we're in a git repository, checkClaudeCode() to verify the Claude Code CLI is installed and authenticated, and a PrerequisiteError type that provides helpful error messages with remediation steps.",
+      "acceptanceCriteria": [
+        "internal/cli/prerequisites.go exists with checkPrerequisites(), checkGitRepo(), checkClaudeCode(), IsInitialized(), and RequireInitialized() functions",
+        "PrerequisiteError type includes Check, Message, and Help fields with formatted Error() output",
+        "checkGitRepo() returns error 'Not a git repository' with help 'Rafa requires a git repository. Run 'git init' first.' when not in git repo",
+        "checkClaudeCode() returns error 'Claude Code CLI not found' with help 'Install Claude Code: https://claude.ai/code' when claude command missing",
+        "checkClaudeCode() returns error 'Claude Code not authenticated' with help 'Run 'claude auth' to authenticate.' when claude auth status fails",
+        "Unit tests exist for checkGitRepo() covering: in git repo returns nil, not in git repo returns PrerequisiteError",
+        "Unit tests exist for IsInitialized() and RequireInitialized()",
+        "make test passes",
+        "make fmt \u0026\u0026 make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t03",
+      "title": "Implement rafa init command",
+      "description": "Create the init command that initializes Rafa in the current repository. The command should run prerequisite checks, create the .rafa/ directory structure with a plans/ subdirectory, and display next steps to the user. Handle edge cases like already initialized repositories and non-git directories.",
+      "acceptanceCriteria": [
+        "internal/cli/init.go exists with initCmd cobra.Command and runInit function",
+        "initCmd is registered in root.go",
+        "'rafa init' in a git repo creates .rafa/ and .rafa/plans/ directories",
+        "'rafa init' prints 'Initialized Rafa in .rafa' followed by next steps",
+        "'rafa init' outside git repo returns prerequisite error about git",
+        "'rafa init' when already initialized returns error 'rafa is already initialized in this repository'",
+        "Unit tests cover: successful init creates directories, init outside git repo fails, double init fails",
+        "make test passes",
+        "make fmt \u0026\u0026 make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t04",
+      "title": "Implement rafa deinit command",
+      "description": "Create the deinit command that removes Rafa from the current repository. The command should show what will be deleted (plan count, total size), prompt for confirmation (unless --force), and remove the .rafa/ directory. Implement helper functions formatSize() and calculateDirStats().",
+      "acceptanceCriteria": [
+        "internal/cli/deinit.go exists with deinitCmd cobra.Command, --force flag, and runDeinit function",
+        "deinitCmd is registered in root.go",
+        "'rafa deinit' shows confirmation prompt with plan count and formatted size",
+        "'rafa deinit' with 'n' or empty input aborts with 'Aborted.'",
+        "'rafa deinit' with 'y' or 'yes' removes .rafa/ directory and prints success message",
+        "'rafa deinit --force' removes without prompting",
+        "'rafa deinit' when not initialized returns error 'rafa is not initialized in this repository'",
+        "'rafa deinit' when .rafa is a file (not directory) returns error '.rafa exists but is not a directory'",
+        "formatSize() correctly formats bytes as B, KB, or MB",
+        "Unit tests cover: deinit when not initialized fails, deinit with force removes directory, formatSize formats correctly, calculateDirStats counts plans",
+        "make test passes",
+        "make fmt \u0026\u0026 make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t05",
+      "title": "Create goreleaser configuration and install script",
+      "description": "Set up the release infrastructure including .goreleaser.yaml for cross-platform builds and scripts/install.sh for user installation. The goreleaser config should build for darwin/linux on amd64/arm64, inject version via ldflags, create tar.gz archives, generate checksums, and include the install script in releases. The install script should detect OS/arch, download the appropriate binary, verify checksums, and install to /usr/local/bin.",
+      "acceptanceCriteria": [
+        ".goreleaser.yaml exists with builds for darwin and linux on amd64 and arm64",
+        ".goreleaser.yaml includes ldflags for Version, CommitSHA, and BuildDate injection",
+        ".goreleaser.yaml generates tar.gz archives named rafa_\u003cos\u003e_\u003carch\u003e.tar.gz",
+        ".goreleaser.yaml generates checksums.txt",
+        ".goreleaser.yaml includes scripts/install.sh as extra_file in release",
+        "scripts/install.sh exists and is executable",
+        "Install script supports -v/--version flag to specify version",
+        "Install script detects OS (darwin/linux) and arch (amd64/arm64)",
+        "Install script rejects unsupported OS with 'Error: Unsupported operating system'",
+        "Install script rejects unsupported arch with 'Error: Unsupported architecture'",
+        "Install script verifies checksum and fails with expected vs actual on mismatch",
+        "Install script uses sudo only when INSTALL_DIR is not writable",
+        "Install script verifies binary works after installation",
+        "'make release-dry-run' completes successfully (requires goreleaser installed)",
+        "make fmt \u0026\u0026 make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t06",
+      "title": "Create GitHub Actions release workflow",
+      "description": "Create the GitHub Actions workflow that automates releases when tags are pushed. The workflow should run tests, then use goreleaser to build and publish releases. It should trigger on tags matching 'v*' pattern.",
+      "acceptanceCriteria": [
+        ".github/workflows/release.yml exists",
+        "Workflow triggers on push of tags matching 'v*'",
+        "Workflow has contents: write permission",
+        "Workflow checks out code with fetch-depth: 0",
+        "Workflow sets up Go using go-version-file: 'go.mod'",
+        "Workflow runs 'make test' before release",
+        "Workflow uses goreleaser/goreleaser-action@v6 with 'release --clean' args",
+        "Workflow passes GITHUB_TOKEN to goreleaser",
+        "YAML syntax is valid (no syntax errors)"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t07",
+      "title": "Update README with installation and setup documentation",
+      "description": "Add comprehensive documentation to README.md covering installation (curl script, specific version, script review), prerequisites (git, Claude Code), getting started (init, plan create, plan run), uninstallation (binary removal, rafa deinit), and release process for contributors.",
+      "acceptanceCriteria": [
+        "README.md has Installation section with curl one-liner",
+        "README.md shows how to install specific version with -v flag",
+        "README.md shows how to review script before running",
+        "README.md has Prerequisites section listing Git and Claude Code",
+        "README.md has Getting Started section with rafa init, plan create, and plan run examples",
+        "README.md has Uninstall section with 'rm $(which rafa)' and 'rafa deinit'",
+        "README.md has Releasing section for contributors explaining tag-based releases",
+        "make fmt \u0026\u0026 make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    }
+  ]
+}
