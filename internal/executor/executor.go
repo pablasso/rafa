@@ -28,6 +28,7 @@ type Executor struct {
 	lock       *plan.PlanLock
 	startTime  time.Time
 	allowDirty bool
+	saveHook   func() // Optional hook called after each plan save (for testing)
 }
 
 // New creates a new Executor for the given plan directory and plan.
@@ -55,6 +56,19 @@ func (e *Executor) WithRunner(r Runner) *Executor {
 func (e *Executor) WithAllowDirty(allow bool) *Executor {
 	e.allowDirty = allow
 	return e
+}
+
+// WithSaveHook sets an optional hook called after each plan save (for testing).
+func (e *Executor) WithSaveHook(hook func()) *Executor {
+	e.saveHook = hook
+	return e
+}
+
+// notifySave calls the save hook if one is configured.
+func (e *Executor) notifySave() {
+	if e.saveHook != nil {
+		e.saveHook()
+	}
 }
 
 // Run executes all pending tasks in the plan.
@@ -96,6 +110,7 @@ func (e *Executor) Run(ctx context.Context) error {
 		if err := plan.SavePlan(e.planDir, e.plan); err != nil {
 			return fmt.Errorf("failed to save plan: %w", err)
 		}
+		e.notifySave()
 	}
 
 	// Log plan started and record start time
@@ -123,6 +138,8 @@ func (e *Executor) Run(ctx context.Context) error {
 				task.Status = plan.TaskStatusPending
 				if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
 					fmt.Printf("Warning: failed to save plan after cancel: %v\n", saveErr)
+				} else {
+					e.notifySave()
 				}
 				e.logger.PlanCancelled(task.ID)
 				return nil
@@ -132,6 +149,8 @@ func (e *Executor) Run(ctx context.Context) error {
 			e.plan.Status = plan.PlanStatusFailed
 			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
 				fmt.Printf("Warning: failed to save plan after failure: %v\n", saveErr)
+			} else {
+				e.notifySave()
 			}
 			e.logger.PlanFailed(task.ID, task.Attempts)
 			return fmt.Errorf("task %s failed after %d attempts", task.ID, task.Attempts)
@@ -143,6 +162,7 @@ func (e *Executor) Run(ctx context.Context) error {
 	if err := plan.SavePlan(e.planDir, e.plan); err != nil {
 		return fmt.Errorf("failed to save plan: %w", err)
 	}
+	e.notifySave()
 
 	duration := time.Since(e.startTime)
 	e.logger.PlanCompleted(len(e.plan.Tasks), e.countCompleted(), duration)
@@ -165,6 +185,7 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		if err := plan.SavePlan(e.planDir, e.plan); err != nil {
 			return fmt.Errorf("failed to save plan: %w", err)
 		}
+		e.notifySave()
 
 		// Print progress
 		fmt.Printf("\nTask %d/%d: %s [Attempt %d/%d]\n",
@@ -196,6 +217,7 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
 				return fmt.Errorf("failed to save plan: %w", saveErr)
 			}
+			e.notifySave()
 			if logErr := e.logger.TaskCompleted(task.ID); logErr != nil {
 				return fmt.Errorf("failed to log task completed: %w", logErr)
 			}
@@ -213,6 +235,8 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			task.Status = plan.TaskStatusFailed
 			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
 				fmt.Printf("Warning: failed to save plan: %v\n", saveErr)
+			} else {
+				e.notifySave()
 			}
 			return fmt.Errorf("max attempts reached")
 		}

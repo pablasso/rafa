@@ -422,28 +422,18 @@ func TestExecutor_SavesStateAfterEachTask(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	saveCount := 0
-	planPath := filepath.Join(planDir, "plan.json")
-
 	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil}}
-	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
-
-	// Count file modifications by tracking mtime changes
-	var lastMod time.Time
-	originalRunner := executor.runner
-	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error {
-		info, _ := os.Stat(planPath)
-		if info.ModTime() != lastMod {
-			saveCount++
-			lastMod = info.ModTime()
-		}
-		return originalRunner.Run(ctx, task, planContext, attempt, maxAttempts)
-	})
+	executor := New(planDir, p).
+		WithRunner(mockRunner).
+		WithAllowDirty(true).
+		WithSaveHook(func() { saveCount++ })
 
 	_ = executor.Run(context.Background())
 
-	// Should have saved multiple times (at least once per task status change)
-	if saveCount < 2 {
-		t.Errorf("expected at least 2 saves, got: %d", saveCount)
+	// Expected saves: plan->InProgress, task1->InProgress, task1->Completed,
+	//                 task2->InProgress, task2->Completed, plan->Completed
+	if saveCount != 6 {
+		t.Errorf("expected 6 saves, got: %d", saveCount)
 	}
 }
 
