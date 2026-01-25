@@ -122,3 +122,29 @@ All acceptance criteria have been verified:
 === Task t01, Attempt 1 ===
 Started: 2026-01-25T17:15:26-06:00
 
+The task is complete. The workspace is clean.
+
+## Summary
+
+The `CommitAll` function already existed in `internal/git/git.go` with the correct implementation that meets all acceptance criteria:
+
+1. ✅ **Signature**: `func CommitAll(dir string, message string) error` at line 77
+2. ✅ **Stages all changes**: Uses `git add -A` (lines 79-85)
+3. ✅ **Returns nil for no changes**: Uses `git diff --cached --quiet` (lines 88-95)
+4. ✅ **Wrapped error for git add failure**: `fmt.Errorf("git add -A: %w", err)` (line 84)
+5. ✅ **Wrapped error for git commit failure**: `fmt.Errorf("git commit: %w", err)` (line 103)
+6. ✅ **Unit tests exist**: In `internal/git/git_test.go` (lines 286-421) covering:
+   - Commits changes successfully
+   - Returns nil when nothing to commit
+   - Returns error for invalid directory
+   - Commits staged and unstaged changes
+   - Commits modified tracked files
+7. ✅ **make test passes**
+8. ✅ **make fmt passes**
+
+=== Task t01: SUCCESS ===
+
+
+=== Task t02, Attempt 1 ===
+Started: 2026-01-25T17:16:04-06:00
+

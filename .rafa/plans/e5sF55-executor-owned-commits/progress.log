@@ -18,3 +18,5 @@
 {"timestamp":"2026-01-25T17:10:04.823887-06:00","event":"plan_failed","data":{"attempts":5,"task_id":"t01"}}
 {"timestamp":"2026-01-25T17:15:26.664636-06:00","event":"plan_started","data":{"plan_id":"e5sF55"}}
 {"timestamp":"2026-01-25T17:15:26.665116-06:00","event":"task_started","data":{"attempt":1,"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:16:04.333549-06:00","event":"task_completed","data":{"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:16:04.334119-06:00","event":"task_started","data":{"attempt":1,"task_id":"t02"}}

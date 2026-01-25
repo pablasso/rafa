@@ -1,10 +1,12 @@
 package executor
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -76,4 +78,54 @@ func (oc *OutputCapture) WriteTaskFooter(taskID string, success bool) {
 	}
 	footer := fmt.Sprintf("\n=== Task %s: %s ===\n\n", taskID, result)
 	oc.logFile.WriteString(footer)
+}
+
+const (
+	commitMessagePrefix = "SUGGESTED_COMMIT_MESSAGE:"
+	maxLinesToSearch    = 100
+)
+
+// ExtractCommitMessage searches the captured output for a suggested commit message.
+// It looks for a line starting with 'SUGGESTED_COMMIT_MESSAGE:' in the last 100 lines
+// of output for efficiency. Returns the trimmed message after the prefix, or empty
+// string if no message is found or on read error. If multiple messages exist within
+// the last 100 lines, returns the most recent one. Callers should ensure the log
+// file is synced (via Sync() or close/reopen) before calling if recent writes need
+// to be included.
+func (oc *OutputCapture) ExtractCommitMessage() string {
+	// Get the log file path from the open file
+	logPath := oc.logFile.Name()
+
+	// Open for reading (the file is opened write-only, so we need a separate read handle)
+	f, err := os.Open(logPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	// Read all lines into a slice
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if scanner.Err() != nil {
+		return ""
+	}
+
+	// Determine start index for searching (last 100 lines)
+	start := 0
+	if len(lines) > maxLinesToSearch {
+		start = len(lines) - maxLinesToSearch
+	}
+
+	// Search from most recent lines first (reverse order)
+	for i := len(lines) - 1; i >= start; i-- {
+		line := lines[i]
+		if strings.HasPrefix(line, commitMessagePrefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, commitMessagePrefix))
+		}
+	}
+
+	return ""
 }

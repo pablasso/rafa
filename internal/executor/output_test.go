@@ -298,3 +298,145 @@ func TestOutputCapture_WriterInterfaces(t *testing.T) {
 		t.Error("Stderr() should return non-nil io.Writer")
 	}
 }
+
+func TestOutputCapture_ExtractCommitMessage_Found(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+
+	// Write some output including a commit message
+	oc.Stdout().Write([]byte("Some output\n"))
+	oc.Stdout().Write([]byte("More output\n"))
+	oc.Stdout().Write([]byte("SUGGESTED_COMMIT_MESSAGE: Add new feature for user authentication\n"))
+	oc.Stdout().Write([]byte("Final output\n"))
+
+	// Need to sync the file before reading
+	oc.logFile.Sync()
+
+	msg := oc.ExtractCommitMessage()
+	expected := "Add new feature for user authentication"
+	if msg != expected {
+		t.Errorf("ExtractCommitMessage() = %q, want %q", msg, expected)
+	}
+
+	oc.Close()
+}
+
+func TestOutputCapture_ExtractCommitMessage_NotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+
+	// Write output without a commit message
+	oc.Stdout().Write([]byte("Some output\n"))
+	oc.Stdout().Write([]byte("More output\n"))
+	oc.Stdout().Write([]byte("No commit message here\n"))
+
+	oc.logFile.Sync()
+
+	msg := oc.ExtractCommitMessage()
+	if msg != "" {
+		t.Errorf("ExtractCommitMessage() = %q, want empty string", msg)
+	}
+
+	oc.Close()
+}
+
+func TestOutputCapture_ExtractCommitMessage_EmptyOutput(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+
+	// Don't write anything
+	oc.logFile.Sync()
+
+	msg := oc.ExtractCommitMessage()
+	if msg != "" {
+		t.Errorf("ExtractCommitMessage() = %q, want empty string", msg)
+	}
+
+	oc.Close()
+}
+
+func TestOutputCapture_ExtractCommitMessage_OnlyLast100Lines(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+
+	// Write a commit message that will be beyond the last 100 lines
+	oc.Stdout().Write([]byte("SUGGESTED_COMMIT_MESSAGE: Old message that should be ignored\n"))
+
+	// Write 100 more lines to push it out of range
+	for i := 0; i < 100; i++ {
+		oc.Stdout().Write([]byte("Filler line\n"))
+	}
+
+	oc.logFile.Sync()
+
+	msg := oc.ExtractCommitMessage()
+	if msg != "" {
+		t.Errorf("ExtractCommitMessage() = %q, want empty string (message should be outside last 100 lines)", msg)
+	}
+
+	oc.Close()
+}
+
+func TestOutputCapture_ExtractCommitMessage_TakesLastMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+
+	// Write multiple commit messages - should return the last one
+	oc.Stdout().Write([]byte("SUGGESTED_COMMIT_MESSAGE: First message\n"))
+	oc.Stdout().Write([]byte("Some output\n"))
+	oc.Stdout().Write([]byte("SUGGESTED_COMMIT_MESSAGE: Second message\n"))
+	oc.Stdout().Write([]byte("More output\n"))
+	oc.Stdout().Write([]byte("SUGGESTED_COMMIT_MESSAGE: Third and final message\n"))
+
+	oc.logFile.Sync()
+
+	msg := oc.ExtractCommitMessage()
+	expected := "Third and final message"
+	if msg != expected {
+		t.Errorf("ExtractCommitMessage() = %q, want %q", msg, expected)
+	}
+
+	oc.Close()
+}
+
+func TestOutputCapture_ExtractCommitMessage_TrimsWhitespace(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+
+	// Write a commit message with extra whitespace
+	oc.Stdout().Write([]byte("SUGGESTED_COMMIT_MESSAGE:   Message with spaces   \n"))
+
+	oc.logFile.Sync()
+
+	msg := oc.ExtractCommitMessage()
+	expected := "Message with spaces"
+	if msg != expected {
+		t.Errorf("ExtractCommitMessage() = %q, want %q", msg, expected)
+	}
+
+	oc.Close()
+}
