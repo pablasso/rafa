@@ -56,7 +56,7 @@ func TestRunPlanE2E(t *testing.T) {
 	planDir := setupRunIntegrationTest(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil}}
-	exec := executor.New(planDir, p).WithRunner(mockRunner)
+	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := exec.Run(context.Background())
 
@@ -97,7 +97,7 @@ func TestRunPlanResumeInterrupted(t *testing.T) {
 	planDir := setupRunIntegrationTest(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil}}
-	exec := executor.New(planDir, p).WithRunner(mockRunner)
+	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := exec.Run(context.Background())
 
@@ -132,7 +132,7 @@ func TestRunPlanFailureAndRetry(t *testing.T) {
 			nil,
 		},
 	}
-	exec := executor.New(planDir, p).WithRunner(mockRunner)
+	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := exec.Run(context.Background())
 
@@ -169,7 +169,7 @@ func TestRunPlanResumeFailedPlan(t *testing.T) {
 	planDir := setupRunIntegrationTest(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil}}
-	exec := executor.New(planDir, p).WithRunner(mockRunner)
+	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := exec.Run(context.Background())
 
@@ -203,7 +203,7 @@ func TestRunPlanCancellation(t *testing.T) {
 	cancel() // Cancel immediately
 
 	mockRunner := &testutil.MockRunner{}
-	exec := executor.New(planDir, p).WithRunner(mockRunner)
+	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := exec.Run(ctx)
 

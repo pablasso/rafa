@@ -50,7 +50,7 @@ func TestExecutor_AllTasksComplete(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	mockRunner := &testutil.MockRunner{}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 
@@ -68,7 +68,7 @@ func TestExecutor_NoPendingTasks(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	mockRunner := &testutil.MockRunner{}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 
@@ -87,7 +87,7 @@ func TestExecutor_RunsSingleTask(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil}}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 
@@ -114,7 +114,7 @@ func TestExecutor_RunsMultipleTasks(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil, nil}}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 
@@ -155,7 +155,7 @@ func TestExecutor_RetriesOnFailure(t *testing.T) {
 			nil,
 		},
 	}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 
@@ -185,7 +185,7 @@ func TestExecutor_StopsAfterMaxAttempts(t *testing.T) {
 		responses[i] = errors.New("fail")
 	}
 	mockRunner := &testutil.MockRunner{Responses: responses}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 
@@ -216,7 +216,7 @@ func TestExecutor_ResumesFromPending(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil}}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 
@@ -246,7 +246,7 @@ func TestExecutor_CancellationHandled(t *testing.T) {
 	cancel() // Cancel immediately
 
 	mockRunner := &testutil.MockRunner{}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(ctx)
 
@@ -265,7 +265,7 @@ func TestExecutor_CancellationResetsTaskStatus(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create executor with a runner that cancels context during execution
-	executor := New(planDir, p)
+	executor := New(planDir, p).WithAllowDirty(true)
 	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error {
 		cancel() // Cancel context during task execution
 		return context.Canceled
@@ -303,7 +303,7 @@ func TestExecutor_AcquiresLock(t *testing.T) {
 		Responses: []error{nil},
 	}
 
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	// Override runner to check for lock during execution
 	originalRunner := executor.runner
@@ -331,7 +331,7 @@ func TestExecutor_ReleasesLockOnComplete(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil}}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 
@@ -355,7 +355,7 @@ func TestExecutor_ReleasesLockOnCancel(t *testing.T) {
 	cancel()
 
 	mockRunner := &testutil.MockRunner{}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	_ = executor.Run(ctx)
 
@@ -377,7 +377,7 @@ func TestExecutor_ReleasesLockOnFailure(t *testing.T) {
 		responses[i] = errors.New("fail")
 	}
 	mockRunner := &testutil.MockRunner{Responses: responses}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	_ = executor.Run(context.Background())
 
@@ -402,7 +402,7 @@ func TestExecutor_ConcurrentRunBlocked(t *testing.T) {
 	}
 
 	mockRunner := &testutil.MockRunner{}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 
@@ -425,7 +425,7 @@ func TestExecutor_SavesStateAfterEachTask(t *testing.T) {
 	planPath := filepath.Join(planDir, "plan.json")
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil}}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	// Count file modifications by tracking mtime changes
 	var lastMod time.Time
@@ -454,7 +454,7 @@ func TestExecutor_LogsProgressEvents(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil}}
-	executor := New(planDir, p).WithRunner(mockRunner)
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
 

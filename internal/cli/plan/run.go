@@ -12,6 +12,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var runAllowDirty bool
+
+func init() {
+	runCmd.Flags().BoolVar(&runAllowDirty, "allow-dirty", false, "Allow running with uncommitted changes (not recommended)")
+}
+
 var runCmd = &cobra.Command{
 	Use:   "run <name>",
 	Short: "Run a plan (resumes from first pending task)",
@@ -49,6 +55,6 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	exec := executor.New(planDir, p)
+	exec := executor.New(planDir, p).WithAllowDirty(runAllowDirty)
 	return exec.Run(ctx)
 }

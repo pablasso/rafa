@@ -3,8 +3,10 @@ package executor
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
+	"github.com/pablasso/rafa/internal/git"
 	"github.com/pablasso/rafa/internal/plan"
 )
 
@@ -18,28 +20,40 @@ type Runner interface {
 
 // Executor orchestrates the execution of plan tasks.
 type Executor struct {
-	planDir   string
-	plan      *plan.Plan
-	logger    *plan.ProgressLogger
-	runner    Runner
-	lock      *plan.PlanLock
-	startTime time.Time
+	planDir    string
+	repoRoot   string
+	plan       *plan.Plan
+	logger     *plan.ProgressLogger
+	runner     Runner
+	lock       *plan.PlanLock
+	startTime  time.Time
+	allowDirty bool
 }
 
 // New creates a new Executor for the given plan directory and plan.
 func New(planDir string, p *plan.Plan) *Executor {
+	// Derive repo root from planDir (.rafa/plans/<id>-<name>/ -> repo root)
+	repoRoot := filepath.Dir(filepath.Dir(filepath.Dir(planDir)))
+
 	return &Executor{
-		planDir: planDir,
-		plan:    p,
-		logger:  plan.NewProgressLogger(planDir),
-		runner:  NewClaudeRunner(),
-		lock:    plan.NewPlanLock(planDir),
+		planDir:  planDir,
+		repoRoot: repoRoot,
+		plan:     p,
+		logger:   plan.NewProgressLogger(planDir),
+		runner:   NewClaudeRunner(),
+		lock:     plan.NewPlanLock(planDir),
 	}
 }
 
 // WithRunner sets a custom runner (useful for testing).
 func (e *Executor) WithRunner(r Runner) *Executor {
 	e.runner = r
+	return e
+}
+
+// WithAllowDirty sets whether to allow running with a dirty workspace.
+func (e *Executor) WithAllowDirty(allow bool) *Executor {
+	e.allowDirty = allow
 	return e
 }
 
@@ -51,6 +65,17 @@ func (e *Executor) Run(ctx context.Context) error {
 		return err
 	}
 	defer e.lock.Release()
+
+	// Check workspace cleanliness before starting
+	if !e.allowDirty {
+		status, err := git.GetStatus(e.repoRoot)
+		if err != nil {
+			return fmt.Errorf("failed to check git status: %w", err)
+		}
+		if !status.Clean {
+			return e.workspaceDirtyError(status.Files)
+		}
+	}
 
 	// Check if all tasks are already completed
 	if e.plan.AllTasksCompleted() {
@@ -153,6 +178,19 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		// Run the task
 		err := e.runner.Run(ctx, task, planContext, task.Attempts, MaxAttempts)
 		if err == nil {
+			// Verify workspace is clean before marking task complete
+			if !e.allowDirty {
+				status, checkErr := git.GetStatus(e.repoRoot)
+				if checkErr != nil {
+					return fmt.Errorf("failed to check git status: %w", checkErr)
+				}
+				if !status.Clean {
+					e.logger.TaskFailed(task.ID, task.Attempts)
+					e.printUncommittedChanges(status.Files)
+					continue // retry - agent sees this output
+				}
+			}
+
 			// Task succeeded
 			task.Status = plan.TaskStatusCompleted
 			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
@@ -220,4 +258,24 @@ func (e *Executor) formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 	}
 	return fmt.Sprintf("%02d:%02d", m, s)
+}
+
+// workspaceDirtyError returns a formatted error for dirty workspace.
+func (e *Executor) workspaceDirtyError(files []string) error {
+	msg := "workspace has uncommitted changes before starting plan\n\nModified files:\n"
+	for _, f := range files {
+		msg += fmt.Sprintf("  %s\n", f)
+	}
+	msg += "\nPlease commit or stash your changes before running the plan.\n"
+	msg += "Or use --allow-dirty to skip this check (not recommended)."
+	return fmt.Errorf("%s", msg)
+}
+
+// printUncommittedChanges prints a message about uncommitted changes after task completion.
+func (e *Executor) printUncommittedChanges(files []string) {
+	fmt.Printf("Task completed but left uncommitted changes:\n")
+	for _, f := range files {
+		fmt.Printf("  %s\n", f)
+	}
+	fmt.Println("Retrying...")
 }

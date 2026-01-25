@@ -60,7 +60,9 @@ func (r *ClaudeRunner) buildPrompt(task *plan.Task, planContext string, attempt,
 	// Add retry note if not first attempt
 	if attempt > 1 {
 		sb.WriteString("**Note**: Previous attempts to complete this task failed. ")
-		sb.WriteString("Consider alternative approaches or investigate what went wrong.\n\n")
+		sb.WriteString("Consider alternative approaches or investigate what went wrong. ")
+		sb.WriteString("If the previous attempt left uncommitted changes, make sure to commit ALL changes ")
+		sb.WriteString("(including .rafa/ metadata) and leave the workspace clean.\n\n")
 	}
 
 	sb.WriteString("## Acceptance Criteria\n")
@@ -73,11 +75,10 @@ func (r *ClaudeRunner) buildPrompt(task *plan.Task, planContext string, attempt,
 	sb.WriteString("## Instructions\n")
 	sb.WriteString("1. Implement the task as described\n")
 	sb.WriteString("2. Verify ALL acceptance criteria are met\n")
-	sb.WriteString("3. If all criteria pass, commit your changes with a descriptive message\n")
-	sb.WriteString("4. Exit when done\n\n")
+	sb.WriteString("3. Commit ALL changes (implementation code AND `.rafa/` metadata) with a descriptive message\n")
+	sb.WriteString("4. Verify workspace is clean with `git status` before exiting\n\n")
 
-	sb.WriteString("IMPORTANT: Do not declare success unless ALL acceptance criteria are verifiably met.\n")
-	sb.WriteString("If you cannot complete the task or verify the criteria, exit with an error.\n")
+	sb.WriteString("IMPORTANT: The workspace MUST be clean when you exit. Do not declare success unless ALL acceptance criteria are met.\n")
 
 	return sb.String()
 }
