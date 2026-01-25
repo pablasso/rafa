@@ -127,6 +127,12 @@ TESTING REQUIREMENTS:
 - Test acceptance criteria should be specific (e.g., "Unit tests exist for checkGitRepo() covering: in git repo, not in git repo")
 - Do NOT use vague criteria like "tests pass" - specify what tests should be written
 
+COMPLETENESS CHECK:
+- Every section of the design document must be covered by at least one task
+- Sections like "Testing", "Edge Cases", "Error Handling", "Validation" contain specific scenarios that MUST appear in acceptance criteria
+- If the design specifies a specific behavior, error message, or scenario, it should be verifiable in the acceptance criteria
+- When in doubt, include the requirement rather than omit it
+
 Return ONLY the JSON, no markdown formatting or explanation.`, designContent)
 }
 
