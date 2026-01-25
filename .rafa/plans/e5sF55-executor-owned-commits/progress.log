@@ -1,0 +1,2 @@
+{"timestamp":"2026-01-25T17:03:11.980254-06:00","event":"plan_started","data":{"plan_id":"e5sF55"}}
+{"timestamp":"2026-01-25T17:03:11.980851-06:00","event":"task_started","data":{"attempt":1,"task_id":"t01"}}

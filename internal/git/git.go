@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -68,4 +69,39 @@ func GetDirtyFiles(dir string) ([]string, error) {
 		return nil, err
 	}
 	return status.Files, nil
+}
+
+// CommitAll stages all changes with 'git add -A' and commits them with the given message.
+// Returns nil if there are no changes to commit.
+// If dir is empty, uses the current working directory.
+func CommitAll(dir string, message string) error {
+	// Stage all changes
+	addCmd := exec.Command("git", "add", "-A")
+	if dir != "" {
+		addCmd.Dir = dir
+	}
+	if err := addCmd.Run(); err != nil {
+		return fmt.Errorf("git add -A: %w", err)
+	}
+
+	// Check if there are staged changes
+	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
+	if dir != "" {
+		diffCmd.Dir = dir
+	}
+	if err := diffCmd.Run(); err == nil {
+		// Exit code 0 means no staged changes
+		return nil
+	}
+
+	// Commit the staged changes
+	commitCmd := exec.Command("git", "commit", "-m", message)
+	if dir != "" {
+		commitCmd.Dir = dir
+	}
+	if err := commitCmd.Run(); err != nil {
+		return fmt.Errorf("git commit: %w", err)
+	}
+
+	return nil
 }
