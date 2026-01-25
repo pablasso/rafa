@@ -3,6 +3,7 @@ package testutil
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,23 @@ import (
 func MockCommandFunc(output string) func(ctx context.Context, name string, args ...string) *exec.Cmd {
 	return func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return exec.CommandContext(ctx, "echo", "-n", output)
+	}
+}
+
+// MockCommandFuncFail creates a mock command that exits with a non-zero exit code.
+// Usage: ai.CommandContext = testutil.MockCommandFuncFail(exitCode)
+func MockCommandFuncFail(exitCode int) func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	return func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("exit %d", exitCode))
+	}
+}
+
+// MockCommandFuncSleep creates a mock command that sleeps for the given duration.
+// Useful for testing context cancellation.
+// Usage: ai.CommandContext = testutil.MockCommandFuncSleep("10")
+func MockCommandFuncSleep(seconds string) func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	return func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "sleep", seconds)
 	}
 }
 

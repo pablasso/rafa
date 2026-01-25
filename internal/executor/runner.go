@@ -1,0 +1,83 @@
+package executor
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/pablasso/rafa/internal/ai"
+	"github.com/pablasso/rafa/internal/plan"
+)
+
+// ClaudeRunner executes tasks via Claude Code CLI.
+type ClaudeRunner struct{}
+
+// NewClaudeRunner creates a new ClaudeRunner.
+func NewClaudeRunner() *ClaudeRunner {
+	return &ClaudeRunner{}
+}
+
+// Run executes a single task via Claude Code CLI.
+func (r *ClaudeRunner) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error {
+	prompt := r.buildPrompt(task, planContext, attempt, maxAttempts)
+
+	cmd := ai.CommandContext(ctx, "claude",
+		"-p", prompt,
+		"--dangerously-skip-permissions",
+	)
+
+	// Stream output to stdout/stderr for visibility
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("claude exited with error: %w", err)
+	}
+
+	return nil
+}
+
+// buildPrompt constructs the prompt for Claude CLI.
+func (r *ClaudeRunner) buildPrompt(task *plan.Task, planContext string, attempt, maxAttempts int) string {
+	var sb strings.Builder
+
+	sb.WriteString("You are executing a task as part of an automated plan.\n\n")
+	sb.WriteString("## Context\n")
+	sb.WriteString(planContext)
+	sb.WriteString("\n")
+
+	sb.WriteString("## Your Task\n")
+	sb.WriteString(fmt.Sprintf("**ID**: %s\n", task.ID))
+	sb.WriteString(fmt.Sprintf("**Title**: %s\n", task.Title))
+	sb.WriteString(fmt.Sprintf("**Attempt**: %d of %d\n", attempt, maxAttempts))
+	sb.WriteString(fmt.Sprintf("**Description**: %s\n\n", task.Description))
+
+	// Add retry note if not first attempt
+	if attempt > 1 {
+		sb.WriteString("**Note**: Previous attempts to complete this task failed. ")
+		sb.WriteString("Consider alternative approaches or investigate what went wrong.\n\n")
+	}
+
+	sb.WriteString("## Acceptance Criteria\n")
+	sb.WriteString("You MUST verify ALL of the following before considering the task complete:\n")
+	for i, criterion := range task.AcceptanceCriteria {
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, criterion))
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString("## Instructions\n")
+	sb.WriteString("1. Implement the task as described\n")
+	sb.WriteString("2. Verify ALL acceptance criteria are met\n")
+	sb.WriteString("3. If all criteria pass, commit your changes with a descriptive message\n")
+	sb.WriteString("4. Exit when done\n\n")
+
+	sb.WriteString("IMPORTANT: Do not declare success unless ALL acceptance criteria are verifiably met.\n")
+	sb.WriteString("If you cannot complete the task or verify the criteria, exit with an error.\n")
+
+	return sb.String()
+}
