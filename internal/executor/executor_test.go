@@ -588,6 +588,66 @@ func TestExecutor_CountCompleted(t *testing.T) {
 	}
 }
 
+func TestExecutor_RerunFailedPlanResetsAttempts(t *testing.T) {
+	// Simulate a plan that previously failed with max attempts reached
+	p := &plan.Plan{
+		ID:          "test-plan-id",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		SourceFile:  "/path/to/source.md",
+		CreatedAt:   time.Now(),
+		Status:      plan.PlanStatusFailed, // Plan already failed
+		Tasks: []plan.Task{
+			{
+				ID:       "task-1",
+				Title:    "Task 1",
+				Status:   plan.TaskStatusInProgress, // Left in_progress after failure
+				Attempts: MaxAttempts,               // Already at max attempts
+			},
+			{
+				ID:       "task-2",
+				Title:    "Task 2",
+				Status:   plan.TaskStatusPending,
+				Attempts: 0,
+			},
+		},
+	}
+	planDir := createTestPlanDir(t, p)
+
+	// This time the task succeeds
+	mockRunner := &mockRunner{Responses: []error{nil, nil}}
+	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
+
+	err := executor.Run(context.Background())
+
+	if err != nil {
+		t.Errorf("expected no error when re-running failed plan, got: %v", err)
+	}
+
+	// Verify runner was called (attempts were reset, allowing the task to run)
+	if mockRunner.CallCount != 2 {
+		t.Errorf("expected 2 runner calls, got: %d", mockRunner.CallCount)
+	}
+
+	// Verify task-1's attempts were reset (should be 1 after successful run)
+	if p.Tasks[0].Attempts != 1 {
+		t.Errorf("expected task-1 attempts to be 1 after reset and success, got: %d", p.Tasks[0].Attempts)
+	}
+
+	// Verify both tasks completed
+	if p.Tasks[0].Status != plan.TaskStatusCompleted {
+		t.Errorf("expected task-1 status completed, got: %s", p.Tasks[0].Status)
+	}
+	if p.Tasks[1].Status != plan.TaskStatusCompleted {
+		t.Errorf("expected task-2 status completed, got: %s", p.Tasks[1].Status)
+	}
+
+	// Verify plan completed
+	if p.Status != plan.PlanStatusCompleted {
+		t.Errorf("expected plan status completed, got: %s", p.Status)
+	}
+}
+
 // runnerFunc is a function adapter for the Runner interface.
 type runnerFunc func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error
 

@@ -112,6 +112,15 @@ func (e *Executor) Run(ctx context.Context) error {
 		return nil
 	}
 
+	// If re-running a failed plan, reset attempts on the blocking task
+	if e.plan.Status == plan.PlanStatusFailed {
+		task := &e.plan.Tasks[firstIdx]
+		if task.Attempts >= MaxAttempts {
+			task.Attempts = 0
+			task.Status = plan.TaskStatusPending
+		}
+	}
+
 	// Update plan status if not started
 	if e.plan.Status == plan.PlanStatusNotStarted {
 		e.plan.Status = plan.PlanStatusInProgress
