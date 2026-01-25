@@ -22,6 +22,9 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - name: Check formatting
+        run: make check-fmt
+
       - name: Run tests
         run: make test
 
