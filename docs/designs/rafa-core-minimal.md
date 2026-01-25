@@ -949,3 +949,187 @@ func (m *MockRunner) Run(ctx context.Context, task *plan.Task, planContext strin
 ## Open Questions
 
 None - this is a minimal implementation focused on enabling dogfooding. Refinements will come from usage.
+
+## Implementation Tasks
+
+Tasks are ordered by dependency. Tasks 1-4 have no dependencies on each other and could be implemented in parallel. Task 5 depends on 1-4. Task 6 depends on 5.
+
+### Task 1: Plan State Management
+
+**File**: `internal/plan/state.go`, `internal/plan/state_test.go`
+
+**Description**: Implement plan loading, saving, and folder discovery functions that allow the executor to persist and retrieve plan state.
+
+**Work**:
+- Implement `FindPlanFolder(name string) (string, error)` - finds plan folder by name suffix in `.rafa/plans/`
+- Implement `LoadPlan(planDir string) (*Plan, error)` - reads and parses plan.json
+- Implement `SavePlan(planDir string, p *Plan) error` - atomic write with PID-based temp file
+- Implement `(*Plan) FirstPendingTask() int` - finds first pending/in_progress/failed task, resets failed to pending
+- Implement `(*Plan) AllTasksCompleted() bool` - checks if all tasks are completed
+
+**Acceptance Criteria**:
+- `FindPlanFolder` returns correct path for existing plans
+- `FindPlanFolder` returns descriptive errors for: not found, multiple matches, no .rafa/plans/
+- `LoadPlan` correctly deserializes plan.json including all task fields
+- `SavePlan` uses atomic write (temp file + rename) with PID in temp filename
+- `FirstPendingTask` returns correct index for pending, in_progress, and failed tasks
+- `FirstPendingTask` resets failed tasks to pending while preserving attempt count
+- All unit tests in `state_test.go` pass
+- `make test` passes
+- `make fmt` produces no changes
+
+---
+
+### Task 2: Plan Lock File
+
+**File**: `internal/plan/lock.go`, `internal/plan/lock_test.go`
+
+**Description**: Implement lock file management to prevent concurrent runs of the same plan.
+
+**Work**:
+- Implement `PlanLock` struct with path field
+- Implement `NewPlanLock(planDir string) *PlanLock`
+- Implement `(*PlanLock) Acquire() error` - atomic lock creation with O_EXCL, stale lock detection
+- Implement `(*PlanLock) Release() error` - removes lock file
+- Implement `processExists(pid int) bool` - checks if process is running via signal 0
+
+**Acceptance Criteria**:
+- `Acquire` creates lock file atomically using `O_CREATE|O_EXCL|O_WRONLY`
+- `Acquire` writes PID to lock file
+- `Acquire` returns error with PID when lock held by running process
+- `Acquire` removes stale lock (dead process) and retries
+- `Release` removes lock file
+- Concurrent `Acquire` calls from different goroutines - only one succeeds
+- All unit tests in `lock_test.go` pass
+- `make test` passes
+- `make fmt` produces no changes
+
+---
+
+### Task 3: Progress Event Logging
+
+**File**: `internal/plan/progress.go`, `internal/plan/progress_test.go`
+
+**Description**: Implement progress event logging to track plan execution history.
+
+**Work**:
+- Define event type constants: `plan_started`, `plan_completed`, `plan_cancelled`, `plan_failed`, `task_started`, `task_completed`, `task_failed`
+- Implement `ProgressEvent` struct with Timestamp, Event, Data fields
+- Implement `ProgressLogger` struct with path field
+- Implement `NewProgressLogger(planDir string) *ProgressLogger`
+- Implement `(*ProgressLogger) Log(event string, data map[string]interface{}) error` - appends JSON line
+- Implement convenience methods: `PlanStarted`, `TaskStarted`, `TaskCompleted`, `TaskFailed`, `PlanCompleted`, `PlanCancelled`, `PlanFailed`
+
+**Acceptance Criteria**:
+- `Log` appends JSON-formatted event with timestamp to progress.log
+- Each event is on its own line (JSON lines format)
+- Multiple events append correctly (file grows)
+- All convenience methods include correct event type and data fields
+- `TaskStarted` includes task_id and attempt number
+- `PlanCompleted` includes total_tasks, succeeded_tasks, duration_sec
+- All unit tests in `progress_test.go` pass
+- `make test` passes
+- `make fmt` produces no changes
+
+---
+
+### Task 4: Task Runner
+
+**File**: `internal/executor/runner.go`, `internal/executor/runner_test.go`
+
+**Description**: Implement the Claude CLI runner that executes individual tasks.
+
+**Note**: Uses existing `ai.CommandContext` from `internal/ai/claude.go` for invoking Claude CLI.
+
+**Work**:
+- Create `internal/executor/` package
+- Implement `ClaudeRunner` struct
+- Implement `NewClaudeRunner() *ClaudeRunner`
+- Implement `(*ClaudeRunner) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error`
+  - Use `ai.CommandContext` to create the command
+- Implement `(*ClaudeRunner) buildPrompt(task *plan.Task, planContext string, attempt, maxAttempts int) string`
+- Prompt must include: context, task ID, title, attempt number, description, acceptance criteria, instructions
+- Prompt must include retry note when attempt > 1
+
+**Acceptance Criteria**:
+- `Run` invokes `claude -p <prompt> --dangerously-skip-permissions`
+- `Run` streams stdout/stderr to os.Stdout/os.Stderr
+- `Run` returns nil on exit code 0
+- `Run` returns error on non-zero exit code
+- `Run` returns context error on cancellation
+- `buildPrompt` includes all task fields and acceptance criteria
+- `buildPrompt` shows "Attempt X of Y"
+- `buildPrompt` includes retry note only when attempt > 1
+- All unit tests in `runner_test.go` pass
+- `make test` passes
+- `make fmt` produces no changes
+
+---
+
+### Task 5: Executor
+
+**File**: `internal/executor/executor.go`, `internal/executor/executor_test.go`, `internal/testutil/mock.go` (extend)
+
+**Description**: Implement the core execution loop that orchestrates task execution with retry logic.
+
+**Dependencies**: Tasks 1, 2, 3, 4
+
+**Work**:
+- Define `Runner` interface with `Run` method
+- Implement `Executor` struct with planDir, plan, logger, runner, lock fields
+- Implement `New(planDir string, p *plan.Plan) *Executor`
+- Implement `(*Executor) Run(ctx context.Context) error` - main execution loop
+- Implement `(*Executor) executeTask(ctx context.Context, task *plan.Task, num, total int, planContext string) error` - single task with retry
+- Implement helper methods: `buildPlanContext`, `countCompleted`, `formatDuration`
+- Handle: lock acquisition/release, plan status updates, task status updates, cancellation, max attempts
+- Add `MockRunner` to `internal/testutil/mock.go` for testing (implements Runner interface)
+
+**Acceptance Criteria**:
+- `Run` acquires lock before execution and releases on exit (success, failure, or cancel)
+- `Run` skips completed tasks and resumes from first pending
+- `Run` prints "All tasks already completed." when nothing to do
+- `Run` updates plan status to in_progress on start, completed/failed on end
+- `Run` saves plan state after each status change
+- `executeTask` retries up to MaxAttempts (10) times on failure
+- `executeTask` marks task completed on success, failed after max attempts
+- Cancellation (context done) resets current task to pending and releases lock
+- Progress events are logged for: plan_started, task_started, task_completed, task_failed, plan_completed, plan_cancelled, plan_failed
+- Console output shows task progress: "Task X/Y: Title [Attempt A/B]"
+- `MockRunner` in testutil implements Runner interface and records calls
+- All unit tests in `executor_test.go` pass (using MockRunner)
+- `make test` passes
+- `make fmt` produces no changes
+
+---
+
+### Task 6: CLI Command
+
+**File**: `internal/cli/plan/run.go`, `internal/cli/plan/run_test.go`, `internal/cli/plan/run_integration_test.go`
+
+**Description**: Implement the `rafa plan run <name>` command that ties everything together.
+
+**Dependencies**: Task 5
+
+**Work**:
+- Implement `runCmd` cobra command with Use, Short, Args, RunE
+- Implement `runPlan(cmd *cobra.Command, args []string) error`
+- Add validation: .rafa/ exists, plan found, Claude CLI available
+- Set up signal handling for SIGINT and SIGTERM
+- Register command in `internal/cli/plan/plan.go`
+- Write unit tests for validation logic
+- Write integration tests with MockRunner
+
+**Acceptance Criteria**:
+- `rafa plan run` without args shows error about missing plan name
+- `rafa plan run foo` when .rafa/ missing shows "rafa not initialized. Run `rafa init` first"
+- `rafa plan run foo` when plan not found shows "plan not found: foo"
+- `rafa plan run foo` when Claude missing shows "Claude Code CLI not found..."
+- Command handles SIGINT (Ctrl+C) gracefully
+- Command handles SIGTERM gracefully
+- Integration test: full successful run with mocked runner
+- Integration test: resume after interruption
+- Integration test: failure and retry flow
+- Integration test: resume failed plan
+- All tests pass
+- `make test` passes
+- `make fmt` produces no changes
