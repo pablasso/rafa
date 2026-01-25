@@ -2,3 +2,5 @@
 {"timestamp":"2026-01-25T17:03:11.980851-06:00","event":"task_started","data":{"attempt":1,"task_id":"t01"}}
 {"timestamp":"2026-01-25T17:05:45.869121-06:00","event":"task_failed","data":{"attempt":1,"task_id":"t01"}}
 {"timestamp":"2026-01-25T17:05:45.869819-06:00","event":"task_started","data":{"attempt":2,"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:06:24.170381-06:00","event":"task_failed","data":{"attempt":2,"task_id":"t01"}}
+{"timestamp":"2026-01-25T17:06:24.171225-06:00","event":"task_started","data":{"attempt":3,"task_id":"t01"}}

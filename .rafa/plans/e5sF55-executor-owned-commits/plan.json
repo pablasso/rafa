@@ -21,7 +21,7 @@
         "make fmt passes"
       ],
       "status": "in_progress",
-      "attempts": 2
+      "attempts": 3
     },
     {
       "id": "t02",
