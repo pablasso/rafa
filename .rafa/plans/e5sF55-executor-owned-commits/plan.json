@@ -1,0 +1,132 @@
+{
+  "id": "e5sF55",
+  "name": "executor-owned-commits",
+  "description": "Refactor the executor to own all git commits during plan execution, ensuring metadata is always committed atomically with implementation changes.",
+  "sourceFile": "docs/designs/metadata-commit-on-completion.md",
+  "createdAt": "2026-01-25T17:00:27.488694-06:00",
+  "status": "not_started",
+  "tasks": [
+    {
+      "id": "t01",
+      "title": "Add CommitAll function to git package",
+      "description": "Implement a new CommitAll function in internal/git/git.go that stages all changes with 'git add -A' and commits them with a given message. The function should return nil if there are no changes to commit (detected via 'git diff --cached --quiet'). This function will be used by the executor to commit both implementation and metadata changes together.",
+      "acceptanceCriteria": [
+        "CommitAll function exists in internal/git/git.go with signature: func CommitAll(dir string, message string) error",
+        "Function stages all changes using 'git add -A'",
+        "Function returns nil when there are no changes to commit (git diff --cached --quiet succeeds)",
+        "Function returns wrapped error if git add fails",
+        "Function returns wrapped error if git commit fails",
+        "Unit tests exist in internal/git/git_test.go covering: commits changes successfully, returns nil when nothing to commit, returns error for invalid directory",
+        "make test passes",
+        "make fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t02",
+      "title": "Add ExtractCommitMessage method to OutputCapture",
+      "description": "Add a method to OutputCapture in internal/executor/output.go that searches the captured output for a line starting with 'SUGGESTED_COMMIT_MESSAGE:' and returns the message. For efficiency, only search the last 100 lines of output. This allows agents to suggest descriptive commit messages that the executor can use.",
+      "acceptanceCriteria": [
+        "ExtractCommitMessage method exists on OutputCapture with signature: func (oc *OutputCapture) ExtractCommitMessage() string",
+        "Method searches only the last 100 lines for efficiency",
+        "Method returns the trimmed message after 'SUGGESTED_COMMIT_MESSAGE:' prefix",
+        "Method returns empty string if no message found or on read error",
+        "Unit tests exist covering: message found in output, message not found, empty output",
+        "make test passes",
+        "make fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t03",
+      "title": "Update agent prompt to not commit and suggest commit message",
+      "description": "Modify the buildPrompt function in internal/executor/runner.go to instruct agents NOT to commit their changes and to output a suggested commit message in the format 'SUGGESTED_COMMIT_MESSAGE: \u003cmessage\u003e'. Also update the retry note to inform agents about potentially uncommitted changes from previous attempts that they should review and continue from.",
+      "acceptanceCriteria": [
+        "Prompt includes instruction: 'DO NOT commit your changes - the orchestrator will handle the commit'",
+        "Prompt includes instruction to output 'SUGGESTED_COMMIT_MESSAGE: \u003cyour descriptive commit message\u003e'",
+        "Prompt includes note: 'Leave changes uncommitted. The orchestrator will commit after validating.'",
+        "Retry attempts include updated note about reviewing uncommitted changes from previous attempts",
+        "Unit test verifies prompt contains 'DO NOT commit' instruction",
+        "make test passes",
+        "make fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t04",
+      "title": "Add getCommitMessage helper to executor",
+      "description": "Add a helper method getCommitMessage to the Executor in internal/executor/executor.go that extracts the agent's suggested commit message from OutputCapture, or falls back to a default message format '[rafa] Complete task \u003cid\u003e: \u003ctitle\u003e'. The [rafa] prefix enables easy filtering in git log.",
+      "acceptanceCriteria": [
+        "getCommitMessage method exists on Executor with signature: func (e *Executor) getCommitMessage(task *plan.Task, output *OutputCapture) string",
+        "Method returns agent's suggested message if available via output.ExtractCommitMessage()",
+        "Method returns default format '[rafa] Complete task \u003cid\u003e: \u003ctitle\u003e' when no suggestion available",
+        "Method handles nil output gracefully",
+        "Unit tests exist covering: uses agent suggested message, falls back to default when no suggestion, handles nil output",
+        "make test passes",
+        "make fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t05",
+      "title": "Refactor executeTask to have executor commit after success",
+      "description": "Modify executeTask in internal/executor/executor.go to remove the 'workspace must be clean' check after agent returns. Instead, after a task succeeds: update metadata, save plan, log completion, then commit ALL changes (implementation + metadata) using git.CommitAll. After committing, verify the workspace is clean (catches git hooks modifying files). Skip commits when allowDirty is true. On task failure, leave workspace dirty for retry/inspection.",
+      "acceptanceCriteria": [
+        "executeTask no longer checks for clean workspace after agent returns",
+        "On task success: metadata is updated, plan is saved, then git.CommitAll is called with the commit message",
+        "Commit message is obtained via getCommitMessage helper",
+        "After commit, workspace is verified clean using git.GetStatus; error returned if not clean",
+        "When allowDirty is true, no commits are made",
+        "On task failure, workspace is left dirty (no commit)",
+        "Existing tests updated to reflect new commit flow",
+        "Integration test verifies executor commits implementation + metadata together",
+        "Integration test verifies failed task leaves workspace dirty",
+        "Integration test verifies --allow-dirty skips commits",
+        "make test passes",
+        "make fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t06",
+      "title": "Update Run method for plan completion commit",
+      "description": "Modify the Run method in internal/executor/executor.go to commit any remaining metadata after all tasks complete. Use message format '[rafa] Complete plan: \u003cname\u003e (\u003ccount\u003e tasks)'. This handles the edge case where the last agent might have accidentally committed. The commit should only warn (not error) if there's nothing to commit, as this is expected when the executor already committed everything.",
+      "acceptanceCriteria": [
+        "After all tasks complete and plan status is updated, git.CommitAll is called with plan completion message",
+        "Commit message format is '[rafa] Complete plan: \u003cname\u003e (\u003ccount\u003e tasks)'",
+        "When allowDirty is true, no final commit is made",
+        "If CommitAll returns error (likely 'nothing to commit'), only a warning is printed, not an error return",
+        "Integration test verifies workspace is clean after successful plan completion",
+        "Integration test verifies agent accidentally committing is handled gracefully (executor commits remaining metadata)",
+        "make test passes",
+        "make fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t07",
+      "title": "Add comprehensive integration tests for commit flow",
+      "description": "Add integration tests that verify the complete executor commit flow end-to-end. These tests should cover the key scenarios from the design document's testing section: executor commits after task, uses agent suggested message, default message when no suggestion, task failure leaves workspace dirty, agent accidental commit is handled, allow-dirty skips commits, and workspace clean after success.",
+      "acceptanceCriteria": [
+        "Test exists: TestRun_ExecutorCommitsAfterTask - verifies executor commits implementation + metadata",
+        "Test exists: TestRun_UsesAgentSuggestedMessage - verifies commit uses agent's SUGGESTED_COMMIT_MESSAGE",
+        "Test exists: TestRun_DefaultMessageWhenNoSuggestion - verifies fallback to task title format",
+        "Test exists: TestRun_TaskFailure_NothingCommitted - verifies failed task leaves workspace dirty",
+        "Test exists: TestRun_AgentAccidentallyCommits_Handled - verifies executor handles pre-committed work",
+        "Test exists: TestRun_AllowDirty_NoCommits - verifies --allow-dirty flag prevents all commits",
+        "Test exists: TestRun_WorkspaceCleanAfterSuccess - verifies clean workspace after successful plan",
+        "All tests in internal/executor/executor_test.go pass",
+        "make test passes",
+        "make fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    }
+  ]
+}
