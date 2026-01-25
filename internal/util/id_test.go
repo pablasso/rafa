@@ -87,9 +87,9 @@ func TestToKebabCase(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
-			result := toKebabCase(tc.input)
+			result := ToKebabCase(tc.input)
 			if result != tc.expected {
-				t.Errorf("toKebabCase(%q) = %q, want %q", tc.input, result, tc.expected)
+				t.Errorf("ToKebabCase(%q) = %q, want %q", tc.input, result, tc.expected)
 			}
 		})
 	}

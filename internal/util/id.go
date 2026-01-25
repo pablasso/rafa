@@ -28,11 +28,11 @@ func GenerateTaskID(index int) string {
 	return fmt.Sprintf("t%02d", index+1)
 }
 
-// toKebabCase converts a string to kebab-case.
+// ToKebabCase converts a string to kebab-case.
 // It lowercases the string, replaces spaces and underscores with hyphens,
 // removes non-alphanumeric characters (except hyphens), collapses multiple
 // consecutive hyphens, and trims leading/trailing hyphens.
-func toKebabCase(s string) string {
+func ToKebabCase(s string) string {
 	var result strings.Builder
 
 	for _, r := range s {
