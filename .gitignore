@@ -1,5 +1,5 @@
 # Compiled binaries
-rafa
+/rafa
 *.exe
 bin/
 dist/
