@@ -31,21 +31,26 @@ const validMockResponse = `{
   ]
 }`
 
-// setupIntegrationTest saves and restores global state (CommandContext, flags).
+// setupIntegrationTest saves and restores global state (CommandContext, LookPath, flags).
 // Returns the temp directory path.
 func setupIntegrationTest(t *testing.T, mockOutput string) string {
 	t.Helper()
 
-	// Save original CommandContext and reset global flags on cleanup
+	// Save original state and reset global flags on cleanup
 	originalCommandContext := ai.CommandContext
+	originalLookPath := ai.LookPath
 	t.Cleanup(func() {
 		ai.CommandContext = originalCommandContext
+		ai.LookPath = originalLookPath
 		createName = ""
 		createDryRun = false
 	})
 
 	// Mock Claude CLI
 	ai.CommandContext = testutil.MockCommandFunc(mockOutput)
+	ai.LookPath = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil // Pretend claude is available
+	}
 
 	// Setup temp directory and working directory
 	return testutil.SetupTestDir(t)

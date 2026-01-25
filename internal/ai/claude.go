@@ -24,12 +24,16 @@ type claudeResponse struct {
 // It can be replaced in tests to mock command execution.
 var CommandContext = exec.CommandContext
 
+// LookPath is the function used to check for executable availability.
+// It can be replaced in tests to mock command availability.
+var LookPath = exec.LookPath
+
 // DefaultExtractionTimeout is the maximum time allowed for task extraction.
 const DefaultExtractionTimeout = 5 * time.Minute
 
 // IsClaudeAvailable checks if the claude command exists in PATH.
 func IsClaudeAvailable() bool {
-	_, err := exec.LookPath("claude")
+	_, err := LookPath("claude")
 	return err == nil
 }
 
