@@ -6,7 +6,9 @@
       "Skill(technical-design)",
       "Skill(technical-design-review)",
       "Skill(code-review)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(go test:*)",
+      "Bash(go build:*)"
     ]
   }
 }
