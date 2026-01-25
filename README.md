@@ -16,35 +16,64 @@ Users only review after plans are implemented.
 
 ## Status
 
-**v0.1.0** - Experimental. This is a minimal version ready for dogfooding.
+**v0.1.1** - Experimental. This is a minimal version ready for dogfooding.
 
-## Requirements
+## Prerequisites
 
-- [Claude Code CLI](https://claude.ai/code) installed and authenticated
-- Go 1.21+ (for building from source)
+- Git (repository must be initialized)
+- [Claude Code](https://claude.ai/code) installed and authenticated
 
 ## Installation
 
-> **Not yet implemented.** For now, build from source:
+```bash
+curl -fsSL https://raw.githubusercontent.com/pablasso/rafa/main/scripts/install.sh | sh
+```
+
+To install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pablasso/rafa/main/scripts/install.sh | sh -s -- -v v0.1.1
+```
+
+If you prefer to review the script before running:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pablasso/rafa/main/scripts/install.sh -o install.sh
+cat install.sh  # review the script
+sh install.sh
+```
+
+### Building from Source
 
 ```bash
 git clone https://github.com/pablasso/rafa.git
 cd rafa
-go build -o rafa ./cmd/rafa
-# Optionally move to PATH
-mv rafa /usr/local/bin/
+make build
+# Optionally install to PATH
+make install
 ```
 
-## Quick Start
+## Getting Started
+
+### Initialize Rafa
+
+In your repository root:
 
 ```bash
-# 1. Initialize rafa in your project
-mkdir -p .rafa/plans
+rafa init
+```
 
-# 2. Create a plan from a technical design
-rafa plan create docs/technical-design.md
+This creates a `.rafa/` directory to store plans and execution data.
 
-# 3. Run the plan
+### Create Your First Plan
+
+```bash
+rafa plan create docs/my-feature.md
+```
+
+### Run the Plan
+
+```bash
 rafa plan run my-feature
 ```
 
@@ -237,15 +266,33 @@ rm .rafa/plans/*-<name>/run.lock
 }
 ```
 
+## Uninstall
+
+Remove the binary:
+
+```bash
+rm $(which rafa)
+```
+
+Remove Rafa from a specific repository:
+
+```bash
+rafa deinit
+```
+
+Or manually:
+
+```bash
+rm -rf .rafa/
+```
+
 ## Not Yet Implemented
 
-- `rafa init` / `rafa deinit` - Manual `.rafa/plans/` creation for now
 - TUI with live updates - Console output only
 - Output capture to `output.log`
 - AGENTS.md suggestions post-run
 - Human input detection
 - Headless/CI mode
-- Binary releases
 
 ## Development
 
@@ -258,7 +305,29 @@ make fmt
 
 # Check formatting
 make check-fmt
+
+# Build locally
+make build
+
+# Test release process locally
+make release-dry-run
 ```
+
+## Releasing
+
+Releases are automated via GitHub Actions when a version tag is pushed.
+
+To create a new release:
+
+1. Ensure all changes are committed and tests pass (`make test`)
+2. Tag the release:
+   ```bash
+   git tag v0.1.2
+   git push origin v0.1.2
+   ```
+3. GitHub Actions will automatically build and publish the release
+
+The changelog is auto-generated from commit messages.
 
 ## License
 
