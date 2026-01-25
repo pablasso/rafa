@@ -1,4 +1,4 @@
-.PHONY: fmt check-fmt test build clean release-dry-run
+.PHONY: fmt check-fmt test build clean release-dry-run release
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -36,3 +36,15 @@ clean:
 # Test goreleaser configuration (requires goreleaser installed)
 release-dry-run:
 	goreleaser release --snapshot --clean
+
+# Release target - runs tests, creates and pushes a tag
+# Usage: make release VERSION=v0.2.0
+release:
+ifndef VERSION
+	$(error VERSION is required. Usage: make release VERSION=v0.2.0)
+endif
+	@echo "Creating release $(VERSION)..."
+	@$(MAKE) test
+	git tag $(VERSION)
+	git push origin $(VERSION)
+	@echo "Release $(VERSION) pushed. GitHub Actions will handle the rest."

@@ -16,7 +16,7 @@ Users only review after plans are implemented.
 
 ## Status
 
-**v0.1.1** - Experimental. This is a minimal version ready for dogfooding.
+**v0.2.0** - Experimental. This is a minimal version ready for dogfooding.
 
 ## Prerequisites
 
