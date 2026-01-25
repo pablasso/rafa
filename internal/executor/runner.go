@@ -75,8 +75,9 @@ func (r *ClaudeRunner) buildPrompt(task *plan.Task, planContext string, attempt,
 	sb.WriteString("## Instructions\n")
 	sb.WriteString("1. Implement the task as described\n")
 	sb.WriteString("2. Verify ALL acceptance criteria are met\n")
-	sb.WriteString("3. Commit ALL changes (implementation code AND `.rafa/` metadata) with a descriptive message\n")
-	sb.WriteString("4. Verify workspace is clean with `git status` before exiting\n\n")
+	sb.WriteString("3. Before finalizing, perform a code review of your changes. If you have a code review skill available (e.g., `/code-review`), use it to review your implementation and assess what findings are worth addressing vs. acceptable trade-offs\n")
+	sb.WriteString("4. Commit ALL changes (implementation code AND `.rafa/` metadata) with a descriptive message\n")
+	sb.WriteString("5. Verify workspace is clean with `git status` before exiting\n\n")
 
 	sb.WriteString("IMPORTANT: The workspace MUST be clean when you exit. Do not declare success unless ALL acceptance criteria are met.\n")
 
