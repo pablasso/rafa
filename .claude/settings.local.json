@@ -14,7 +14,8 @@
       "Bash(make test:*)",
       "Bash(./rafa:*)",
       "Bash(go run:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(head:*)"
     ]
   }
 }
