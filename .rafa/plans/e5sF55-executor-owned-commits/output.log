@@ -211,3 +211,36 @@ SUGGESTED_COMMIT_MESSAGE: Add getCommitMessage helper to Executor
 === Task t05, Attempt 1 ===
 Started: 2026-01-25T17:21:29-06:00
 
+Task t05 is complete. Here's a summary of what was implemented:
+
+## Summary
+
+Successfully refactored `executeTask` in `internal/executor/executor.go` so the executor owns all git commits during plan execution. Key changes:
+
+### Implementation Changes (`executor.go`)
+1. **Removed "workspace must be clean" check** after agent returns - the old retry loop that checked for uncommitted changes is gone
+2. **Added git.CommitAll call after task success** - commits both implementation and metadata atomically
+3. **Commit message** obtained via `getCommitMessage` helper (uses agent suggestion or default `[rafa] Complete task <id>: <title>`)
+4. **Added workspace verification** after commit using `git.GetStatus` to catch git hooks modifying files
+5. **Skip commits when `allowDirty` is true**
+6. **On task failure**, workspace is left dirty for retry/inspection (no commit made)
+7. **Added `filterOutLockFile` helper** to exclude `run.lock` from dirty workspace check (since lock is acquired before check)
+8. **Added final commit at plan completion** for remaining metadata
+
+### Test Changes (`executor_test.go`)
+Added three integration tests:
+- `TestExecutor_CommitsImplementationAndMetadata` - verifies executor commits both implementation files and metadata together
+- `TestExecutor_FailedTaskLeavesWorkspaceDirty` - verifies failed tasks leave workspace dirty
+- `TestExecutor_AllowDirtySkipsCommits` - verifies `--allow-dirty` skips all commits
+
+All acceptance criteria met:
+- ✅ `make test` passes
+- ✅ `make fmt` passes  
+- ✅ Workspace is clean
+
+=== Task t05: SUCCESS ===
+
+
+=== Task t06, Attempt 1 ===
+Started: 2026-01-25T17:27:16-06:00
+

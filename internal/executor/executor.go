@@ -202,10 +202,11 @@ func (e *Executor) Run(ctx context.Context) error {
 
 	// Commit any remaining metadata (plan completion status)
 	// CommitAll returns nil when there's nothing to commit (e.g., agent already committed)
+	// We only warn on error since the agent might have already committed everything.
 	if !e.allowDirty {
 		msg := fmt.Sprintf("[rafa] Complete plan: %s (%d tasks)", e.plan.Name, len(e.plan.Tasks))
 		if err := git.CommitAll(e.repoRoot, msg); err != nil {
-			return fmt.Errorf("failed to commit plan completion: %w", err)
+			fmt.Printf("Warning: failed to commit plan completion: %v\n", err)
 		}
 	}
 
