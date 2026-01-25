@@ -12,6 +12,10 @@ You write the design. Rafa handles the execution.
 
 Fresh context on every retry. Agents commit after each completed task. Progress is tracked. You can walk away.
 
+## Status
+
+Experimental. This is a minimal version ready for dogfooding.
+
 ## Requirements
 
 - [Claude Code CLI](https://claude.ai/code) installed and authenticated
