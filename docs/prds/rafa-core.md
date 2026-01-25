@@ -25,8 +25,8 @@ Developers need a way to:
 
 1. **Install Rafa**: User runs `curl -fsSL https://rafa.dev/install.sh | sh` (or similar) to install the binary
 2. **Initialize repo**: User runs `rafa init` in their repo root to create `.rafa/` folder
-3. **Create plan**: User runs `rafa convert <design.md>` to generate a JSON plan from their technical design or PRD
-4. **Start run**: User runs `rafa run <plan-name>` to begin executing tasks
+3. **Create plan**: User runs `rafa plan create <design.md>` to generate a JSON plan from their technical design or PRD
+4. **Start run**: User runs `rafa plan run <name>` to begin executing tasks
 5. **Monitor**: TUI displays current task, progress, and elapsed time. User can walk away.
 6. **Completion**: Rafa finishes all tasks (or stops at max attempts). User reviews git history and progress file.
 7. **Iterate**: User can run another plan, or resume a failed plan after fixing issues
@@ -38,16 +38,18 @@ Developers need a way to:
 - [ ] Install via curl script: `curl -fsSL https://rafa.dev/install.sh | sh` (or similar one-liner)
 - [ ] `rafa init` - Initialize Rafa in a repository (creates `.rafa/` folder)
 - [ ] `rafa deinit` - Remove Rafa from a repository (removes `.rafa/` folder)
+  - Shows what will be deleted (plan count, total size)
+  - Requires confirmation before proceeding
 - [ ] Rafa stores all metadata in `.rafa/` folder at repo root
 
 ### Plan Management
 
-- [ ] `rafa convert <file>` - Convert a technical design or PRD (markdown) into a JSON plan file
+- [ ] `rafa plan create <file>` - Convert a technical design or PRD (markdown) into a JSON plan file
   - Uses AI to extract discrete tasks from the document
   - Each task sized to use ~50-60% of agent context
   - Each task must have clear, verifiable acceptance criteria
   - Creates a self-contained plan folder: `.rafa/plans/<id>-<plan-name>/`
-  - On success: displays summary (plan ID, name, task count) and instructs user to run `rafa run <plan-name>`
+  - On success: displays summary (plan ID, name, task count) and instructs user to run `rafa plan run <name>`
 - [ ] Each plan folder contains all related files:
   ```
   .rafa/plans/xK9pQ2-feature-auth/
@@ -88,7 +90,7 @@ JSON format inspired by Anthropic's long-running agents article. Uses short IDs 
 
 ### Execution
 
-- [ ] `rafa run <plan-name>` - Start or resume executing a plan
+- [ ] `rafa plan run <name>` - Start or resume executing a plan
   - Automatically resumes from the first pending task (skips completed tasks)
   - No manual task selection; always continues in sequence
 - [ ] One agent, one task, one loop at a time (never parallel)
@@ -142,6 +144,35 @@ JSON format inspired by Anthropic's long-running agents article. Uses short IDs 
 - [ ] At end of a completed run, suggest additions to AGENTS.md based on observed patterns
 - [ ] Never auto-modify AGENTS.md (suggestions only, user decides)
 
+### CLI Help
+
+```
+$ rafa -h
+Rafa - Task loop runner for AI coding agents
+
+Usage:
+  rafa <command> [arguments]
+
+Commands:
+  init      Initialize Rafa in the current repository
+  deinit    Remove Rafa from the current repository
+  plan      Manage and execute plans
+
+Run "rafa <command> -h" for more information about a command.
+```
+
+```
+$ rafa plan -h
+Manage and execute plans
+
+Usage:
+  rafa plan <command> [arguments]
+
+Commands:
+  create <file>   Create a plan from a technical design or PRD
+  run <name>      Run a plan (resumes from first pending task)
+```
+
 ### Constraints
 
 - [ ] Claude Code only (no other AI coding tools)
@@ -154,8 +185,9 @@ JSON format inspired by Anthropic's long-running agents article. Uses short IDs 
 | Claude Code missing | "Error: Claude Code CLI not found. Install it first: https://claude.ai/code" |
 | Claude Code not authenticated | "Error: Claude Code not authenticated. Run `claude auth` first." |
 | Not initialized | "Run `rafa init` to initialize this repository." |
-| No plans | "No plans found. Run `rafa convert <design.md>` to create one." |
-| Convert success | "Plan created: xK9pQ2-feature-auth (8 tasks). Run `rafa run feature-auth` to start." |
+| Deinit confirmation | "This will delete .rafa/ (3 plans, 12MB). Continue? [y/N]" |
+| No plans | "No plans found. Run `rafa plan create <design.md>` to create one." |
+| Create success | "Plan created: xK9pQ2-feature-auth (8 tasks). Run `rafa plan run feature-auth` to start." |
 | Plan loaded | Plan summary: name, description, task count, status |
 | Resuming | "Resuming from task 3/8..." (skips completed tasks) |
 | Running | TUI with progress: "Task 3/8: Implement user auth [Attempt 1] - 00:12:34" |
@@ -163,7 +195,7 @@ JSON format inspired by Anthropic's long-running agents article. Uses short IDs 
 | Human input needed | "Task t03 'Implement user auth' requires human input. Complete manually and set status to 'completed' in plan.json." |
 | Max attempts | "Task 3/8 failed after 10 attempts. Human intervention required." |
 | Completed | "Plan complete: 8/8 tasks succeeded in 01:23:45. See suggested AGENTS.md additions." |
-| Cancelled | "Run cancelled. Progress saved. Resume with `rafa run <plan-name>`." |
+| Cancelled | "Run cancelled. Progress saved. Resume with `rafa plan run <name>`." |
 
 ## Scope
 
@@ -205,9 +237,9 @@ JSON format inspired by Anthropic's long-running agents article. Uses short IDs 
 
 ## Future Enhancements
 
-- **`rafa plans`**: List plans (default: unfinished only, `--all` flag for complete history)
-- **`rafa logs <plan-name>`**: Tail the agent output log for a plan
-- **`rafa status <plan-name>`**: Debug view of plan execution progress
+- **`rafa plan list`**: List plans (default: unfinished only, `--all` flag for complete history)
+- **`rafa plan logs <name>`**: Tail the agent output log for a plan
+- **`rafa plan status <name>`**: Debug view of plan execution progress
 - **Headless mode**: Run without TUI for CI/CD integration (stream logs to stdout, exit codes for success/failure)
 - **Specification validator**: Tool to analyze if acceptance criteria are strong enough before running
 - **`rafa doctor`**: Check if recommended harnesses are set up (tests, linters, typechecks, browser MCPs)
