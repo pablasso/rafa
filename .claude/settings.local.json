@@ -2,8 +2,11 @@
   "permissions": {
     "allow": [
       "Skill(prd)",
-      "WebFetch(domain:github.com)",
-      "Skill(prd-review)"
+      "Skill(prd-review)",
+      "Skill(technical-design)",
+      "Skill(technical-design-review)",
+      "Skill(code-review)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
