@@ -8,9 +8,11 @@ Rafa helps you implement a technical design by running AI agents in a loop until
 
 ## Philosophy
 
-You write the design. Rafa handles the execution.
+You own the design. Rafa owns the execution.
 
-Fresh context on every retry. Agents commit after each completed task. Progress is tracked. You can walk away.
+Fresh context on every task. Fresh context on every retry. Agents commit after each completed task. Progress is tracked. You can walk away.
+
+Users only review after plans are implemented.
 
 ## Status
 
