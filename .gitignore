@@ -1,0 +1,6 @@
+# Compiled binaries
+rafa
+*.exe
+
+# Test coverage
+*.out
