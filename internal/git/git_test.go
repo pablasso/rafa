@@ -38,6 +38,7 @@ func setupTestRepo(t *testing.T) string {
 }
 
 func TestIsClean(t *testing.T) {
+	t.Parallel()
 	t.Run("empty repo is clean", func(t *testing.T) {
 		t.Parallel()
 		dir := setupTestRepo(t)
@@ -147,6 +148,7 @@ func TestIsClean(t *testing.T) {
 }
 
 func TestGetDirtyFiles(t *testing.T) {
+	t.Parallel()
 	t.Run("empty repo has no dirty files", func(t *testing.T) {
 		t.Parallel()
 		dir := setupTestRepo(t)
@@ -243,6 +245,7 @@ func TestGetDirtyFiles(t *testing.T) {
 }
 
 func TestGetStatus(t *testing.T) {
+	t.Parallel()
 	t.Run("returns combined status", func(t *testing.T) {
 		t.Parallel()
 		dir := setupTestRepo(t)
