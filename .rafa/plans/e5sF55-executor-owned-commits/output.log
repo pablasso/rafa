@@ -2,3 +2,37 @@
 === Task t01, Attempt 1 ===
 Started: 2026-01-25T17:03:11-06:00
 
+Task completed successfully. Here's a summary of what was done:
+
+## Summary
+
+Implemented `CommitAll` function in `internal/git/git.go:74-107` with the following behavior:
+- **Signature**: `func CommitAll(dir string, message string) error`
+- Stages all changes using `git add -A`
+- Returns `nil` when there are no changes to commit (detected via `git diff --cached --quiet`)
+- Returns wrapped errors if `git add` or `git commit` fails
+
+Added comprehensive unit tests in `internal/git/git_test.go:285-421` covering:
+1. Commits changes successfully (multiple files)
+2. Returns nil when nothing to commit
+3. Returns error for invalid directory
+4. Commits both staged and unstaged changes
+5. Commits modified tracked files
+
+All acceptance criteria verified:
+- ✅ CommitAll function exists with correct signature
+- ✅ Function stages all changes using `git add -A`
+- ✅ Function returns nil when there are no changes
+- ✅ Function returns wrapped error if git add fails
+- ✅ Function returns wrapped error if git commit fails
+- ✅ Unit tests cover all required scenarios
+- ✅ `make test` passes
+- ✅ `make fmt` passes
+- ✅ Workspace is clean
+
+=== Task t01: FAILED ===
+
+
+=== Task t01, Attempt 2 ===
+Started: 2026-01-25T17:05:45-06:00
+
