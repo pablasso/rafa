@@ -13,4 +13,5 @@ var PlanCmd = &cobra.Command{
 
 func init() {
 	PlanCmd.AddCommand(createCmd)
+	PlanCmd.AddCommand(runCmd)
 }
