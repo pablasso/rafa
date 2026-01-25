@@ -14,7 +14,7 @@ Fresh context on every retry. Agents commit after each completed task. Progress 
 
 ## Status
 
-Experimental. This is a minimal version ready for dogfooding.
+**v0.1.0** - Experimental. This is a minimal version ready for dogfooding.
 
 ## Requirements
 
