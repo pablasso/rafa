@@ -39,6 +39,7 @@ func setupTestRepo(t *testing.T) string {
 
 func TestIsClean(t *testing.T) {
 	t.Run("empty repo is clean", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		clean, err := IsClean(dir)
@@ -51,6 +52,7 @@ func TestIsClean(t *testing.T) {
 	})
 
 	t.Run("untracked file makes repo dirty", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		// Create untracked file
@@ -68,6 +70,7 @@ func TestIsClean(t *testing.T) {
 	})
 
 	t.Run("staged file makes repo dirty", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		// Create and stage file
@@ -90,6 +93,7 @@ func TestIsClean(t *testing.T) {
 	})
 
 	t.Run("modified tracked file makes repo dirty", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		// Create, stage, and commit file
@@ -118,6 +122,7 @@ func TestIsClean(t *testing.T) {
 	})
 
 	t.Run("committed changes leave repo clean", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		// Create, stage, and commit file
@@ -143,6 +148,7 @@ func TestIsClean(t *testing.T) {
 
 func TestGetDirtyFiles(t *testing.T) {
 	t.Run("empty repo has no dirty files", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		files, err := GetDirtyFiles(dir)
@@ -155,6 +161,7 @@ func TestGetDirtyFiles(t *testing.T) {
 	})
 
 	t.Run("returns untracked files", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		if err := os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("content"), 0644); err != nil {
@@ -171,6 +178,7 @@ func TestGetDirtyFiles(t *testing.T) {
 	})
 
 	t.Run("returns multiple dirty files", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		// Create multiple files
@@ -189,6 +197,7 @@ func TestGetDirtyFiles(t *testing.T) {
 	})
 
 	t.Run("returns staged files", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		if err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("content"), 0644); err != nil {
@@ -208,6 +217,7 @@ func TestGetDirtyFiles(t *testing.T) {
 	})
 
 	t.Run("returns modified tracked files", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		// Create, stage, and commit file
@@ -234,6 +244,7 @@ func TestGetDirtyFiles(t *testing.T) {
 
 func TestGetStatus(t *testing.T) {
 	t.Run("returns combined status", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		// Create untracked file
@@ -252,6 +263,7 @@ func TestGetStatus(t *testing.T) {
 	})
 
 	t.Run("clean repo returns empty files", func(t *testing.T) {
+		t.Parallel()
 		dir := setupTestRepo(t)
 
 		status, err := GetStatus(dir)
