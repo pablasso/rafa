@@ -11,6 +11,10 @@ import (
 	"github.com/pablasso/rafa/internal/plan"
 )
 
+// CommandContext is the function used to create exec.Cmd instances.
+// It can be replaced in tests to mock command execution.
+var CommandContext = exec.CommandContext
+
 // DefaultExtractionTimeout is the maximum time allowed for task extraction.
 const DefaultExtractionTimeout = 5 * time.Minute
 
@@ -40,7 +44,7 @@ func ExtractTasks(ctx context.Context, designContent string) (*plan.TaskExtracti
 	// Execute claude CLI with the prompt.
 	// --dangerously-skip-permissions is required for non-interactive use. This is safe here
 	// because we only use the -p flag with a controlled prompt (no file access or tool use).
-	cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--output-format", "json", "--dangerously-skip-permissions")
+	cmd := CommandContext(ctx, "claude", "-p", prompt, "--output-format", "json", "--dangerously-skip-permissions")
 	output, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
