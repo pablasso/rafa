@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pablasso/rafa/internal/display"
 	"github.com/pablasso/rafa/internal/git"
 	"github.com/pablasso/rafa/internal/plan"
 )
@@ -15,7 +16,7 @@ const MaxAttempts = 5
 
 // Runner defines the interface for executing tasks.
 type Runner interface {
-	Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error
+	Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error
 }
 
 // Executor orchestrates the execution of plan tasks.
@@ -29,6 +30,7 @@ type Executor struct {
 	startTime  time.Time
 	allowDirty bool
 	saveHook   func() // Optional hook called after each plan save (for testing)
+	display    *display.Display
 }
 
 // New creates a new Executor for the given plan directory and plan.
@@ -61,6 +63,12 @@ func (e *Executor) WithAllowDirty(allow bool) *Executor {
 // WithSaveHook sets an optional hook called after each plan save (for testing).
 func (e *Executor) WithSaveHook(hook func()) *Executor {
 	e.saveHook = hook
+	return e
+}
+
+// WithDisplay sets the display for status updates.
+func (e *Executor) WithDisplay(d *display.Display) *Executor {
+	e.display = d
 	return e
 }
 
@@ -122,6 +130,17 @@ func (e *Executor) Run(ctx context.Context) error {
 	// Build plan context once
 	planContext := e.buildPlanContext()
 
+	// Create output capture for logging
+	output, err := NewOutputCapture(e.planDir)
+	if err != nil {
+		// Output capture is non-critical, log warning and continue
+		fmt.Printf("Warning: failed to create output capture: %v\n", err)
+		output = nil
+	}
+	if output != nil {
+		defer output.Close()
+	}
+
 	// Execute tasks from first pending
 	for i := firstIdx; i < len(e.plan.Tasks); i++ {
 		task := &e.plan.Tasks[i]
@@ -131,7 +150,7 @@ func (e *Executor) Run(ctx context.Context) error {
 			continue
 		}
 
-		err := e.executeTask(ctx, task, i, planContext)
+		err := e.executeTask(ctx, task, i, planContext, output)
 		if err != nil {
 			if ctx.Err() != nil {
 				// Context cancelled - reset task to pending
@@ -142,6 +161,9 @@ func (e *Executor) Run(ctx context.Context) error {
 					e.notifySave()
 				}
 				e.logger.PlanCancelled(task.ID)
+				if e.display != nil {
+					e.display.UpdateStatus(display.StatusCancelled)
+				}
 				return nil
 			}
 
@@ -172,7 +194,13 @@ func (e *Executor) Run(ctx context.Context) error {
 }
 
 // executeTask runs a single task with retry logic.
-func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, planContext string) error {
+func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, planContext string, output *OutputCapture) error {
+	// Update display with task info at the start
+	if e.display != nil {
+		e.display.UpdateTask(idx+1, len(e.plan.Tasks), task.ID, task.Title)
+		e.display.UpdateStatus(display.StatusRunning)
+	}
+
 	for task.Attempts < MaxAttempts {
 		// Check for cancellation before starting
 		if ctx.Err() != nil {
@@ -187,6 +215,11 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		}
 		e.notifySave()
 
+		// Update display with attempt info
+		if e.display != nil {
+			e.display.UpdateAttempt(task.Attempts, MaxAttempts)
+		}
+
 		// Print progress
 		fmt.Printf("\nTask %d/%d: %s [Attempt %d/%d]\n",
 			idx+1, len(e.plan.Tasks), task.Title, task.Attempts, MaxAttempts)
@@ -196,8 +229,13 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			return fmt.Errorf("failed to log task started: %w", err)
 		}
 
+		// Write task header to output log
+		if output != nil {
+			output.WriteTaskHeader(task.ID, task.Attempts)
+		}
+
 		// Run the task
-		err := e.runner.Run(ctx, task, planContext, task.Attempts, MaxAttempts)
+		err := e.runner.Run(ctx, task, planContext, task.Attempts, MaxAttempts, output)
 		if err == nil {
 			// Verify workspace is clean before marking task complete
 			if !e.allowDirty {
@@ -208,6 +246,9 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 				if !status.Clean {
 					e.logger.TaskFailed(task.ID, task.Attempts)
 					e.printUncommittedChanges(status.Files)
+					if output != nil {
+						output.WriteTaskFooter(task.ID, false)
+					}
 					continue // retry - agent sees this output
 				}
 			}
@@ -221,6 +262,12 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			if logErr := e.logger.TaskCompleted(task.ID); logErr != nil {
 				return fmt.Errorf("failed to log task completed: %w", logErr)
 			}
+			if output != nil {
+				output.WriteTaskFooter(task.ID, true)
+			}
+			if e.display != nil {
+				e.display.UpdateStatus(display.StatusCompleted)
+			}
 			return nil
 		}
 
@@ -229,6 +276,9 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			fmt.Printf("Warning: failed to log task failed: %v\n", logErr)
 		}
 		fmt.Printf("Task failed: %v\n", err)
+		if output != nil {
+			output.WriteTaskFooter(task.ID, false)
+		}
 
 		// Check if max attempts reached
 		if task.Attempts >= MaxAttempts {
@@ -237,6 +287,9 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 				fmt.Printf("Warning: failed to save plan: %v\n", saveErr)
 			} else {
 				e.notifySave()
+			}
+			if e.display != nil {
+				e.display.UpdateStatus(display.StatusFailed)
 			}
 			return fmt.Errorf("max attempts reached")
 		}

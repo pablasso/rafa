@@ -159,7 +159,7 @@ func TestClaudeRunner_Run_Success(t *testing.T) {
 		AcceptanceCriteria: []string{"Criterion 1"},
 	}
 
-	err := runner.Run(context.Background(), task, "context", 1, 3)
+	err := runner.Run(context.Background(), task, "context", 1, 3, nil)
 	if err != nil {
 		t.Errorf("Run() returned error: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestClaudeRunner_Run_Failure(t *testing.T) {
 		AcceptanceCriteria: []string{"Criterion 1"},
 	}
 
-	err := runner.Run(context.Background(), task, "context", 1, 3)
+	err := runner.Run(context.Background(), task, "context", 1, 3, nil)
 	if err == nil {
 		t.Error("Run() should return error on non-zero exit")
 	}
@@ -219,7 +219,7 @@ func TestClaudeRunner_Run_Cancellation(t *testing.T) {
 		cancel()
 	}()
 
-	err := runner.Run(ctx, task, "context", 1, 3)
+	err := runner.Run(ctx, task, "context", 1, 3, nil)
 	if err == nil {
 		t.Error("Run() should return error on cancellation")
 	}

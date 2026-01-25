@@ -13,8 +13,41 @@ import (
 	"time"
 
 	"github.com/pablasso/rafa/internal/plan"
-	"github.com/pablasso/rafa/internal/testutil"
 )
+
+// mockRunnerCall records the arguments of a mockRunner.Run call.
+type mockRunnerCall struct {
+	Task        *plan.Task
+	PlanContext string
+	Attempt     int
+	MaxAttempts int
+	Output      OutputWriter
+}
+
+// mockRunner is a test double for Runner.
+type mockRunner struct {
+	Responses []error
+	CallCount int
+	Calls     []mockRunnerCall
+}
+
+// Run records the call and returns the next error from Responses.
+func (m *mockRunner) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
+	m.Calls = append(m.Calls, mockRunnerCall{
+		Task:        task,
+		PlanContext: planContext,
+		Attempt:     attempt,
+		MaxAttempts: maxAttempts,
+		Output:      output,
+	})
+
+	var err error
+	if m.CallCount < len(m.Responses) {
+		err = m.Responses[m.CallCount]
+	}
+	m.CallCount++
+	return err
+}
 
 func createTestPlan(tasks []plan.Task) *plan.Plan {
 	return &plan.Plan{
@@ -49,7 +82,7 @@ func TestExecutor_AllTasksComplete(t *testing.T) {
 	})
 	planDir := createTestPlanDir(t, p)
 
-	mockRunner := &testutil.MockRunner{}
+	mockRunner := &mockRunner{}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
@@ -67,7 +100,7 @@ func TestExecutor_NoPendingTasks(t *testing.T) {
 	p := createTestPlan([]plan.Task{})
 	planDir := createTestPlanDir(t, p)
 
-	mockRunner := &testutil.MockRunner{}
+	mockRunner := &mockRunner{}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
@@ -86,7 +119,7 @@ func TestExecutor_RunsSingleTask(t *testing.T) {
 	})
 	planDir := createTestPlanDir(t, p)
 
-	mockRunner := &testutil.MockRunner{Responses: []error{nil}}
+	mockRunner := &mockRunner{Responses: []error{nil}}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
@@ -113,7 +146,7 @@ func TestExecutor_RunsMultipleTasks(t *testing.T) {
 	})
 	planDir := createTestPlanDir(t, p)
 
-	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil, nil}}
+	mockRunner := &mockRunner{Responses: []error{nil, nil, nil}}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
@@ -148,7 +181,7 @@ func TestExecutor_RetriesOnFailure(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	// Fail twice, then succeed
-	mockRunner := &testutil.MockRunner{
+	mockRunner := &mockRunner{
 		Responses: []error{
 			errors.New("fail 1"),
 			errors.New("fail 2"),
@@ -184,7 +217,7 @@ func TestExecutor_StopsAfterMaxAttempts(t *testing.T) {
 	for i := range responses {
 		responses[i] = errors.New("fail")
 	}
-	mockRunner := &testutil.MockRunner{Responses: responses}
+	mockRunner := &mockRunner{Responses: responses}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
@@ -215,7 +248,7 @@ func TestExecutor_ResumesFromPending(t *testing.T) {
 	})
 	planDir := createTestPlanDir(t, p)
 
-	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil}}
+	mockRunner := &mockRunner{Responses: []error{nil, nil}}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
@@ -245,7 +278,7 @@ func TestExecutor_CancellationHandled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	mockRunner := &testutil.MockRunner{}
+	mockRunner := &mockRunner{}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(ctx)
@@ -266,7 +299,7 @@ func TestExecutor_CancellationResetsTaskStatus(t *testing.T) {
 
 	// Create executor with a runner that cancels context during execution
 	executor := New(planDir, p).WithAllowDirty(true)
-	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error {
+	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
 		cancel() // Cancel context during task execution
 		return context.Canceled
 	})
@@ -299,7 +332,7 @@ func TestExecutor_AcquiresLock(t *testing.T) {
 	lockAcquired := false
 
 	// Mock runner that checks for lock file
-	mockRunner := &testutil.MockRunner{
+	mockRunner := &mockRunner{
 		Responses: []error{nil},
 	}
 
@@ -307,11 +340,11 @@ func TestExecutor_AcquiresLock(t *testing.T) {
 
 	// Override runner to check for lock during execution
 	originalRunner := executor.runner
-	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error {
+	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
 		if _, err := os.Stat(lockPath); err == nil {
 			lockAcquired = true
 		}
-		return originalRunner.Run(ctx, task, planContext, attempt, maxAttempts)
+		return originalRunner.Run(ctx, task, planContext, attempt, maxAttempts, output)
 	})
 
 	err := executor.Run(context.Background())
@@ -330,7 +363,7 @@ func TestExecutor_ReleasesLockOnComplete(t *testing.T) {
 	})
 	planDir := createTestPlanDir(t, p)
 
-	mockRunner := &testutil.MockRunner{Responses: []error{nil}}
+	mockRunner := &mockRunner{Responses: []error{nil}}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
@@ -354,7 +387,7 @@ func TestExecutor_ReleasesLockOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	mockRunner := &testutil.MockRunner{}
+	mockRunner := &mockRunner{}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	_ = executor.Run(ctx)
@@ -376,7 +409,7 @@ func TestExecutor_ReleasesLockOnFailure(t *testing.T) {
 	for i := range responses {
 		responses[i] = errors.New("fail")
 	}
-	mockRunner := &testutil.MockRunner{Responses: responses}
+	mockRunner := &mockRunner{Responses: responses}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	_ = executor.Run(context.Background())
@@ -401,7 +434,7 @@ func TestExecutor_ConcurrentRunBlocked(t *testing.T) {
 		t.Fatalf("failed to create lock file: %v", err)
 	}
 
-	mockRunner := &testutil.MockRunner{}
+	mockRunner := &mockRunner{}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
@@ -422,7 +455,7 @@ func TestExecutor_SavesStateAfterEachTask(t *testing.T) {
 	planDir := createTestPlanDir(t, p)
 
 	saveCount := 0
-	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil}}
+	mockRunner := &mockRunner{Responses: []error{nil, nil}}
 	executor := New(planDir, p).
 		WithRunner(mockRunner).
 		WithAllowDirty(true).
@@ -443,7 +476,7 @@ func TestExecutor_LogsProgressEvents(t *testing.T) {
 	})
 	planDir := createTestPlanDir(t, p)
 
-	mockRunner := &testutil.MockRunner{Responses: []error{nil}}
+	mockRunner := &mockRunner{Responses: []error{nil}}
 	executor := New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
 
 	err := executor.Run(context.Background())
@@ -556,8 +589,8 @@ func TestExecutor_CountCompleted(t *testing.T) {
 }
 
 // runnerFunc is a function adapter for the Runner interface.
-type runnerFunc func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error
+type runnerFunc func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error
 
-func (f runnerFunc) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error {
-	return f(ctx, task, planContext, attempt, maxAttempts)
+func (f runnerFunc) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
+	return f(ctx, task, planContext, attempt, maxAttempts, output)
 }

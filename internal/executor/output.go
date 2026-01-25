@@ -10,6 +10,13 @@ import (
 
 const outputLogFileName = "output.log"
 
+// OutputWriter provides writers for capturing command output.
+// This interface is used by Runner to allow for different output strategies.
+type OutputWriter interface {
+	Stdout() io.Writer
+	Stderr() io.Writer
+}
+
 // OutputCapture manages output to both terminal and log file.
 type OutputCapture struct {
 	logFile  *os.File

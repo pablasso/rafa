@@ -13,6 +13,17 @@ import (
 	"github.com/pablasso/rafa/internal/testutil"
 )
 
+// mockRunnerAdapter wraps testutil.MockRunner to implement executor.Runner.
+type mockRunnerAdapter struct {
+	*testutil.MockRunner
+}
+
+func (a *mockRunnerAdapter) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output executor.OutputWriter) error {
+	// Convert executor.OutputWriter to testutil.OutputWriter
+	// They have the same methods, so we can pass it directly
+	return a.MockRunner.Run(ctx, task, planContext, attempt, maxAttempts, output)
+}
+
 func createRunTestPlan(name string, tasks []plan.Task) *plan.Plan {
 	return &plan.Plan{
 		ID:          "abc123",
@@ -56,7 +67,7 @@ func TestRunPlanE2E(t *testing.T) {
 	planDir := setupRunIntegrationTest(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil}}
-	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
+	exec := executor.New(planDir, p).WithRunner(&mockRunnerAdapter{mockRunner}).WithAllowDirty(true)
 
 	err := exec.Run(context.Background())
 
@@ -97,7 +108,7 @@ func TestRunPlanResumeInterrupted(t *testing.T) {
 	planDir := setupRunIntegrationTest(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil, nil}}
-	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
+	exec := executor.New(planDir, p).WithRunner(&mockRunnerAdapter{mockRunner}).WithAllowDirty(true)
 
 	err := exec.Run(context.Background())
 
@@ -132,7 +143,7 @@ func TestRunPlanFailureAndRetry(t *testing.T) {
 			nil,
 		},
 	}
-	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
+	exec := executor.New(planDir, p).WithRunner(&mockRunnerAdapter{mockRunner}).WithAllowDirty(true)
 
 	err := exec.Run(context.Background())
 
@@ -169,7 +180,7 @@ func TestRunPlanResumeFailedPlan(t *testing.T) {
 	planDir := setupRunIntegrationTest(t, p)
 
 	mockRunner := &testutil.MockRunner{Responses: []error{nil}}
-	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
+	exec := executor.New(planDir, p).WithRunner(&mockRunnerAdapter{mockRunner}).WithAllowDirty(true)
 
 	err := exec.Run(context.Background())
 
@@ -203,7 +214,7 @@ func TestRunPlanCancellation(t *testing.T) {
 	cancel() // Cancel immediately
 
 	mockRunner := &testutil.MockRunner{}
-	exec := executor.New(planDir, p).WithRunner(mockRunner).WithAllowDirty(true)
+	exec := executor.New(planDir, p).WithRunner(&mockRunnerAdapter{mockRunner}).WithAllowDirty(true)
 
 	err := exec.Run(ctx)
 

@@ -19,7 +19,7 @@ func NewClaudeRunner() *ClaudeRunner {
 }
 
 // Run executes a single task via Claude Code CLI.
-func (r *ClaudeRunner) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error {
+func (r *ClaudeRunner) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
 	prompt := r.buildPrompt(task, planContext, attempt, maxAttempts)
 
 	cmd := ai.CommandContext(ctx, "claude",
@@ -27,9 +27,14 @@ func (r *ClaudeRunner) Run(ctx context.Context, task *plan.Task, planContext str
 		"--dangerously-skip-permissions",
 	)
 
-	// Stream output to stdout/stderr for visibility
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// Use OutputWriter if provided, otherwise fall back to os.Stdout/os.Stderr
+	if output != nil {
+		cmd.Stdout = output.Stdout()
+		cmd.Stderr = output.Stderr()
+	} else {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 
 	err := cmd.Run()
 	if err != nil {

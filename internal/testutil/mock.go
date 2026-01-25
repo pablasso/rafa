@@ -4,6 +4,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,15 +68,26 @@ func SetupTestDir(t *testing.T) string {
 	return tmpDir
 }
 
+// OutputWriter provides writers for capturing command output.
+// This interface matches executor.OutputWriter.
+type OutputWriter interface {
+	Stdout() io.Writer
+	Stderr() io.Writer
+}
+
 // MockRunnerCall records the arguments of a MockRunner.Run call.
 type MockRunnerCall struct {
 	Task        *plan.Task
 	PlanContext string
 	Attempt     int
 	MaxAttempts int
+	Output      OutputWriter
 }
 
 // MockRunner is a test double for executor.Runner.
+// Note: This type must be adapted when used with executor.Runner
+// since the OutputWriter interfaces are structurally equivalent but
+// defined in different packages.
 type MockRunner struct {
 	Responses []error
 	CallCount int
@@ -83,12 +95,13 @@ type MockRunner struct {
 }
 
 // Run records the call and returns the next error from Responses.
-func (m *MockRunner) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int) error {
+func (m *MockRunner) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
 	m.Calls = append(m.Calls, MockRunnerCall{
 		Task:        task,
 		PlanContext: planContext,
 		Attempt:     attempt,
 		MaxAttempts: maxAttempts,
+		Output:      output,
 	})
 
 	var err error
