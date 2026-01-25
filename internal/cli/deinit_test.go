@@ -49,7 +49,7 @@ func TestRunDeinit(t *testing.T) {
 		}
 	})
 
-	t.Run("deinit with force removes directory", func(t *testing.T) {
+	t.Run("deinit with force removes directory and updates gitignore", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		originalWd, _ := os.Getwd()
 		os.Chdir(tmpDir)
@@ -74,6 +74,11 @@ func TestRunDeinit(t *testing.T) {
 			t.Fatalf("failed to create test file: %v", err)
 		}
 
+		// Create .gitignore with rafa entry and another entry
+		if err := os.WriteFile(".gitignore", []byte("other-entry\n.rafa/**/*.lock\n"), 0644); err != nil {
+			t.Fatalf("failed to create .gitignore: %v", err)
+		}
+
 		// Set force flag
 		oldForce := deinitForce
 		deinitForce = true
@@ -90,6 +95,15 @@ func TestRunDeinit(t *testing.T) {
 			t.Error("expected .rafa directory to be removed")
 		} else if !os.IsNotExist(err) {
 			t.Errorf("unexpected error checking .rafa: %v", err)
+		}
+
+		// Verify .gitignore no longer contains rafa entry
+		content, err := os.ReadFile(".gitignore")
+		if err != nil {
+			t.Fatalf("expected .gitignore to still exist: %v", err)
+		}
+		if string(content) != "other-entry\n" {
+			t.Errorf("expected gitignore to have rafa entry removed, got %q", string(content))
 		}
 	})
 }

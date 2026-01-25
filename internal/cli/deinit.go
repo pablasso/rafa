@@ -63,6 +63,11 @@ func runDeinit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to remove .rafa/: %w", err)
 	}
 
+	// Remove lock file pattern from .gitignore
+	if err := removeFromGitignore(gitignoreEntry); err != nil {
+		return fmt.Errorf("failed to update .gitignore: %w", err)
+	}
+
 	fmt.Println("Rafa has been removed from this repository.")
 	return nil
 }
