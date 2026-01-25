@@ -23,8 +23,8 @@ var initCmd = &cobra.Command{
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	// Check prerequisites first
-	if err := checkPrerequisites(); err != nil {
+	// Check prerequisites with progress feedback
+	if err := checkPrerequisitesWithProgress(); err != nil {
 		return err
 	}
 

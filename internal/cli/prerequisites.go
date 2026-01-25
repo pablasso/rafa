@@ -34,6 +34,26 @@ func checkPrerequisites() error {
 	return nil
 }
 
+// checkPrerequisitesWithProgress validates prerequisites while printing status messages.
+// Use this for commands like init where user feedback is important.
+func checkPrerequisitesWithProgress() error {
+	fmt.Print("Checking git repository... ")
+	if err := checkGitRepo(); err != nil {
+		fmt.Println("failed")
+		return err
+	}
+	fmt.Println("done")
+
+	fmt.Print("Checking Claude Code authentication... ")
+	if err := checkClaudeCode(); err != nil {
+		fmt.Println("failed")
+		return err
+	}
+	fmt.Println("done")
+
+	return nil
+}
+
 // checkGitRepo verifies we're in a git repository.
 func checkGitRepo() error {
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
