@@ -799,3 +799,195 @@ Plan preview (dry run - nothing saved):
 
 To create this plan, run without --dry-run.
 ```
+
+---
+
+## Implementation Tasks
+
+Tasks are ordered by dependency. Each task is scoped for a single agent session.
+
+### Task 1: Project Setup
+
+Set up the Go project structure with module initialization and dependencies.
+
+**Description:**
+Initialize a new Go module for the rafa CLI. Create the directory structure as specified in the design. Add Cobra as a dependency. Create a minimal `main.go` that prints "rafa" when run.
+
+**Acceptance Criteria:**
+- `go.mod` exists with module name `github.com/pablasso/rafa` (or appropriate path)
+- `go.sum` exists with Cobra dependency
+- Directory structure matches design: `cmd/rafa/`, `internal/cli/`, `internal/plan/`, `internal/ai/`, `internal/util/`
+- `go build ./cmd/rafa` succeeds
+- Running the binary prints "rafa" or similar placeholder
+- `go test ./...` runs without errors (even if no tests yet)
+
+---
+
+### Task 2: Core Data Types
+
+Implement the Plan and Task structs with JSON serialization.
+
+**Description:**
+Create the core data types in `internal/plan/`. Implement `Plan` and `Task` structs with proper JSON tags. Add status constants. Implement `TaskExtractionResult` and `ExtractedTask` for AI response parsing. Add the `Validate()` method for extraction results.
+
+**Acceptance Criteria:**
+- `internal/plan/plan.go` contains `Plan` struct matching the design
+- `internal/plan/task.go` contains `Task` struct matching the design
+- Status constants defined: `StatusNotStarted`, `StatusInProgress`, `StatusCompleted`, `StatusFailed` for plans; `StatusPending`, `StatusInProgress`, `StatusCompleted`, `StatusFailed` for tasks
+- `TaskExtractionResult` and `ExtractedTask` structs exist with `Validate()` method
+- `go test ./internal/plan/...` passes
+- Test file `internal/plan/plan_test.go` exists with serialization tests
+
+---
+
+### Task 3: ID Generation Utilities
+
+Implement short ID and task ID generation using crypto/rand.
+
+**Description:**
+Create `internal/util/id.go` with `GenerateShortID()` and `GenerateTaskID()` functions. Use `crypto/rand` for randomness. Add `toKebabCase()` helper for name normalization.
+
+**Acceptance Criteria:**
+- `internal/util/id.go` exists with `GenerateShortID() (string, error)` function
+- `GenerateShortID` returns 6-character alphanumeric strings
+- `GenerateShortID` uses `crypto/rand`, not `math/rand`
+- `GenerateTaskID(index int) string` returns `t01`, `t02`, etc.
+- `toKebabCase(s string) string` converts strings to kebab-case (lowercase, hyphens, alphanumeric only)
+- `internal/util/id_test.go` exists with tests for uniqueness, format, and edge cases
+- `go test ./internal/util/...` passes
+
+---
+
+### Task 4: Plan Storage Layer
+
+Implement plan folder creation and name collision resolution.
+
+**Description:**
+Create `internal/plan/storage.go` with functions to create plan folders, write plan.json, and handle name collisions. Implement `ResolvePlanName()` to detect existing plans and append numeric suffixes. Implement `CreatePlanFolder()` to create the full folder structure.
+
+**Acceptance Criteria:**
+- `internal/plan/storage.go` exists
+- `ResolvePlanName(baseName string) (string, error)` detects collisions and returns unique names
+- `CreatePlanFolder(plan *Plan) error` creates `.rafa/plans/<id>-<name>/` directory
+- `CreatePlanFolder` writes `plan.json` with proper formatting
+- `CreatePlanFolder` creates empty `progress.log` and `output.log` files
+- `internal/plan/storage_test.go` exists with tests for collision handling and folder creation
+- `go test ./internal/plan/...` passes
+
+---
+
+### Task 5: Claude CLI Integration
+
+Implement the Claude Code CLI wrapper for task extraction.
+
+**Description:**
+Create `internal/ai/claude.go` with functions to call Claude CLI and parse responses. Implement `ExtractTasks()` that builds the prompt, calls `claude` with proper flags, and parses the JSON response. Add defensive JSON extraction with `extractJSON()`. Add helper to check if Claude CLI is available.
+
+**Acceptance Criteria:**
+- `internal/ai/claude.go` exists
+- `ExtractTasks(designContent string) (*TaskExtractionResult, error)` function exists
+- Claude CLI called with `-p`, `--output-format json`, and `--dangerously-skip-permissions` flags
+- `extractJSON(data []byte) ([]byte, error)` extracts JSON from wrapped responses
+- `buildExtractionPrompt(designContent string) string` builds the prompt as specified in design
+- `IsClaudeAvailable() bool` checks if `claude` command exists in PATH
+- `internal/ai/claude_test.go` exists with tests for `extractJSON` and prompt building
+- `go test ./internal/ai/...` passes
+
+---
+
+### Task 6: CLI Scaffolding
+
+Set up Cobra CLI structure with root command and plan subcommand.
+
+**Description:**
+Create the CLI structure using Cobra. Implement root command in `internal/cli/root.go`. Implement `plan` subcommand in `internal/cli/plan/plan.go`. Wire everything together in `cmd/rafa/main.go`. Add placeholder for `plan create` subcommand.
+
+**Acceptance Criteria:**
+- `internal/cli/root.go` exists with root command setup
+- `internal/cli/plan/plan.go` exists with `plan` subcommand
+- `cmd/rafa/main.go` wires root command and executes
+- `rafa --help` shows usage with `plan` subcommand listed
+- `rafa plan --help` shows usage with `create` subcommand listed
+- `rafa plan create` runs (can be placeholder that prints "not implemented")
+- `go build ./cmd/rafa` succeeds
+
+---
+
+### Task 7: Plan Create Command
+
+Implement the full `plan create` command with all flags and logic.
+
+**Description:**
+Implement `internal/cli/plan/create.go` with the complete `plan create` command. Add `--name` and `--dry-run` flags. Implement input validation, file reading, path normalization, AI extraction call, plan assembly, and folder creation. Wire up all the components from previous tasks. Add proper error messages for all edge cases.
+
+**Acceptance Criteria:**
+- `internal/cli/plan/create.go` exists with full implementation
+- `rafa plan create <file>` creates a plan from a markdown file
+- `--name` flag overrides the plan name
+- `--dry-run` flag shows preview without creating files
+- Input validation: checks `.rafa/` exists (unless dry-run), file exists, file is `.md`, file not empty
+- Source path normalized to relative from repo root
+- Error messages match those specified in Edge Cases table
+- Success output matches the Output Examples in design
+- Plan folder created with correct structure when not dry-run
+
+---
+
+### Task 8: Unit Tests
+
+Add comprehensive unit tests for all components.
+
+**Description:**
+Ensure all unit tests specified in the Testing section are implemented. Add any missing test cases. Verify edge cases are covered. Ensure tests can run without Claude CLI (mock where needed).
+
+**Acceptance Criteria:**
+- All test files exist: `id_test.go`, `plan_test.go`, `storage_test.go`, `claude_test.go`, `create_test.go`
+- Tests cover all cases listed in the Testing section of the design
+- `go test ./...` passes
+- Tests don't require actual Claude CLI (mocked or skipped appropriately)
+- Test coverage for `internal/` packages is reasonable (aim for >70%)
+
+---
+
+### Task 9: Integration Tests
+
+Add end-to-end integration tests with mocked Claude CLI.
+
+**Description:**
+Create integration tests that exercise the full `plan create` flow. Set up test utilities for mocking Claude CLI responses. Test the happy path, dry-run mode, and error conditions.
+
+**Acceptance Criteria:**
+- Integration test file exists (e.g., `internal/cli/plan/create_integration_test.go` or `test/integration/`)
+- `TestCreateCommandE2E` tests full flow with mocked Claude response
+- `TestCreateCommandDryRun` verifies no files created in dry-run mode
+- `TestCreateCommandErrors` tests error handling (missing file, invalid JSON, etc.)
+- Mock Claude CLI utility exists and is reusable
+- `go test ./...` passes including integration tests
+
+---
+
+### Task Dependency Graph
+
+```
+Task 1 (Project Setup)
+    │
+    ├── Task 2 (Core Data Types)
+    │       │
+    │       └── Task 4 (Storage Layer)
+    │
+    ├── Task 3 (ID Generation)
+    │
+    └── Task 6 (CLI Scaffolding)
+            │
+            └── Task 5 (Claude Integration)
+                    │
+                    └── Task 7 (Create Command) ←── depends on 2, 3, 4, 5, 6
+                            │
+                            ├── Task 8 (Unit Tests)
+                            │
+                            └── Task 9 (Integration Tests)
+```
+
+**Recommended execution order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+
+Tasks 2, 3, and 6 can run in parallel after Task 1 completes.
