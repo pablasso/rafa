@@ -67,7 +67,7 @@
         "MockRunner in internal/testutil/mock.go is updated to match new Runner interface with OutputCapture parameter",
         "make test passes and make check-fmt passes"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempts": 1
     },
     {
@@ -85,8 +85,8 @@
         "Integration test TestSuggestionsAfterCompletion verifies suggestions are generated after successful run",
         "make test passes and make check-fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "in_progress",
+      "attempts": 1
     }
   ]
 }
