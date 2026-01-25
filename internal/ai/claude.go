@@ -121,6 +121,12 @@ TASK GUIDELINES:
 - Include 2-5 acceptance criteria per task
 - Order tasks by implementation dependency
 
+TESTING REQUIREMENTS:
+- Tasks that implement new functionality MUST include writing unit tests as part of their acceptance criteria
+- If the design document has a "Testing" section, incorporate those test scenarios into the relevant task acceptance criteria
+- Test acceptance criteria should be specific (e.g., "Unit tests exist for checkGitRepo() covering: in git repo, not in git repo")
+- Do NOT use vague criteria like "tests pass" - specify what tests should be written
+
 Return ONLY the JSON, no markdown formatting or explanation.`, designContent)
 }
 
