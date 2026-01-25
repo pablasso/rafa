@@ -4,7 +4,7 @@
   "description": "Implement TUI status line display, output capture to log file, and AGENTS.md suggestions for completed plans",
   "sourceFile": "docs/designs/tui-output-capture-completion.md",
   "createdAt": "2026-01-25T15:58:03.541393-06:00",
-  "status": "in_progress",
+  "status": "completed",
   "tasks": [
     {
       "id": "t01",
@@ -85,7 +85,7 @@
         "Integration test TestSuggestionsAfterCompletion verifies suggestions are generated after successful run",
         "make test passes and make check-fmt passes"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempts": 1
     }
   ]
