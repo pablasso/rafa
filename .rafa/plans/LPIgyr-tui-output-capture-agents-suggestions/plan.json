@@ -1,0 +1,92 @@
+{
+  "id": "LPIgyr",
+  "name": "tui-output-capture-agents-suggestions",
+  "description": "Implement TUI status line display, output capture to log file, and AGENTS.md suggestions for completed plans",
+  "sourceFile": "docs/designs/tui-output-capture-completion.md",
+  "createdAt": "2026-01-25T15:58:03.541393-06:00",
+  "status": "not_started",
+  "tasks": [
+    {
+      "id": "t01",
+      "title": "Implement TUI display component",
+      "description": "Create the display package with status line rendering functionality. This includes the Display struct that manages terminal status line updates using ANSI escape codes, showing task progress, attempt count, elapsed time, and status. The display updates once per second via a ticker goroutine and supports concurrent state updates via mutex protection.",
+      "acceptanceCriteria": [
+        "File internal/display/display.go exists with Display struct and all methods (New, Start, Stop, UpdateTask, UpdateAttempt, UpdateStatus, PrintAbove)",
+        "Status type with constants StatusIdle, StatusRunning, StatusCompleted, StatusFailed, StatusCancelled is implemented with String() method",
+        "State struct holds TaskNum, TotalTasks, TaskTitle, TaskID, Attempt, MaxAttempts, Status, StartTime fields",
+        "Unit tests in internal/display/display_test.go cover: TestFormatDuration (MM:SS and HH:MM:SS formats), TestFormatLine (correct status line format), TestFormatLine_LongTitle (truncates at 40 chars with '...'), TestUpdateTask, TestUpdateAttempt",
+        "make test passes and make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t02",
+      "title": "Implement output capture component",
+      "description": "Create the OutputCapture type in the executor package that wraps output handling using io.MultiWriter to write to both terminal and output.log file. The log file is opened in append mode to preserve history across runs. Include methods for writing task headers and footers to clearly delineate different task attempts in the log.",
+      "acceptanceCriteria": [
+        "File internal/executor/output.go exists with OutputCapture struct and methods (NewOutputCapture, Stdout, Stderr, Close, WriteTaskHeader, WriteTaskFooter)",
+        "NewOutputCapture opens output.log in append mode (os.O_APPEND|os.O_CREATE|os.O_WRONLY) with 0644 permissions",
+        "WriteTaskHeader writes formatted header with task ID, attempt number, and RFC3339 timestamp",
+        "WriteTaskFooter writes SUCCESS or FAILED result for the task",
+        "Unit tests in internal/executor/output_test.go cover: TestOutputCapture_WritesToFile, TestOutputCapture_WritesToStdout (via MultiWriter), TestOutputCapture_TaskHeaders (headers and footers format)",
+        "make test passes and make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t03",
+      "title": "Implement AGENTS.md suggestions analyzer",
+      "description": "Create the analysis package with suggestion generation based on plan execution data. The Analyzer reads progress.log and output.log to identify patterns like tasks requiring multiple retries, test failures, formatting issues, and dependency problems. Suggestions are grouped by category and formatted for display.",
+      "acceptanceCriteria": [
+        "File internal/analysis/suggestions.go exists with Suggestion struct (Category, Title, Description, Example fields) and Analyzer struct",
+        "Analyzer.Analyze() method loads progress events from progress.log and output lines from output.log",
+        "analyzeRetries identifies tasks with \u003e1 attempt and generates suggestions",
+        "analyzeFailurePatterns detects: test failures (\u003e2 occurrences), formatting/lint issues, module/dependency issues",
+        "analyzeSuccessPatterns identifies frequently used verification commands (make test, make fmt, go build) appearing in \u003e=2 tasks",
+        "deduplicate removes suggestions with same Category:Title key",
+        "FormatSuggestions groups suggestions by category and formats with header/footer decorations",
+        "Unit tests in internal/analysis/suggestions_test.go cover: TestAnalyzeRetries, TestAnalyzeFailurePatterns_Tests, TestAnalyzeFailurePatterns_Formatting, TestFormatSuggestions, TestDeduplicate",
+        "make test passes and make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t04",
+      "title": "Integrate display and output capture into executor",
+      "description": "Modify the executor to accept and use the display component for status updates and the output capture for logging. The Runner interface must be updated to accept an OutputCapture parameter. Update executeTask to call display.UpdateTask, UpdateAttempt, and UpdateStatus at appropriate points. Create and manage OutputCapture lifecycle in the executor.",
+      "acceptanceCriteria": [
+        "Executor struct has display field of type *display.Display",
+        "Executor has WithDisplay method to set the display",
+        "Runner interface in internal/executor/runner.go accepts *OutputCapture as parameter",
+        "ClaudeRunner.Run uses output.Stdout() and output.Stderr() when OutputCapture is provided, falls back to os.Stdout/os.Stderr when nil",
+        "executeTask calls display.UpdateTask at task start, UpdateAttempt before each attempt, UpdateStatus for status changes",
+        "OutputCapture is created in executor.Run() and WriteTaskHeader/WriteTaskFooter are called around task execution",
+        "MockRunner in internal/testutil/mock.go is updated to match new Runner interface with OutputCapture parameter",
+        "make test passes and make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t05",
+      "title": "Integrate display into CLI and add post-run analysis",
+      "description": "Modify internal/cli/plan/run.go to create and manage the Display lifecycle. Start the display before execution begins and stop it after completion. After successful plan completion, run the Analyzer and print suggestions if any are generated. Handle edge cases like Ctrl+C ensuring display cleanup.",
+      "acceptanceCriteria": [
+        "internal/cli/plan/run.go creates Display with New(os.Stdout), calls Start() before execution, Stop() after completion",
+        "Display is passed to executor via WithDisplay method",
+        "After plan completes successfully (PlanStatusCompleted), Analyzer is created and Analyze() is called",
+        "If suggestions are returned, FormatSuggestions output is printed to stdout",
+        "Analysis errors are logged but do not fail the command (output capture is non-critical)",
+        "Integration test TestRunWithDisplay verifies display updates during execution",
+        "Integration test TestRunWithOutputCapture verifies output.log contains expected content",
+        "Integration test TestSuggestionsAfterCompletion verifies suggestions are generated after successful run",
+        "make test passes and make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    }
+  ]
+}
