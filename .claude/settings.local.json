@@ -15,7 +15,8 @@
       "Bash(./rafa:*)",
       "Bash(go run:*)",
       "Bash(tree:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(go clean:*)"
     ]
   }
 }
