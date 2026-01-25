@@ -29,19 +29,7 @@ Users only review after plans are implemented.
 curl -fsSL https://raw.githubusercontent.com/pablasso/rafa/main/scripts/install.sh | sh
 ```
 
-To install a specific version:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/pablasso/rafa/main/scripts/install.sh | sh -s -- -v v0.1.1
-```
-
-If you prefer to review the script before running:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/pablasso/rafa/main/scripts/install.sh -o install.sh
-cat install.sh  # review the script
-sh install.sh
-```
+To upgrade, run the same command again.
 
 ### Building from Source
 
