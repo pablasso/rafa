@@ -1,6 +1,11 @@
 # Compiled binaries
 rafa
 *.exe
+bin/
+dist/
 
 # Test coverage
 *.out
+
+# Rafa runtime
+.rafa/**/*.lock
