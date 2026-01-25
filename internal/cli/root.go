@@ -16,6 +16,7 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(plan.PlanCmd)
 
 	rootCmd.SetVersionTemplate(fmt.Sprintf(
