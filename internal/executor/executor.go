@@ -365,3 +365,15 @@ func (e *Executor) printUncommittedChanges(files []string) {
 	}
 	fmt.Println("Retrying...")
 }
+
+// getCommitMessage extracts the agent's suggested commit message from OutputCapture,
+// or falls back to a default message format '[rafa] Complete task <id>: <title>'.
+// The [rafa] prefix enables easy filtering in git log.
+func (e *Executor) getCommitMessage(task *plan.Task, output *OutputCapture) string {
+	if output != nil {
+		if msg := output.ExtractCommitMessage(); msg != "" {
+			return msg
+		}
+	}
+	return fmt.Sprintf("[rafa] Complete task %s: %s", task.ID, task.Title)
+}

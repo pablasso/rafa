@@ -168,3 +168,23 @@ SUGGESTED_COMMIT_MESSAGE: Add ExtractCommitMessage method to OutputCapture
 === Task t03, Attempt 1 ===
 Started: 2026-01-25T17:18:26-06:00
 
+All acceptance criteria have been verified:
+
+1. ✅ Prompt includes instruction: 'DO NOT commit your changes - the orchestrator will handle the commit'
+2. ✅ Prompt includes instruction to output 'SUGGESTED_COMMIT_MESSAGE: <your descriptive commit message>'
+3. ✅ Prompt includes note: 'Leave changes uncommitted. The orchestrator will commit after validating.'
+4. ✅ Retry attempts include updated note about reviewing uncommitted changes from previous attempts
+5. ✅ Unit test verifies prompt contains 'DO NOT commit' instruction (TestClaudeRunner_PromptIncludesDoNotCommitInstruction and TestClaudeRunner_PromptRetryNoteIncludesUncommittedChanges)
+6. ✅ make test passes
+7. ✅ make fmt passes
+
+The workspace is clean with no uncommitted changes.
+
+SUGGESTED_COMMIT_MESSAGE: Update agent prompt to not commit and suggest commit message
+
+=== Task t03: SUCCESS ===
+
+
+=== Task t04, Attempt 1 ===
+Started: 2026-01-25T17:20:01-06:00
+

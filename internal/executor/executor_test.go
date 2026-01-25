@@ -654,3 +654,74 @@ type runnerFunc func(ctx context.Context, task *plan.Task, planContext string, a
 func (f runnerFunc) Run(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
 	return f(ctx, task, planContext, attempt, maxAttempts, output)
 }
+
+func TestExecutor_GetCommitMessage_UsesAgentSuggestion(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create an output capture with a suggested commit message
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+	oc.Stdout().Write([]byte("Some output\n"))
+	oc.Stdout().Write([]byte("SUGGESTED_COMMIT_MESSAGE: Add user authentication feature\n"))
+	oc.Stdout().Write([]byte("More output\n"))
+	oc.logFile.Sync()
+
+	task := &plan.Task{
+		ID:    "t01",
+		Title: "Implement login",
+	}
+
+	executor := &Executor{}
+	msg := executor.getCommitMessage(task, oc)
+
+	expected := "Add user authentication feature"
+	if msg != expected {
+		t.Errorf("getCommitMessage() = %q, want %q", msg, expected)
+	}
+
+	oc.Close()
+}
+
+func TestExecutor_GetCommitMessage_FallbackToDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create an output capture without a suggested commit message
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+	oc.Stdout().Write([]byte("Some output without commit message\n"))
+	oc.logFile.Sync()
+
+	task := &plan.Task{
+		ID:    "t01",
+		Title: "Implement login",
+	}
+
+	executor := &Executor{}
+	msg := executor.getCommitMessage(task, oc)
+
+	expected := "[rafa] Complete task t01: Implement login"
+	if msg != expected {
+		t.Errorf("getCommitMessage() = %q, want %q", msg, expected)
+	}
+
+	oc.Close()
+}
+
+func TestExecutor_GetCommitMessage_HandlesNilOutput(t *testing.T) {
+	task := &plan.Task{
+		ID:    "t02",
+		Title: "Fix bug in parser",
+	}
+
+	executor := &Executor{}
+	msg := executor.getCommitMessage(task, nil)
+
+	expected := "[rafa] Complete task t02: Fix bug in parser"
+	if msg != expected {
+		t.Errorf("getCommitMessage() = %q, want %q", msg, expected)
+	}
+}
