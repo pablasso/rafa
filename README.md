@@ -120,7 +120,7 @@ Executes tasks sequentially. Each task runs in a fresh Claude Code session with 
 **Behavior:**
 
 - Starts from the first pending task (skips completed ones)
-- Retries failed tasks up to 10 times with fresh agent sessions
+- Retries failed tasks up to 5 times with fresh agent sessions
 - Saves state after each task status change
 - Handles Ctrl+C gracefully (resets current task to pending)
 

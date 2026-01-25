@@ -11,7 +11,7 @@ import (
 )
 
 // MaxAttempts is the maximum number of times to retry a failed task.
-const MaxAttempts = 10
+const MaxAttempts = 5
 
 // Runner defines the interface for executing tasks.
 type Runner interface {
