@@ -1111,3 +1111,470 @@ func TestExecutor_AgentAccidentallyCommits_HandledGracefully(t *testing.T) {
 		t.Errorf("expected plan status completed, got: %s", p.Status)
 	}
 }
+
+// =============================================================================
+// Integration tests for executor commit flow (per design doc testing section)
+// These test names match the acceptance criteria from the design document.
+// =============================================================================
+
+// TestRun_ExecutorCommitsAfterTask verifies that the executor commits both
+// implementation changes and metadata after a successful task.
+func TestRun_ExecutorCommitsAfterTask(t *testing.T) {
+	repoRoot, planDir := setupTestGitRepo(t)
+
+	p := &plan.Plan{
+		ID:          "test-plan-id",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		SourceFile:  "/path/to/source.md",
+		CreatedAt:   time.Now(),
+		Status:      plan.PlanStatusNotStarted,
+		Tasks: []plan.Task{
+			{ID: "task-1", Title: "Task 1", Status: plan.TaskStatusPending},
+		},
+	}
+	if err := plan.SavePlan(planDir, p); err != nil {
+		t.Fatalf("failed to save test plan: %v", err)
+	}
+
+	// Commit the initial plan.json so workspace is clean before Run
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = repoRoot
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "add plan")
+	cmd.Dir = repoRoot
+	cmd.Run()
+
+	// Create executor with a runner that creates implementation files
+	executor := New(planDir, p)
+	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
+		// Simulate agent creating implementation files
+		implFile := filepath.Join(repoRoot, "implementation.go")
+		return os.WriteFile(implFile, []byte("package main\n"), 0644)
+	})
+
+	err := executor.Run(context.Background())
+
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+
+	// Verify workspace is clean (executor committed)
+	cmd = exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoRoot
+	output, _ := cmd.Output()
+	if strings.TrimSpace(string(output)) != "" {
+		t.Errorf("expected clean workspace after run, got dirty files:\n%s", output)
+	}
+
+	// Verify the task commit includes both implementation and metadata
+	cmd = exec.Command("git", "show", "--name-only", "--oneline", "HEAD~1")
+	cmd.Dir = repoRoot
+	output, err = cmd.Output()
+	if err != nil {
+		t.Fatalf("failed to get git show: %v", err)
+	}
+	outputStr := string(output)
+
+	// Check implementation file is in task commit
+	if !strings.Contains(outputStr, "implementation.go") {
+		t.Errorf("expected implementation.go in task commit, got:\n%s", outputStr)
+	}
+
+	// Check metadata files are in task commit
+	if !strings.Contains(outputStr, ".rafa/plans") {
+		t.Errorf("expected .rafa/plans in task commit, got:\n%s", outputStr)
+	}
+}
+
+// TestRun_UsesAgentSuggestedMessage verifies that the executor uses the
+// agent's SUGGESTED_COMMIT_MESSAGE when available.
+func TestRun_UsesAgentSuggestedMessage(t *testing.T) {
+	repoRoot, planDir := setupTestGitRepo(t)
+
+	p := &plan.Plan{
+		ID:          "test-plan-id",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		SourceFile:  "/path/to/source.md",
+		CreatedAt:   time.Now(),
+		Status:      plan.PlanStatusNotStarted,
+		Tasks: []plan.Task{
+			{ID: "task-1", Title: "Task 1", Status: plan.TaskStatusPending},
+		},
+	}
+	if err := plan.SavePlan(planDir, p); err != nil {
+		t.Fatalf("failed to save test plan: %v", err)
+	}
+
+	// Commit the initial plan.json so workspace is clean before Run
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = repoRoot
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "add plan")
+	cmd.Dir = repoRoot
+	cmd.Run()
+
+	// Create executor with a runner that outputs a suggested commit message
+	executor := New(planDir, p)
+	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
+		// Create implementation file
+		implFile := filepath.Join(repoRoot, "feature.go")
+		if err := os.WriteFile(implFile, []byte("package main\n"), 0644); err != nil {
+			return err
+		}
+
+		// Write suggested commit message to output
+		if output != nil {
+			output.Stdout().Write([]byte("SUGGESTED_COMMIT_MESSAGE: Add awesome new feature\n"))
+		}
+		return nil
+	})
+
+	err := executor.Run(context.Background())
+
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+
+	// Verify the task commit message uses agent's suggestion
+	cmd = exec.Command("git", "log", "-1", "--format=%s", "HEAD~1")
+	cmd.Dir = repoRoot
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("failed to get git log: %v", err)
+	}
+	commitMsg := strings.TrimSpace(string(output))
+
+	if commitMsg != "Add awesome new feature" {
+		t.Errorf("expected commit message 'Add awesome new feature', got: %s", commitMsg)
+	}
+}
+
+// TestRun_DefaultMessageWhenNoSuggestion verifies that the executor falls back
+// to a default task-based commit message when the agent doesn't suggest one.
+func TestRun_DefaultMessageWhenNoSuggestion(t *testing.T) {
+	repoRoot, planDir := setupTestGitRepo(t)
+
+	p := &plan.Plan{
+		ID:          "test-plan-id",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		SourceFile:  "/path/to/source.md",
+		CreatedAt:   time.Now(),
+		Status:      plan.PlanStatusNotStarted,
+		Tasks: []plan.Task{
+			{ID: "t01", Title: "Implement login", Status: plan.TaskStatusPending},
+		},
+	}
+	if err := plan.SavePlan(planDir, p); err != nil {
+		t.Fatalf("failed to save test plan: %v", err)
+	}
+
+	// Commit the initial plan.json so workspace is clean before Run
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = repoRoot
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "add plan")
+	cmd.Dir = repoRoot
+	cmd.Run()
+
+	// Create executor with a runner that doesn't output a suggested commit message
+	executor := New(planDir, p)
+	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
+		// Create implementation file without suggesting commit message
+		implFile := filepath.Join(repoRoot, "login.go")
+		return os.WriteFile(implFile, []byte("package main\n"), 0644)
+	})
+
+	err := executor.Run(context.Background())
+
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+
+	// Verify the task commit message uses default format
+	cmd = exec.Command("git", "log", "-1", "--format=%s", "HEAD~1")
+	cmd.Dir = repoRoot
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("failed to get git log: %v", err)
+	}
+	commitMsg := strings.TrimSpace(string(output))
+
+	expectedMsg := "[rafa] Complete task t01: Implement login"
+	if commitMsg != expectedMsg {
+		t.Errorf("expected commit message %q, got: %s", expectedMsg, commitMsg)
+	}
+}
+
+// TestRun_TaskFailure_NothingCommitted verifies that when a task fails,
+// no commit is made and the workspace remains dirty.
+func TestRun_TaskFailure_NothingCommitted(t *testing.T) {
+	repoRoot, planDir := setupTestGitRepo(t)
+
+	p := &plan.Plan{
+		ID:          "test-plan-id",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		SourceFile:  "/path/to/source.md",
+		CreatedAt:   time.Now(),
+		Status:      plan.PlanStatusNotStarted,
+		Tasks: []plan.Task{
+			{ID: "task-1", Title: "Task 1", Status: plan.TaskStatusPending},
+		},
+	}
+	if err := plan.SavePlan(planDir, p); err != nil {
+		t.Fatalf("failed to save test plan: %v", err)
+	}
+
+	// Commit the initial plan.json so workspace is clean before Run
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = repoRoot
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "add plan")
+	cmd.Dir = repoRoot
+	cmd.Run()
+
+	// Get initial commit count
+	cmd = exec.Command("git", "rev-list", "--count", "HEAD")
+	cmd.Dir = repoRoot
+	output, _ := cmd.Output()
+	commitCountBefore := strings.TrimSpace(string(output))
+
+	// Create executor with a runner that creates files then fails
+	executor := New(planDir, p)
+	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
+		// Create partial implementation file
+		implFile := filepath.Join(repoRoot, "partial.go")
+		if err := os.WriteFile(implFile, []byte("package main\n// incomplete\n"), 0644); err != nil {
+			return err
+		}
+		return errors.New("task failed: tests not passing")
+	})
+
+	err := executor.Run(context.Background())
+
+	// Should fail after max attempts
+	if err == nil {
+		t.Error("expected error after task failure")
+	}
+
+	// Verify no new commits were made
+	cmd = exec.Command("git", "rev-list", "--count", "HEAD")
+	cmd.Dir = repoRoot
+	output, _ = cmd.Output()
+	commitCountAfter := strings.TrimSpace(string(output))
+
+	if commitCountBefore != commitCountAfter {
+		t.Errorf("expected no new commits on failure, got %s before and %s after", commitCountBefore, commitCountAfter)
+	}
+
+	// Verify workspace is dirty (implementation file not committed)
+	cmd = exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoRoot
+	output, _ = cmd.Output()
+	if !strings.Contains(string(output), "partial.go") {
+		t.Errorf("expected partial.go in dirty files, got:\n%s", output)
+	}
+}
+
+// TestRun_AgentAccidentallyCommits_Handled verifies that the executor
+// handles the case where an agent accidentally commits its own changes.
+func TestRun_AgentAccidentallyCommits_Handled(t *testing.T) {
+	repoRoot, planDir := setupTestGitRepo(t)
+
+	p := &plan.Plan{
+		ID:          "test-plan-id",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		SourceFile:  "/path/to/source.md",
+		CreatedAt:   time.Now(),
+		Status:      plan.PlanStatusNotStarted,
+		Tasks: []plan.Task{
+			{ID: "task-1", Title: "Task 1", Status: plan.TaskStatusPending},
+		},
+	}
+	if err := plan.SavePlan(planDir, p); err != nil {
+		t.Fatalf("failed to save test plan: %v", err)
+	}
+
+	// Commit the initial plan.json so workspace is clean before Run
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = repoRoot
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "add plan")
+	cmd.Dir = repoRoot
+	cmd.Run()
+
+	// Create executor with a runner that accidentally commits
+	executor := New(planDir, p)
+	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
+		// Simulate agent creating and committing files (which they shouldn't)
+		implFile := filepath.Join(repoRoot, "impl.go")
+		if err := os.WriteFile(implFile, []byte("package main\n"), 0644); err != nil {
+			return err
+		}
+
+		cmd := exec.Command("git", "add", "-A")
+		cmd.Dir = repoRoot
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+		cmd = exec.Command("git", "commit", "-m", "Agent's accidental commit")
+		cmd.Dir = repoRoot
+		return cmd.Run()
+	})
+
+	err := executor.Run(context.Background())
+
+	// Should succeed - executor handles agent commits gracefully
+	if err != nil {
+		t.Errorf("expected no error when agent commits, got: %v", err)
+	}
+
+	// Verify workspace is clean (executor committed remaining metadata)
+	cmd = exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoRoot
+	output, _ := cmd.Output()
+	if strings.TrimSpace(string(output)) != "" {
+		t.Errorf("expected clean workspace after run, got dirty files:\n%s", output)
+	}
+
+	// Verify plan completed successfully
+	if p.Status != plan.PlanStatusCompleted {
+		t.Errorf("expected plan status completed, got: %s", p.Status)
+	}
+}
+
+// TestRun_AllowDirty_NoCommits verifies that with --allow-dirty flag,
+// the executor does not make any commits.
+func TestRun_AllowDirty_NoCommits(t *testing.T) {
+	repoRoot, planDir := setupTestGitRepo(t)
+
+	p := &plan.Plan{
+		ID:          "test-plan-id",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		SourceFile:  "/path/to/source.md",
+		CreatedAt:   time.Now(),
+		Status:      plan.PlanStatusNotStarted,
+		Tasks: []plan.Task{
+			{ID: "task-1", Title: "Task 1", Status: plan.TaskStatusPending},
+		},
+	}
+	if err := plan.SavePlan(planDir, p); err != nil {
+		t.Fatalf("failed to save test plan: %v", err)
+	}
+
+	// Commit the initial plan.json so workspace is clean before Run
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = repoRoot
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "add plan")
+	cmd.Dir = repoRoot
+	cmd.Run()
+
+	// Get initial commit count
+	cmd = exec.Command("git", "rev-list", "--count", "HEAD")
+	cmd.Dir = repoRoot
+	output, _ := cmd.Output()
+	commitCountBefore := strings.TrimSpace(string(output))
+
+	// Create executor with allowDirty=true
+	executor := New(planDir, p).WithAllowDirty(true)
+	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
+		implFile := filepath.Join(repoRoot, "feature.go")
+		return os.WriteFile(implFile, []byte("package main\n"), 0644)
+	})
+
+	err := executor.Run(context.Background())
+
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+
+	// Verify no new commits were made
+	cmd = exec.Command("git", "rev-list", "--count", "HEAD")
+	cmd.Dir = repoRoot
+	output, _ = cmd.Output()
+	commitCountAfter := strings.TrimSpace(string(output))
+
+	if commitCountBefore != commitCountAfter {
+		t.Errorf("expected no new commits with allowDirty, got %s before and %s after", commitCountBefore, commitCountAfter)
+	}
+
+	// Verify workspace is dirty (changes not committed)
+	cmd = exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoRoot
+	output, _ = cmd.Output()
+	if !strings.Contains(string(output), "feature.go") {
+		t.Errorf("expected feature.go in dirty files with allowDirty, got:\n%s", output)
+	}
+}
+
+// TestRun_WorkspaceCleanAfterSuccess verifies that after a successful plan
+// execution, the workspace is clean (all changes committed).
+func TestRun_WorkspaceCleanAfterSuccess(t *testing.T) {
+	repoRoot, planDir := setupTestGitRepo(t)
+
+	p := &plan.Plan{
+		ID:          "test-plan-id",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		SourceFile:  "/path/to/source.md",
+		CreatedAt:   time.Now(),
+		Status:      plan.PlanStatusNotStarted,
+		Tasks: []plan.Task{
+			{ID: "task-1", Title: "Task 1", Status: plan.TaskStatusPending},
+			{ID: "task-2", Title: "Task 2", Status: plan.TaskStatusPending},
+			{ID: "task-3", Title: "Task 3", Status: plan.TaskStatusPending},
+		},
+	}
+	if err := plan.SavePlan(planDir, p); err != nil {
+		t.Fatalf("failed to save test plan: %v", err)
+	}
+
+	// Commit the initial plan.json so workspace is clean before Run
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = repoRoot
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "add plan")
+	cmd.Dir = repoRoot
+	cmd.Run()
+
+	// Create executor with a runner that creates different files for each task
+	taskNum := 0
+	executor := New(planDir, p)
+	executor.runner = runnerFunc(func(ctx context.Context, task *plan.Task, planContext string, attempt, maxAttempts int, output OutputWriter) error {
+		taskNum++
+		implFile := filepath.Join(repoRoot, fmt.Sprintf("module_%d.go", taskNum))
+		return os.WriteFile(implFile, []byte(fmt.Sprintf("package main\n// Module %d\n", taskNum)), 0644)
+	})
+
+	err := executor.Run(context.Background())
+
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+
+	// Verify workspace is clean after successful plan completion
+	cmd = exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoRoot
+	output, _ := cmd.Output()
+	if strings.TrimSpace(string(output)) != "" {
+		t.Errorf("expected clean workspace after successful plan, got dirty files:\n%s", output)
+	}
+
+	// Verify plan completed
+	if p.Status != plan.PlanStatusCompleted {
+		t.Errorf("expected plan status completed, got: %s", p.Status)
+	}
+
+	// Verify all tasks completed
+	for i, task := range p.Tasks {
+		if task.Status != plan.TaskStatusCompleted {
+			t.Errorf("task %d: expected status completed, got: %s", i, task.Status)
+		}
+	}
+}

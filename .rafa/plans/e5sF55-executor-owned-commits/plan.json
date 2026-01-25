@@ -106,7 +106,7 @@
         "make test passes",
         "make fmt passes"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempts": 1
     },
     {
@@ -125,8 +125,8 @@
         "make test passes",
         "make fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "in_progress",
+      "attempts": 1
     }
   ]
 }
