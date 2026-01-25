@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add installation/uninstallation support and proper versioning for Rafa, enabling the first public release (v0.1.1). Users will install via a curl one-liner that downloads pre-built binaries from GitHub releases.
+Add installation/uninstallation support, repository initialization, and proper versioning for Rafa, enabling the first public release (v0.1.1). Users will install via a curl one-liner that downloads pre-built binaries from GitHub releases, then initialize Rafa in their repository.
 
 **PRD Reference**: [docs/prds/rafa-core.md](../prds/rafa-core.md) - Installation & Setup section
 
@@ -10,6 +10,9 @@ Add installation/uninstallation support and proper versioning for Rafa, enabling
 
 - Users can install Rafa with a single curl command
 - Users can uninstall Rafa cleanly
+- Users can initialize Rafa in any git repository (`rafa init`)
+- Users can cleanly remove Rafa from a repository (`rafa deinit`)
+- Prerequisite checks (Claude Code CLI, git repo) provide clear guidance
 - Proper semantic versioning starting at v0.1.1
 - Automated release process via GitHub Actions + goreleaser
 
@@ -19,6 +22,7 @@ Add installation/uninstallation support and proper versioning for Rafa, enabling
 - Homebrew tap (future enhancement)
 - Auto-upgrade functionality (future enhancement)
 - Windows support (future enhancement - Linux/macOS only for v0.1.1)
+- `rafa doctor` command (future enhancement for checking recommended harnesses)
 
 ## Architecture
 
@@ -96,6 +100,279 @@ func init() {
     rootCmd.SetVersionTemplate(`Rafa {{.Version}}
 Commit: ` + version.CommitSHA + `
 Built:  ` + version.BuildDate + "\n")
+}
+```
+
+### Repository Initialization (`rafa init`)
+
+Creates the `.rafa/` directory structure in the current repository.
+
+```go
+// internal/cli/init.go
+package cli
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+
+    "github.com/spf13/cobra"
+)
+
+const rafaDir = ".rafa"
+
+var initCmd = &cobra.Command{
+    Use:   "init",
+    Short: "Initialize Rafa in the current repository",
+    Long:  "Creates a .rafa/ folder to store plans and execution data.",
+    RunE:  runInit,
+}
+
+func runInit(cmd *cobra.Command, args []string) error {
+    // Check prerequisites first
+    if err := checkPrerequisites(); err != nil {
+        return err
+    }
+
+    // Check if already initialized
+    if _, err := os.Stat(rafaDir); err == nil {
+        return fmt.Errorf("rafa is already initialized in this repository")
+    }
+
+    // Create .rafa directory structure
+    dirs := []string{
+        rafaDir,
+        filepath.Join(rafaDir, "plans"),
+    }
+
+    for _, dir := range dirs {
+        if err := os.MkdirAll(dir, 0755); err != nil {
+            return fmt.Errorf("failed to create %s: %w", dir, err)
+        }
+    }
+
+    fmt.Println("Initialized Rafa in", rafaDir)
+    fmt.Println("\nNext steps:")
+    fmt.Println("  1. Create a technical design or PRD document")
+    fmt.Println("  2. Run: rafa plan create <design.md>")
+    return nil
+}
+```
+
+**Directory structure created:**
+```
+.rafa/
+  plans/       # Plan folders will be created here
+```
+
+**Note on `.gitignore`:** The `.rafa/` directory is intended to be tracked in git. Plans and progress logs provide useful history and allow resuming work across machines. The `init` command does not modify `.gitignore`.
+
+### Repository De-initialization (`rafa deinit`)
+
+Removes the `.rafa/` directory with confirmation.
+
+```go
+// internal/cli/deinit.go
+package cli
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "path/filepath"
+    "strings"
+
+    "github.com/spf13/cobra"
+)
+
+var (
+    deinitForce bool
+)
+
+var deinitCmd = &cobra.Command{
+    Use:   "deinit",
+    Short: "Remove Rafa from the current repository",
+    Long:  "Removes the .rafa/ folder and all plans. This action cannot be undone.",
+    RunE:  runDeinit,
+}
+
+func init() {
+    deinitCmd.Flags().BoolVarP(&deinitForce, "force", "f", false, "Skip confirmation prompt")
+}
+
+func runDeinit(cmd *cobra.Command, args []string) error {
+    // Check if initialized
+    info, err := os.Stat(rafaDir)
+    if os.IsNotExist(err) {
+        return fmt.Errorf("rafa is not initialized in this repository")
+    }
+    if !info.IsDir() {
+        return fmt.Errorf(".rafa exists but is not a directory")
+    }
+
+    // Calculate what will be deleted
+    planCount, totalSize, err := calculateDirStats(rafaDir)
+    if err != nil {
+        return fmt.Errorf("failed to analyze .rafa/: %w", err)
+    }
+
+    // Show confirmation unless --force
+    if !deinitForce {
+        fmt.Printf("This will delete .rafa/ (%d plans, %s). Continue? [y/N] ", planCount, formatSize(totalSize))
+
+        reader := bufio.NewReader(os.Stdin)
+        response, _ := reader.ReadString('\n')
+        response = strings.TrimSpace(strings.ToLower(response))
+
+        if response != "y" && response != "yes" {
+            fmt.Println("Aborted.")
+            return nil
+        }
+    }
+
+    // Remove the directory
+    if err := os.RemoveAll(rafaDir); err != nil {
+        return fmt.Errorf("failed to remove .rafa/: %w", err)
+    }
+
+    fmt.Println("Rafa has been removed from this repository.")
+    return nil
+}
+
+func calculateDirStats(dir string) (planCount int, totalSize int64, err error) {
+    plansDir := filepath.Join(dir, "plans")
+    entries, err := os.ReadDir(plansDir)
+    if err == nil {
+        planCount = len(entries)
+    }
+
+    err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
+        if !info.IsDir() {
+            totalSize += info.Size()
+        }
+        return nil
+    })
+    return
+}
+
+func formatSize(bytes int64) string {
+    const (
+        KB = 1024
+        MB = KB * 1024
+    )
+    switch {
+    case bytes >= MB:
+        return fmt.Sprintf("%.1fMB", float64(bytes)/MB)
+    case bytes >= KB:
+        return fmt.Sprintf("%.1fKB", float64(bytes)/KB)
+    default:
+        return fmt.Sprintf("%dB", bytes)
+    }
+}
+```
+
+### Prerequisite Checks
+
+Checks run before `init` and `plan run` to ensure the environment is properly configured.
+
+```go
+// internal/cli/prerequisites.go
+package cli
+
+import (
+    "fmt"
+    "os"
+    "os/exec"
+)
+
+type PrerequisiteError struct {
+    Check   string
+    Message string
+    Help    string
+}
+
+func (e *PrerequisiteError) Error() string {
+    return fmt.Sprintf("%s: %s\n\n%s", e.Check, e.Message, e.Help)
+}
+
+func checkPrerequisites() error {
+    // Check if in a git repository
+    if err := checkGitRepo(); err != nil {
+        return err
+    }
+
+    // Check if Claude Code CLI is installed
+    if err := checkClaudeCode(); err != nil {
+        return err
+    }
+
+    return nil
+}
+
+func checkGitRepo() error {
+    cmd := exec.Command("git", "rev-parse", "--git-dir")
+    if err := cmd.Run(); err != nil {
+        return &PrerequisiteError{
+            Check:   "Git repository",
+            Message: "Not a git repository",
+            Help:    "Rafa requires a git repository. Run 'git init' first.",
+        }
+    }
+    return nil
+}
+
+func checkClaudeCode() error {
+    // Check if claude command exists
+    _, err := exec.LookPath("claude")
+    if err != nil {
+        return &PrerequisiteError{
+            Check:   "Claude Code CLI",
+            Message: "Claude Code CLI not found",
+            Help:    "Install Claude Code: https://claude.ai/code",
+        }
+    }
+
+    // Check if authenticated (claude auth status returns 0 if authenticated)
+    cmd := exec.Command("claude", "auth", "status")
+    if err := cmd.Run(); err != nil {
+        return &PrerequisiteError{
+            Check:   "Claude Code authentication",
+            Message: "Claude Code not authenticated",
+            Help:    "Run 'claude auth' to authenticate.",
+        }
+    }
+
+    return nil
+}
+
+// IsInitialized checks if rafa is initialized in the current directory
+func IsInitialized() bool {
+    info, err := os.Stat(rafaDir)
+    return err == nil && info.IsDir()
+}
+
+// RequireInitialized returns an error if rafa is not initialized
+func RequireInitialized() error {
+    if !IsInitialized() {
+        return fmt.Errorf("rafa is not initialized. Run 'rafa init' first.")
+    }
+    return nil
+}
+```
+
+### Root Command Updates
+
+Update root command to register init and deinit:
+
+```go
+// internal/cli/root.go (additions)
+func init() {
+    rootCmd.AddCommand(initCmd)
+    rootCmd.AddCommand(deinitCmd)
+    // ... existing commands
 }
 ```
 
@@ -338,13 +615,50 @@ cat install.sh  # review the script
 sh install.sh
 ```
 
-### Uninstall
+## Getting Started
+
+### Prerequisites
+
+- Git repository
+- [Claude Code](https://claude.ai/code) installed and authenticated
+
+### Initialize
+
+In your repository root:
+
+```bash
+rafa init
+```
+
+This creates a `.rafa/` directory to store plans and execution data.
+
+### Create Your First Plan
+
+```bash
+rafa plan create docs/my-feature.md
+```
+
+### Run the Plan
+
+```bash
+rafa plan run my-feature
+```
+
+## Uninstall
+
+Remove the binary:
 
 ```bash
 rm $(which rafa)
 ```
 
-To also remove Rafa data from a repository:
+Remove Rafa from a specific repository:
+
+```bash
+rafa deinit
+```
+
+Or manually:
 
 ```bash
 rm -rf .rafa/
@@ -399,12 +713,15 @@ release-dry-run:
 | File | Action | Description |
 |------|--------|-------------|
 | `internal/version/version.go` | Create | Version variables for ldflags injection |
-| `internal/cli/root.go` | Modify | Use version package, custom version template |
+| `internal/cli/root.go` | Modify | Use version package, custom version template, register commands |
+| `internal/cli/init.go` | Create | `rafa init` command implementation |
+| `internal/cli/deinit.go` | Create | `rafa deinit` command implementation |
+| `internal/cli/prerequisites.go` | Create | Prerequisite checks (git, Claude Code) |
 | `.goreleaser.yaml` | Create | goreleaser configuration |
 | `scripts/install.sh` | Create | Installation script |
 | `.github/workflows/release.yml` | Create | Release automation |
 | `Makefile` | Modify | Add build/install/release targets |
-| `README.md` | Modify | Add installation instructions |
+| `README.md` | Modify | Add installation and setup instructions |
 
 ## Release Process
 
@@ -424,14 +741,26 @@ The changelog is auto-generated by goreleaser from commit history. Use conventio
 
 ## Testing
 
+### Installation & Build
 - **Local build**: `make build` produces working binary with version
 - **Install script**: Test on macOS and Linux (both amd64 and arm64 if available)
 - **Checksum verification**: Corrupt a downloaded tarball and verify the script rejects it
 - **Release dry-run**: `make release-dry-run` validates goreleaser config
 - **Full release**: Test with a pre-release tag (e.g., `v0.1.1-rc1`) before final release
 
+### Repository Setup
+- **`rafa init` in git repo**: Creates `.rafa/plans/` directory structure
+- **`rafa init` outside git repo**: Returns appropriate error
+- **`rafa init` twice**: Second call returns "already initialized" error
+- **`rafa deinit` with plans**: Shows correct plan count and size
+- **`rafa deinit` confirmation**: Typing "n" or empty aborts, "y" or "yes" proceeds
+- **`rafa deinit --force`**: Removes without prompting
+- **`rafa deinit` when not initialized**: Returns appropriate error
+- **Prerequisite checks**: Mock `claude` command to test auth check scenarios
+
 ## Edge Cases
 
+### Installation
 | Case | How it's handled |
 |------|------------------|
 | No sudo access | Script prompts for sudo only if needed |
@@ -443,6 +772,19 @@ The changelog is auto-generated by goreleaser from commit history. Use conventio
 | Binary doesn't work | Verification step catches and reports error |
 | Checksum mismatch | Script fails with expected vs actual checksums |
 | Checksums.txt missing | Script fails with clear error |
+
+### Repository Setup
+| Case | How it's handled |
+|------|------------------|
+| `init` outside git repo | Error: "Not a git repository. Run 'git init' first." |
+| `init` without Claude Code | Error with install link: "Install Claude Code: https://claude.ai/code" |
+| `init` when Claude Code not authenticated | Error: "Run 'claude auth' to authenticate." |
+| `init` when already initialized | Error: "rafa is already initialized in this repository" |
+| `deinit` when not initialized | Error: "rafa is not initialized in this repository" |
+| `deinit` cancelled by user | "Aborted." - no changes made |
+| `deinit --force` | Skips confirmation, removes immediately |
+| `.rafa` exists but is a file | Error: ".rafa exists but is not a directory" |
+| Permission denied on `.rafa/` | OS-level error message |
 
 ## Trade-offs
 
