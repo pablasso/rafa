@@ -66,8 +66,8 @@ func (r *ClaudeRunner) buildPrompt(task *plan.Task, planContext string, attempt,
 	if attempt > 1 {
 		sb.WriteString("**Note**: Previous attempts to complete this task failed. ")
 		sb.WriteString("Consider alternative approaches or investigate what went wrong. ")
-		sb.WriteString("If the previous attempt left uncommitted changes, make sure to commit ALL changes ")
-		sb.WriteString("(including .rafa/ metadata) and leave the workspace clean.\n\n")
+		sb.WriteString("Review any uncommitted changes from previous attempts - you may be able to continue from where they left off. ")
+		sb.WriteString("Use `git status` and `git diff` to see what was changed.\n\n")
 	}
 
 	sb.WriteString("## Acceptance Criteria\n")
@@ -81,10 +81,10 @@ func (r *ClaudeRunner) buildPrompt(task *plan.Task, planContext string, attempt,
 	sb.WriteString("1. Implement the task as described\n")
 	sb.WriteString("2. Verify ALL acceptance criteria are met\n")
 	sb.WriteString("3. Before finalizing, perform a code review of your changes. If you have a code review skill available (e.g., `/code-review`), use it to review your implementation and assess what findings are worth addressing vs. acceptable trade-offs\n")
-	sb.WriteString("4. Commit ALL changes (implementation code AND `.rafa/` metadata) with a descriptive message\n")
-	sb.WriteString("5. Verify workspace is clean with `git status` before exiting\n\n")
+	sb.WriteString("4. DO NOT commit your changes - the orchestrator will handle the commit\n")
+	sb.WriteString("5. Output a suggested commit message in this exact format: SUGGESTED_COMMIT_MESSAGE: <your descriptive commit message>\n\n")
 
-	sb.WriteString("IMPORTANT: The workspace MUST be clean when you exit. Do not declare success unless ALL acceptance criteria are met.\n")
+	sb.WriteString("IMPORTANT: Leave changes uncommitted. The orchestrator will commit after validating. Do not declare success unless ALL acceptance criteria are met.\n")
 
 	return sb.String()
 }

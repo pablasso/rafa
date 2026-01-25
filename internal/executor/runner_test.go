@@ -234,3 +234,56 @@ func TestNewClaudeRunner(t *testing.T) {
 		t.Error("NewClaudeRunner() should return non-nil runner")
 	}
 }
+
+func TestClaudeRunner_PromptIncludesDoNotCommitInstruction(t *testing.T) {
+	runner := NewClaudeRunner()
+	task := &plan.Task{
+		ID:                 "t01",
+		Title:              "Test task",
+		Description:        "Test description",
+		AcceptanceCriteria: []string{"Criterion 1"},
+	}
+
+	prompt := runner.buildPrompt(task, "", 1, 3)
+
+	// Verify prompt includes "DO NOT commit" instruction
+	if !strings.Contains(prompt, "DO NOT commit") {
+		t.Error("prompt should include 'DO NOT commit' instruction")
+	}
+
+	// Verify prompt includes instruction for suggested commit message
+	if !strings.Contains(prompt, "SUGGESTED_COMMIT_MESSAGE") {
+		t.Error("prompt should include 'SUGGESTED_COMMIT_MESSAGE' instruction")
+	}
+
+	// Verify prompt includes note about orchestrator handling commit
+	if !strings.Contains(prompt, "orchestrator will commit") {
+		t.Error("prompt should include note about orchestrator handling commit")
+	}
+
+	// Verify prompt includes note about leaving changes uncommitted
+	if !strings.Contains(prompt, "Leave changes uncommitted") {
+		t.Error("prompt should include note about leaving changes uncommitted")
+	}
+}
+
+func TestClaudeRunner_PromptRetryNoteIncludesUncommittedChanges(t *testing.T) {
+	runner := NewClaudeRunner()
+	task := &plan.Task{
+		ID:                 "t01",
+		Title:              "Test task",
+		Description:        "Test description",
+		AcceptanceCriteria: []string{"Criterion 1"},
+	}
+
+	// Test retry attempt includes note about uncommitted changes
+	prompt := runner.buildPrompt(task, "", 2, 3)
+
+	if !strings.Contains(prompt, "uncommitted changes from previous attempts") {
+		t.Error("retry prompt should include note about reviewing uncommitted changes from previous attempts")
+	}
+
+	if !strings.Contains(prompt, "git status") {
+		t.Error("retry prompt should include suggestion to use git status")
+	}
+}

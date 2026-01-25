@@ -148,3 +148,23 @@ The `CommitAll` function already existed in `internal/git/git.go` with the corre
 === Task t02, Attempt 1 ===
 Started: 2026-01-25T17:16:04-06:00
 
+All acceptance criteria have been met:
+
+1. **ExtractCommitMessage method exists** with signature `func (oc *OutputCapture) ExtractCommitMessage() string` at `internal/executor/output.go:95`
+2. **Method searches only the last 100 lines** via `maxLinesToSearch = 100` constant and the start index calculation
+3. **Method returns the trimmed message** after `SUGGESTED_COMMIT_MESSAGE:` prefix using `strings.TrimSpace(strings.TrimPrefix(...))`
+4. **Method returns empty string** if no message found or on read error
+5. **Unit tests exist** covering: message found (`TestOutputCapture_ExtractCommitMessage_Found`), message not found (`TestOutputCapture_ExtractCommitMessage_NotFound`), empty output (`TestOutputCapture_ExtractCommitMessage_EmptyOutput`), plus additional tests for 100-line limit boundary, multiple messages, and whitespace trimming
+6. **make test passes**
+7. **make fmt passes**
+
+The workspace is clean. Task complete.
+
+SUGGESTED_COMMIT_MESSAGE: Add ExtractCommitMessage method to OutputCapture
+
+=== Task t02: SUCCESS ===
+
+
+=== Task t03, Attempt 1 ===
+Started: 2026-01-25T17:18:26-06:00
+
