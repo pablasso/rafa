@@ -6,6 +6,10 @@ import (
 	"os/exec"
 )
 
+// commandFunc and lookPathFunc are package-level variables that can be overridden in tests.
+var commandFunc = exec.Command
+var lookPathFunc = exec.LookPath
+
 const rafaDir = ".rafa"
 
 // PrerequisiteError represents a failed prerequisite check with helpful remediation info.
@@ -56,7 +60,7 @@ func checkPrerequisitesWithProgress() error {
 
 // checkGitRepo verifies we're in a git repository.
 func checkGitRepo() error {
-	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	cmd := commandFunc("git", "rev-parse", "--git-dir")
 	if err := cmd.Run(); err != nil {
 		return &PrerequisiteError{
 			Check:   "Git repository",
@@ -70,7 +74,7 @@ func checkGitRepo() error {
 // checkClaudeCode verifies Claude Code CLI is installed and authenticated.
 func checkClaudeCode() error {
 	// Check if claude command exists
-	_, err := exec.LookPath("claude")
+	_, err := lookPathFunc("claude")
 	if err != nil {
 		return &PrerequisiteError{
 			Check:   "Claude Code CLI",
@@ -80,7 +84,7 @@ func checkClaudeCode() error {
 	}
 
 	// Check if authenticated (claude auth status returns 0 if authenticated)
-	cmd := exec.Command("claude", "auth", "status")
+	cmd := commandFunc("claude", "auth", "status")
 	if err := cmd.Run(); err != nil {
 		return &PrerequisiteError{
 			Check:   "Claude Code authentication",

@@ -8,6 +8,23 @@ import (
 )
 
 func TestRunInit(t *testing.T) {
+	// Mock command execution to avoid slow claude auth checks
+	originalCommandFunc := commandFunc
+	originalLookPathFunc := lookPathFunc
+	commandFunc = func(name string, args ...string) *exec.Cmd {
+		if name == "claude" {
+			return exec.Command("true") // instant success for claude commands
+		}
+		return exec.Command(name, args...) // use real command for git
+	}
+	lookPathFunc = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil // pretend all commands exist
+	}
+	t.Cleanup(func() {
+		commandFunc = originalCommandFunc
+		lookPathFunc = originalLookPathFunc
+	})
+
 	t.Run("successful init creates directories and updates gitignore", func(t *testing.T) {
 		// Create a temp dir with git initialized
 		tmpDir := t.TempDir()
