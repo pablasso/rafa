@@ -82,3 +82,48 @@ Let me verify all acceptance criteria are met:
 All acceptance criteria are met.
 
 SUGGESTED_COMMIT_MESSAGE: Implement FilePicker view with bubbles/filepicker for design document selection
+
+=== Task t04: SUCCESS ===
+
+
+=== Task t05, Attempt 1 ===
+Started: 2026-01-28T17:52:04-06:00
+
+Let me verify all the acceptance criteria are met:
+
+**Acceptance Criteria Verification:**
+
+1. ✅ **internal/tui/views/create.go implements CreatingModel with three states: extracting, success, error** - Lines 24-28 define `stateExtracting`, `stateSuccess`, `stateError`
+
+2. ✅ **During extraction: shows source file path and animated spinner (⣾ style)** - Lines 307-346 in `renderExtracting()`, spinner uses `spinner.Dot` (line 75)
+
+3. ✅ **Spinner animates using bubbles/spinner with Tick commands** - Line 88 starts spinner with `m.spinner.Tick`, lines 225-228 handle `spinner.TickMsg`
+
+4. ✅ **Plan creation runs in background using tea.Cmd pattern (not blocking UI)** - Lines 94-171 implement `startExtraction()` which returns a `tea.Cmd`
+
+5. ✅ **On success: displays plan ID, task count, and numbered task titles** - Lines 349-399 in `renderSuccess()` show plan ID (line 361) and numbered tasks (lines 371-378)
+
+6. ✅ **Success state shows '[r] Run this plan now' and '[h] Return to home' options** - Lines 381-385
+
+7. ✅ **Pressing 'r' in success state returns RunPlanMsg with the created plan ID** - Lines 259-260
+
+8. ✅ **Pressing 'h' in success state returns GoToHomeMsg** - Lines 261-262
+
+9. ✅ **On error: displays error message with details** - Lines 402-452 in `renderError()` show error mark (line 413) and details (lines 420-430)
+
+10. ✅ **Error state shows '[r] Retry', '[b] Back to file picker', '[h] Home' options** - Lines 433-437
+
+11. ✅ **Ctrl+C during extraction cancels and returns GoToFilePickerMsg** - Lines 252-255
+
+12. ✅ **StatusBar shows context-appropriate help for each state** - 
+   - Extracting: Lines 343-344 ("Please wait...", "Ctrl+C Cancel")
+   - Success: Lines 396-397 ("r Run plan", "h Home", "q Quit")
+   - Error: Lines 449-450 ("r Retry", "b Back", "h Home")
+
+13. ✅ **Unit tests verify: spinner state, success display, error display, key handling for each state** - The test file covers all these scenarios
+
+14. ✅ **make test passes** - Verified with passing tests
+
+All acceptance criteria are met.
+
+SUGGESTED_COMMIT_MESSAGE: Implement Creating view with AI integration for plan creation progress

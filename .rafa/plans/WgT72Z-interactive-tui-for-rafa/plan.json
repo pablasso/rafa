@@ -103,8 +103,8 @@
         "Unit tests verify: spinner state, success display, error display, key handling for each state",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t06",
