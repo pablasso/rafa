@@ -1,4 +1,27 @@
 package components
 
-// StatusBar component - bottom status/help bar.
-// This is a placeholder for task t02.
+import (
+	"strings"
+
+	"github.com/pablasso/rafa/internal/tui"
+)
+
+// StatusBar renders a bottom help bar showing contextual help items.
+type StatusBar struct{}
+
+// NewStatusBar creates a new StatusBar instance.
+func NewStatusBar() StatusBar {
+	return StatusBar{}
+}
+
+// Render returns the status bar string for the given width and items.
+// Items are joined with " • " separator and padded to fill the width.
+func (s StatusBar) Render(width int, items []string) string {
+	if len(items) == 0 {
+		return tui.StatusBarStyle.Width(width).Render("")
+	}
+
+	content := strings.Join(items, " • ")
+
+	return tui.StatusBarStyle.Width(width).Render(content)
+}
