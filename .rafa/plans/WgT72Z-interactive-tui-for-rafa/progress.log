@@ -5,3 +5,5 @@
 {"timestamp":"2026-01-28T17:45:14.490271-06:00","event":"task_completed","data":{"task_id":"t02"}}
 {"timestamp":"2026-01-28T17:45:14.711495-06:00","event":"task_started","data":{"attempt":1,"task_id":"t03"}}
 {"timestamp":"2026-01-28T17:49:17.773324-06:00","event":"task_completed","data":{"task_id":"t03"}}
+{"timestamp":"2026-01-28T17:49:17.989285-06:00","event":"task_started","data":{"attempt":1,"task_id":"t04"}}
+{"timestamp":"2026-01-28T17:52:03.95705-06:00","event":"task_completed","data":{"task_id":"t04"}}
