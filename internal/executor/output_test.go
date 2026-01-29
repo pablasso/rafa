@@ -440,3 +440,164 @@ func TestOutputCapture_ExtractCommitMessage_TrimsWhitespace(t *testing.T) {
 
 	oc.Close()
 }
+
+func TestOutputCapture_WithEventsChan_StreamsOutput(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a buffered channel for events
+	eventsChan := make(chan string, 10)
+
+	oc, err := NewOutputCaptureWithEvents(tmpDir, eventsChan)
+	if err != nil {
+		t.Fatalf("NewOutputCaptureWithEvents() error: %v", err)
+	}
+
+	// Write to stdout
+	testMessage := "Hello from stdout\n"
+	oc.Stdout().Write([]byte(testMessage))
+
+	oc.Close()
+
+	// Check the channel received the message
+	select {
+	case msg := <-eventsChan:
+		if msg != testMessage {
+			t.Errorf("eventsChan received %q, want %q", msg, testMessage)
+		}
+	default:
+		t.Error("eventsChan should have received a message")
+	}
+}
+
+func TestOutputCapture_WithEventsChan_NonBlockingWrite(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a channel with no buffer - would block if we try to write
+	eventsChan := make(chan string)
+
+	oc, err := NewOutputCaptureWithEvents(tmpDir, eventsChan)
+	if err != nil {
+		t.Fatalf("NewOutputCaptureWithEvents() error: %v", err)
+	}
+
+	// Write should succeed even though no one is reading the channel
+	// (non-blocking, should drop the message)
+	testMessage := "This should not block\n"
+	n, err := oc.Stdout().Write([]byte(testMessage))
+
+	if err != nil {
+		t.Errorf("Write should not error, got: %v", err)
+	}
+	if n != len(testMessage) {
+		t.Errorf("Write returned %d, expected %d", n, len(testMessage))
+	}
+
+	oc.Close()
+
+	// Channel should be empty (message was dropped)
+	select {
+	case msg := <-eventsChan:
+		t.Errorf("eventsChan should be empty, got: %q", msg)
+	default:
+		// Expected - channel is empty
+	}
+}
+
+func TestOutputCapture_WithEventsChan_StderrAlsoStreams(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	eventsChan := make(chan string, 10)
+
+	oc, err := NewOutputCaptureWithEvents(tmpDir, eventsChan)
+	if err != nil {
+		t.Fatalf("NewOutputCaptureWithEvents() error: %v", err)
+	}
+
+	// Write to stderr
+	testMessage := "Error message\n"
+	oc.Stderr().Write([]byte(testMessage))
+
+	oc.Close()
+
+	// Check the channel received the message
+	select {
+	case msg := <-eventsChan:
+		if msg != testMessage {
+			t.Errorf("eventsChan received %q, want %q", msg, testMessage)
+		}
+	default:
+		t.Error("eventsChan should have received stderr message")
+	}
+}
+
+func TestOutputCapture_WithNilEventsChan_WorksNormally(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Pass nil for eventsChan - should work like regular OutputCapture
+	oc, err := NewOutputCaptureWithEvents(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("NewOutputCaptureWithEvents() error: %v", err)
+	}
+
+	// Write should succeed
+	testMessage := "Normal output\n"
+	n, err := oc.Stdout().Write([]byte(testMessage))
+
+	if err != nil {
+		t.Errorf("Write should not error, got: %v", err)
+	}
+	if n != len(testMessage) {
+		t.Errorf("Write returned %d, expected %d", n, len(testMessage))
+	}
+
+	oc.Close()
+
+	// Verify EventsChan returns nil
+	if oc.EventsChan() != nil {
+		t.Error("EventsChan() should return nil when not set")
+	}
+}
+
+func TestOutputCapture_EventsChan_ReturnsChannel(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	eventsChan := make(chan string, 10)
+
+	oc, err := NewOutputCaptureWithEvents(tmpDir, eventsChan)
+	if err != nil {
+		t.Fatalf("NewOutputCaptureWithEvents() error: %v", err)
+	}
+	defer oc.Close()
+
+	// Verify EventsChan returns the channel
+	if oc.EventsChan() != eventsChan {
+		t.Error("EventsChan() should return the provided channel")
+	}
+}
+
+func TestOutputCapture_WithEventsChan_WritesToLogFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	eventsChan := make(chan string, 10)
+
+	oc, err := NewOutputCaptureWithEvents(tmpDir, eventsChan)
+	if err != nil {
+		t.Fatalf("NewOutputCaptureWithEvents() error: %v", err)
+	}
+
+	testMessage := "Test output message\n"
+	oc.Stdout().Write([]byte(testMessage))
+
+	oc.Close()
+
+	// Verify message was written to log file (not just the channel)
+	logPath := tmpDir + "/" + outputLogFileName
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	if !strings.Contains(string(content), "Test output message") {
+		t.Errorf("log file should contain test message, got: %s", string(content))
+	}
+}

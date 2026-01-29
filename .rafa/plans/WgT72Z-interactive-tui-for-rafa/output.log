@@ -155,3 +155,48 @@ Let me verify the acceptance criteria against my implementation:
 All acceptance criteria are met!
 
 SUGGESTED_COMMIT_MESSAGE: Implement PlanList view for selecting existing plans to run
+
+=== Task t06: SUCCESS ===
+
+
+=== Task t07, Attempt 1 ===
+Started: 2026-01-28T18:00:37-06:00
+
+All the implementation is complete. Let me provide a summary of what was implemented:
+
+## Summary
+
+I have implemented the ExecutorEvents interface and adapted the Executor to support TUI integration. Here are the changes:
+
+### New Files Created:
+1. **internal/executor/events.go** - Defines the `ExecutorEvents` interface with 6 methods:
+   - `OnTaskStart(taskNum, total int, task *plan.Task, attempt int)`
+   - `OnTaskComplete(task *plan.Task)`
+   - `OnTaskFailed(task *plan.Task, attempt int, err error)`
+   - `OnOutput(line string)`
+   - `OnPlanComplete(succeeded, total int, duration time.Duration)`
+   - `OnPlanFailed(task *plan.Task, reason string)`
+
+2. **internal/executor/events_test.go** - Comprehensive tests for the events system
+
+### Modified Files:
+1. **internal/executor/executor.go**:
+   - Added `events` field to `Executor` struct
+   - Added `WithEvents(ExecutorEvents) *Executor` method
+   - Added event emissions at appropriate points in execution flow
+
+2. **internal/executor/output.go**:
+   - Added `eventsChan` field to `OutputCapture` struct
+   - Added `NewOutputCaptureWithEvents()` constructor
+   - Added `streamingWriter` type with non-blocking channel send
+   - Added `EventsChan()` getter method
+
+3. **internal/executor/output_test.go** - Added tests for output streaming with eventsChan
+
+### Key Design Decisions:
+- All event emissions are guarded by `if e.events != nil` to ensure zero overhead in CLI mode
+- Non-blocking channel sends using `select { case ... default: }` to prevent blocking execution
+- Channel-based streaming for output allows the TUI flexibility in consumption
+- Builder pattern maintained with `WithEvents()` matching existing API style
+
+SUGGESTED_COMMIT_MESSAGE: Add ExecutorEvents interface and adapt Executor for TUI integration

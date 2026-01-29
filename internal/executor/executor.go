@@ -31,6 +31,7 @@ type Executor struct {
 	allowDirty bool
 	saveHook   func() // Optional hook called after each plan save (for testing)
 	display    *display.Display
+	events     ExecutorEvents // nil for CLI mode
 }
 
 // New creates a new Executor for the given plan directory and plan.
@@ -69,6 +70,14 @@ func (e *Executor) WithSaveHook(hook func()) *Executor {
 // WithDisplay sets the display for status updates.
 func (e *Executor) WithDisplay(d *display.Display) *Executor {
 	e.display = d
+	return e
+}
+
+// WithEvents configures event callbacks for TUI integration.
+// When events is non-nil, the executor will emit events during execution.
+// When nil (the default), the executor uses existing CLI behavior unchanged.
+func (e *Executor) WithEvents(events ExecutorEvents) *Executor {
+	e.events = events
 	return e
 }
 
@@ -186,6 +195,10 @@ func (e *Executor) Run(ctx context.Context) error {
 				e.notifySave()
 			}
 			e.logger.PlanFailed(task.ID, task.Attempts)
+			// Emit OnPlanFailed event for TUI integration
+			if e.events != nil {
+				e.events.OnPlanFailed(task, fmt.Sprintf("failed after %d attempts", task.Attempts))
+			}
 			return fmt.Errorf("task %s failed after %d attempts", task.ID, task.Attempts)
 		}
 	}
@@ -211,6 +224,10 @@ func (e *Executor) Run(ctx context.Context) error {
 	}
 
 	fmt.Printf("\nPlan completed! (%s)\n", e.formatDuration(duration))
+	// Emit OnPlanComplete event for TUI integration
+	if e.events != nil {
+		e.events.OnPlanComplete(e.countCompleted(), len(e.plan.Tasks), duration)
+	}
 	return nil
 }
 
@@ -244,6 +261,11 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		// Print progress
 		fmt.Printf("\nTask %d/%d: %s [Attempt %d/%d]\n",
 			idx+1, len(e.plan.Tasks), task.Title, task.Attempts, MaxAttempts)
+
+		// Emit OnTaskStart event for TUI integration
+		if e.events != nil {
+			e.events.OnTaskStart(idx+1, len(e.plan.Tasks), task, task.Attempts)
+		}
 
 		// Log task started
 		if err := e.logger.TaskStarted(task.ID, task.Attempts); err != nil {
@@ -291,6 +313,10 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			if e.display != nil {
 				e.display.UpdateStatus(display.StatusCompleted)
 			}
+			// Emit OnTaskComplete event for TUI integration
+			if e.events != nil {
+				e.events.OnTaskComplete(task)
+			}
 			return nil
 		}
 
@@ -299,6 +325,10 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			fmt.Printf("Warning: failed to log task failed: %v\n", logErr)
 		}
 		fmt.Printf("Task failed: %v\n", err)
+		// Emit OnTaskFailed event for TUI integration
+		if e.events != nil {
+			e.events.OnTaskFailed(task, task.Attempts, err)
+		}
 		if output != nil {
 			output.WriteTaskFooter(task.ID, false)
 		}

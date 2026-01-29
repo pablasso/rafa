@@ -146,8 +146,8 @@
         "Unit tests verify: events are emitted at correct times, nil events doesn't crash, output streaming works",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t08",

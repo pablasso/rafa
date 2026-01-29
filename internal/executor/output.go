@@ -21,14 +21,22 @@ type OutputWriter interface {
 
 // OutputCapture manages output to both terminal and log file.
 type OutputCapture struct {
-	logFile  *os.File
-	multiOut io.Writer
-	multiErr io.Writer
+	logFile    *os.File
+	multiOut   io.Writer
+	multiErr   io.Writer
+	eventsChan chan string // For TUI consumption, nil for CLI
 }
 
 // NewOutputCapture creates an output capture for the given plan directory.
 // Opens output.log in append mode to preserve history across runs.
 func NewOutputCapture(planDir string) (*OutputCapture, error) {
+	return NewOutputCaptureWithEvents(planDir, nil)
+}
+
+// NewOutputCaptureWithEvents creates an output capture with optional event streaming.
+// When eventsChan is non-nil, output is streamed to the channel for TUI integration.
+// The channel should be buffered to avoid blocking; if the buffer is full, data is dropped.
+func NewOutputCaptureWithEvents(planDir string, eventsChan chan string) (*OutputCapture, error) {
 	logPath := filepath.Join(planDir, outputLogFileName)
 
 	// Open in append mode - preserves history when re-running failed plans
@@ -38,14 +46,51 @@ func NewOutputCapture(planDir string) (*OutputCapture, error) {
 	}
 
 	oc := &OutputCapture{
-		logFile: f,
+		logFile:    f,
+		eventsChan: eventsChan,
 	}
 
 	// Create multi-writers for stdout and stderr
-	oc.multiOut = io.MultiWriter(os.Stdout, f)
-	oc.multiErr = io.MultiWriter(os.Stderr, f)
+	// When eventsChan is set, wrap with streamingWriter for TUI integration
+	if eventsChan != nil {
+		streamingOut := &streamingWriter{
+			underlying: io.MultiWriter(os.Stdout, f),
+			eventsChan: eventsChan,
+		}
+		streamingErr := &streamingWriter{
+			underlying: io.MultiWriter(os.Stderr, f),
+			eventsChan: eventsChan,
+		}
+		oc.multiOut = streamingOut
+		oc.multiErr = streamingErr
+	} else {
+		oc.multiOut = io.MultiWriter(os.Stdout, f)
+		oc.multiErr = io.MultiWriter(os.Stderr, f)
+	}
 
 	return oc, nil
+}
+
+// streamingWriter wraps a writer and sends output to a channel for TUI streaming.
+type streamingWriter struct {
+	underlying io.Writer
+	eventsChan chan string
+}
+
+// Write writes to the underlying writer and sends to eventsChan with non-blocking select.
+func (s *streamingWriter) Write(p []byte) (n int, err error) {
+	// Write to underlying writer (log file + terminal)
+	n, err = s.underlying.Write(p)
+
+	// Send to TUI if channel exists (non-blocking)
+	if s.eventsChan != nil {
+		select {
+		case s.eventsChan <- string(p):
+		default:
+			// Drop if buffer full, don't block execution
+		}
+	}
+	return
 }
 
 // Stdout returns the writer for stdout.
@@ -61,6 +106,11 @@ func (oc *OutputCapture) Stderr() io.Writer {
 // Close closes the log file.
 func (oc *OutputCapture) Close() error {
 	return oc.logFile.Close()
+}
+
+// EventsChan returns the events channel for TUI streaming, or nil for CLI mode.
+func (oc *OutputCapture) EventsChan() chan string {
+	return oc.eventsChan
 }
 
 // WriteTaskHeader writes a header line to the log for a new task attempt.
