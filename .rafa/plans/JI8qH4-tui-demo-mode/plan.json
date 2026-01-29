@@ -139,8 +139,8 @@
         "Tests verify output contains expected format markers (## sections, checkmarks)",
         "make test passes with all new tests"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t10",

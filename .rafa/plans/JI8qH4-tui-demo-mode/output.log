@@ -230,3 +230,49 @@ All acceptance criteria are met. Here's a summary of the changes made:
 - Updated `transitionToDemoRunning()` to call `StartExecutor()` instead of `StartDemoExecutor()` (the unified method auto-detects demo mode)
 
 SUGGESTED_COMMIT_MESSAGE: Integrate demo mode into run view with DemoRunner injection via Executor.WithRunner()
+
+=== Task t08: SUCCESS ===
+
+
+=== Task t09, Attempt 1 ===
+Started: 2026-01-28T21:29:34-06:00
+
+The code review found no significant issues. The suggestions are minor and acceptable trade-offs:
+
+1. **Table-driven tests for constants** - The explicit style is more readable for this case
+2. **Redundant nil check** - Adds clarity and explicit intent, acceptable
+3. **Negative test cases** - Edge cases like empty values aren't part of the acceptance criteria and the current tests cover the required behavior
+4. **Overlap with runner_test.go** - The new demo_test.go tests focus on `NewConfig` delay calculations and `CreateDemoPlan`, which are the specific requirements for this task
+
+All acceptance criteria are met. Let me provide a summary:
+
+## Summary
+
+Created `internal/demo/demo_test.go` with comprehensive tests for the demo package configuration:
+
+**New tests added:**
+- `TestNewConfig_SpeedFast` - Verifies SpeedFast delay is 500ms
+- `TestNewConfig_SpeedNormal` - Verifies SpeedNormal delay is 2s
+- `TestNewConfig_SpeedSlow` - Verifies SpeedSlow delay is 5s
+- `TestNewConfig_UnknownSpeedDefaultsToNormal` - Verifies unknown speeds default to 2s
+- `TestNewConfig_AllScenarios` - Verifies all scenario types are set correctly
+- `TestNewConfig_ReturnsNonNilConfig` - Verifies non-nil return
+- `TestCreateDemoPlan_ReturnsValidPlan` - Verifies demo plan structure
+- `TestCreateDemoPlan_TasksHaveRequiredFields` - Verifies all tasks have ID, Title, Description, AcceptanceCriteria
+- `TestCreateDemoPlan_TaskIDs` - Verifies task IDs are t01-t05
+- `TestScenarioConstants` - Verifies scenario constant values
+- `TestSpeedConstants` - Verifies speed constant values
+
+**Existing tests in runner_test.go already cover:**
+- ScenarioSuccess never fails (all tasks, all attempts)
+- ScenarioFail always fails (all tasks, all attempts)
+- ScenarioRetry fails attempts 1-2, succeeds on attempt 3
+- ScenarioMixed: t02 fails attempt 1 (retries), t03 always fails, others succeed
+
+**Existing tests in output_test.go cover:**
+- Output contains `## Implementation Progress` section
+- Output contains `## Acceptance Criteria Verification` section
+- Passing criteria show ✅ checkmarks
+- Failing criteria show ❌ marks
+
+SUGGESTED_COMMIT_MESSAGE: Add comprehensive unit tests for demo package with NewConfig delay calculations and CreateDemoPlan verification
