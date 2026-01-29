@@ -170,8 +170,8 @@
         "Unit tests verify: split layout rendering, event handling, status indicators, cancellation",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t09",

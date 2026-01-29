@@ -200,3 +200,34 @@ I have implemented the ExecutorEvents interface and adapted the Executor to supp
 - Builder pattern maintained with `WithEvents()` matching existing API style
 
 SUGGESTED_COMMIT_MESSAGE: Add ExecutorEvents interface and adapt Executor for TUI integration
+
+=== Task t07: SUCCESS ===
+
+
+=== Task t08, Attempt 1 ===
+Started: 2026-01-28T18:08:04-06:00
+
+The implementation correctly uses `AddLine` from the `OutputViewport` component which handles auto-scrolling. The `OutputViewport` component (which I verified earlier) already implements:
+- Auto-scroll to bottom when new content arrives (via `AddLine`)
+- Pause auto-scroll when user scrolls up (via key handling in `Update`)
+- Resume auto-scroll when user scrolls back to bottom
+
+Let me verify the acceptance criteria are all met:
+
+1. ✅ internal/tui/views/run.go implements RunningModel with split layout
+2. ✅ Left panel (40%) shows: plan name, current task number/total, attempt counter, elapsed time (MM:SS), progress bar, task list
+3. ✅ Right panel (60%) shows scrollable OutputViewport with real-time output
+4. ✅ Panels are joined horizontally using Lip Gloss with visible separator (rounded borders)
+5. ✅ Task list uses status indicators: ✓ (completed), ⣾ (in progress spinner), ○ (pending), ✗ (failed)
+6. ✅ In-progress task has animated spinner that ticks with the view
+7. ✅ RunningModel implements executor.ExecutorEvents interface (via RunningModelEvents)
+8. ✅ Events from executor are translated to Bubble Tea messages via channel
+9. ✅ Output viewport auto-scrolls to bottom on new content (via OutputViewport.AddLine)
+10. ✅ User can scroll output up (pauses auto-scroll), scrolling to bottom resumes auto-scroll (via OutputViewport.Update)
+11. ✅ Ctrl+C triggers graceful cancellation via context
+12. ✅ After cancellation or completion, view shows summary and transition message
+13. ✅ StatusBar shows 'Running... • Ctrl+C Cancel'
+14. ✅ Unit tests verify: split layout rendering, event handling, status indicators, cancellation
+15. ✅ make test passes
+
+SUGGESTED_COMMIT_MESSAGE: Implement Running view with split layout for TUI execution monitor
