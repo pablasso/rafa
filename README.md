@@ -53,21 +53,54 @@ rafa init
 
 This creates a `.rafa/` directory to store plans and execution data.
 
-### Create Your First Plan
+### Launch the TUI
 
 ```bash
-rafa plan create docs/my-feature.md
+rafa
 ```
 
-### Run the Plan
+The interactive interface guides you through creating and running plans.
+
+### Or Use CLI Commands
 
 ```bash
-rafa plan run my-feature
+rafa plan create docs/my-feature.md   # Create a plan
+rafa plan run my-feature               # Run the plan
 ```
 
 ## Usage
 
-### Creating a Plan
+### Interactive TUI (Default)
+
+Run `rafa` with no arguments to launch the interactive interface:
+
+```bash
+rafa
+```
+
+The TUI allows you to:
+- Create new plans from design documents
+- Run existing plans with real-time progress
+- Monitor task execution with split-view output
+
+**Navigation:**
+- Arrow keys or `j`/`k` to navigate
+- `Enter` to select
+- `Esc` to go back
+- `Ctrl+C` to cancel or quit
+
+### CLI Commands
+
+For scripting and automation, CLI subcommands are available:
+
+```bash
+rafa init              # Initialize repository
+rafa plan create FILE  # Create plan from design doc
+rafa plan list         # List all plans
+rafa plan run PLAN_ID  # Execute a plan
+```
+
+### Creating a Plan (CLI)
 
 ```bash
 rafa plan create <design.md> [--name <name>] [--dry-run]
@@ -276,7 +309,6 @@ rm -rf .rafa/
 
 ## Not Yet Implemented
 
-- TUI with live updates - Console output only
 - Output capture to `output.log`
 - AGENTS.md suggestions post-run
 - Human input detection

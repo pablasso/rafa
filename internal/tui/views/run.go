@@ -350,18 +350,16 @@ func (m RunningModel) renderRunning() string {
 	// Build right panel content
 	rightContent := m.renderRightPanel(rightWidth, panelHeight-2)
 
-	// Style panels with borders
-	leftPanelStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#6C6C6C")).
+	// Style panels with borders - inherit border color from BoxStyle
+	leftPanelStyle := styles.BoxStyle.Copy().
 		Width(leftWidth).
-		Height(panelHeight - 2)
+		Height(panelHeight-2).
+		Padding(0, 1) // Override padding for tighter layout
 
-	rightPanelStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#6C6C6C")).
+	rightPanelStyle := styles.BoxStyle.Copy().
 		Width(rightWidth).
-		Height(panelHeight - 2)
+		Height(panelHeight-2).
+		Padding(0, 1)
 
 	leftPanel := leftPanelStyle.Render(leftContent)
 	rightPanel := rightPanelStyle.Render(rightContent)
