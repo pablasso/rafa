@@ -47,8 +47,8 @@
         "Unit tests verify output format includes expected sections and markers",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t04",

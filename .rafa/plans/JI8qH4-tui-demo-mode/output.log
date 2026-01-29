@@ -46,3 +46,48 @@ All acceptance criteria have been verified:
    - All tests pass with `ok github.com/pablasso/rafa/internal/demo 3.134s`
 
 SUGGESTED_COMMIT_MESSAGE: Add DemoRunner implementing executor.Runner with scenario-based execution logic
+
+=== Task t02: SUCCESS ===
+
+
+=== Task t03, Attempt 1 ===
+Started: 2026-01-28T21:08:19-06:00
+
+Now let me verify all acceptance criteria are met:
+
+**Acceptance Criteria Verification:**
+
+1. **internal/demo/output.go exists with generateOutput, generateWorkLines, and generateCommitMessage methods** - ✅ Created the file with all three methods
+
+2. **Output includes retry attempt message when attempt > 1** - ✅ Lines 18-25 in output.go handle this:
+   ```go
+   if attempt > 1 {
+       lines = append(lines,
+           fmt.Sprintf("Retrying task (attempt %d)...", attempt),
+           "",
+           "Analyzing previous failure and adjusting approach.",
+           "",
+       )
+   }
+   ```
+
+3. **Output includes '## Implementation Progress' and '## Acceptance Criteria Verification' sections** - ✅ These sections are included (lines 31 and 42 in output.go)
+
+4. **Acceptance criteria show ✅ for passing and ❌ for failing criteria** - ✅ Lines 46-52 in output.go handle this with the Unicode checkmark and X mark
+
+5. **Work templates exist for all 5 tasks (t01-t05) with realistic content matching the design** - ✅ All 5 task templates are in the `workTemplates` map (lines 78-150 in output.go)
+
+6. **Unit tests verify output format includes expected sections and markers** - ✅ The output_test.go file contains comprehensive tests:
+   - `TestGenerateOutput_ContainsImplementationProgressSection`
+   - `TestGenerateOutput_ContainsAcceptanceCriteriaVerificationSection`
+   - `TestGenerateOutput_RetryAttemptMessage`
+   - `TestGenerateOutput_PassingCriteriaShowCheckmark`
+   - `TestGenerateOutput_FailingCriteriaShowXMark`
+   - `TestGenerateOutput_SuccessIncludesSuggestedCommitMessage`
+   - Plus tests for all task templates (t01-t05)
+
+7. **make test passes** - ✅ Verified above
+
+All acceptance criteria are met.
+
+SUGGESTED_COMMIT_MESSAGE: Add output.go with realistic demo output generation including retry messages, progress sections, and task-specific work templates
