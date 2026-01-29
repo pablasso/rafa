@@ -258,12 +258,12 @@ func (m RunningModel) handleKeyPress(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
 	case stateRunning:
 		switch msg.String() {
 		case "ctrl+c":
-			// Trigger cancellation
+			// Trigger graceful stop - cancels the executor context
 			if m.cancel != nil {
 				m.cancel()
 			}
 			m.state = stateCancelled
-			m.finalMessage = fmt.Sprintf("Cancelled. Completed %d/%d tasks.",
+			m.finalMessage = fmt.Sprintf("Stopped. Completed %d/%d tasks.",
 				m.countCompleted(), m.totalTasks)
 			return m, nil
 		case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":

@@ -2,8 +2,10 @@ package views
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -23,10 +25,18 @@ import (
 type createState int
 
 const (
-	stateExtracting createState = iota
+	stateCheckingCLI createState = iota
+	stateExtracting
 	stateSuccess
 	stateError
+	stateCLINotFound
 )
+
+// ErrClaudeCLINotFound is returned when the Claude CLI is not installed.
+var ErrClaudeCLINotFound = errors.New("claude CLI not found")
+
+// ClaudeCLINotFoundMsg is sent when the Claude CLI is not found.
+type ClaudeCLINotFoundMsg struct{}
 
 // PlanCreationErrorMsg is sent when plan creation fails.
 type PlanCreationErrorMsg struct {
@@ -53,11 +63,25 @@ type ExtractTasksFunc func(ctx context.Context, designContent string) (*plan.Tas
 // It can be replaced in tests.
 type CreatePlanFolderFunc func(p *plan.Plan) error
 
+// CheckClaudeCLIFunc is the function type for checking if Claude CLI exists.
+// It can be replaced in tests.
+type CheckClaudeCLIFunc func() error
+
 // Dependency injection for testing
 var (
 	extractTasks     ExtractTasksFunc     = ai.ExtractTasks
 	createPlanFolder CreatePlanFolderFunc = plan.CreatePlanFolder
+	checkClaudeCLI   CheckClaudeCLIFunc   = defaultCheckClaudeCLI
 )
+
+// defaultCheckClaudeCLI checks if the claude CLI is available in PATH.
+func defaultCheckClaudeCLI() error {
+	_, err := exec.LookPath("claude")
+	if err != nil {
+		return ErrClaudeCLINotFound
+	}
+	return nil
+}
 
 // NewCreatingModel creates a new CreatingModel for the given source file.
 func NewCreatingModel(sourceFile string) CreatingModel {
@@ -66,7 +90,7 @@ func NewCreatingModel(sourceFile string) CreatingModel {
 	s.Style = styles.SelectedStyle
 
 	return CreatingModel{
-		state:      stateExtracting,
+		state:      stateCheckingCLI,
 		spinner:    s,
 		sourceFile: sourceFile,
 	}
@@ -76,9 +100,26 @@ func NewCreatingModel(sourceFile string) CreatingModel {
 func (m CreatingModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		m.startExtraction(),
+		m.checkCLI(),
 	)
 }
+
+// checkCLI checks if the Claude CLI is available.
+func (m CreatingModel) checkCLI() tea.Cmd {
+	return func() tea.Msg {
+		if err := checkClaudeCLI(); err != nil {
+			return ClaudeCLINotFoundMsg{}
+		}
+		// CLI found, proceed to extraction
+		return cliFoundMsg{}
+	}
+}
+
+// cliFoundMsg is sent when the CLI check passes.
+type cliFoundMsg struct{}
+
+// extractionCancelledMsg is sent when extraction is cancelled by the user.
+type extractionCancelledMsg struct{}
 
 // startExtraction kicks off the background extraction process.
 func (m CreatingModel) startExtraction() tea.Cmd {
@@ -217,6 +258,15 @@ func (m CreatingModel) Update(msg tea.Msg) (CreatingModel, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
+	case cliFoundMsg:
+		// CLI check passed, start extraction
+		m.state = stateExtracting
+		return m, m.startExtraction()
+
+	case ClaudeCLINotFoundMsg:
+		m.state = stateCLINotFound
+		return m, nil
+
 	case msgs.PlanCreatedMsg:
 		m.state = stateSuccess
 		m.planID = msg.PlanID
@@ -238,10 +288,21 @@ func (m CreatingModel) Update(msg tea.Msg) (CreatingModel, tea.Cmd) {
 // handleKeyPress handles keyboard input based on current state.
 func (m CreatingModel) handleKeyPress(msg tea.KeyMsg) (CreatingModel, tea.Cmd) {
 	switch m.state {
+	case stateCheckingCLI:
+		// During CLI check, only Ctrl+C to cancel
+		if msg.String() == "ctrl+c" {
+			// Return to file picker, preserving the directory of the selected file
+			currentDir := filepath.Dir(m.sourceFile)
+			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{CurrentDir: currentDir} }
+		}
+
 	case stateExtracting:
 		// During extraction, only Ctrl+C to cancel
 		if msg.String() == "ctrl+c" {
-			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
+			// Return to file picker, preserving the directory of the selected file
+			// Note: The extraction goroutine will continue but its result will be ignored
+			currentDir := filepath.Dir(m.sourceFile)
+			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{CurrentDir: currentDir} }
 		}
 
 	case stateSuccess:
@@ -271,6 +332,16 @@ func (m CreatingModel) handleKeyPress(msg tea.KeyMsg) (CreatingModel, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
+
+	case stateCLINotFound:
+		switch msg.String() {
+		case "b":
+			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
+		case "h":
+			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
 	}
 
 	return m, nil
@@ -283,12 +354,16 @@ func (m CreatingModel) View() string {
 	}
 
 	switch m.state {
+	case stateCheckingCLI:
+		return m.renderExtracting() // Same view as extracting (checking CLI...)
 	case stateExtracting:
 		return m.renderExtracting()
 	case stateSuccess:
 		return m.renderSuccess()
 	case stateError:
 		return m.renderError()
+	case stateCLINotFound:
+		return m.renderCLINotFound()
 	}
 
 	return ""
@@ -389,19 +464,43 @@ func (m CreatingModel) renderSuccess() string {
 	return b.String()
 }
 
+// isTimeoutError checks if the error is a network timeout.
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "timed out") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "deadline exceeded")
+}
+
 // renderError renders the view when plan creation fails.
 func (m CreatingModel) renderError() string {
 	var b strings.Builder
 
+	// Determine if this is a timeout error for specific messaging
+	isTimeout := isTimeoutError(m.err)
+
 	// Title
-	title := styles.TitleStyle.Render("Plan Creation Failed")
+	var title string
+	if isTimeout {
+		title = styles.TitleStyle.Render("Connection Timeout")
+	} else {
+		title = styles.TitleStyle.Render("Plan Creation Failed")
+	}
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	b.WriteString(titleLine)
 	b.WriteString("\n\n")
 
 	// Error message
 	errorMark := styles.ErrorStyle.Render("✗")
-	errorMsg := fmt.Sprintf("%s Error: Failed to extract tasks", errorMark)
+	var errorMsg string
+	if isTimeout {
+		errorMsg = fmt.Sprintf("%s Error: Network timeout during extraction", errorMark)
+	} else {
+		errorMsg = fmt.Sprintf("%s Error: Failed to extract tasks", errorMark)
+	}
 	errorLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, errorMsg)
 	b.WriteString(errorLine)
 	b.WriteString("\n\n")
@@ -420,8 +519,13 @@ func (m CreatingModel) renderError() string {
 		b.WriteString("\n\n")
 	}
 
-	// Options
-	retryOption := styles.SelectedStyle.Render("[r]") + " Retry"
+	// Options - Retry is recommended for timeout errors
+	var retryOption string
+	if isTimeout {
+		retryOption = styles.SelectedStyle.Render("[r]") + " Retry (Recommended)"
+	} else {
+		retryOption = styles.SelectedStyle.Render("[r]") + " Retry"
+	}
 	backOption := styles.SubtleStyle.Render("[b]") + " Back to file picker"
 	homeOption := styles.SubtleStyle.Render("[h]") + " Home"
 	optionsLine := retryOption + "    " + backOption + "    " + homeOption
@@ -437,6 +541,52 @@ func (m CreatingModel) renderError() string {
 
 	// Status bar
 	statusItems := []string{"r Retry", "b Back", "h Home"}
+	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
+
+	return b.String()
+}
+
+// renderCLINotFound renders the view when Claude CLI is not found.
+func (m CreatingModel) renderCLINotFound() string {
+	var b strings.Builder
+
+	// Title
+	title := styles.TitleStyle.Render("Claude CLI Not Found")
+	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
+	b.WriteString(titleLine)
+	b.WriteString("\n\n")
+
+	// Error message
+	errorMark := styles.ErrorStyle.Render("✗")
+	errorMsg := fmt.Sprintf("%s Claude CLI not found", errorMark)
+	errorLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, errorMsg)
+	b.WriteString(errorLine)
+	b.WriteString("\n\n")
+
+	// Help text
+	helpText := "Install Claude CLI and ensure it's in your PATH."
+	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, helpText))
+	b.WriteString("\n")
+	helpURL := styles.SubtleStyle.Render("See: https://docs.anthropic.com/claude-cli")
+	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, helpURL))
+	b.WriteString("\n\n")
+
+	// Options
+	backOption := styles.SelectedStyle.Render("[b]") + " Back to file picker"
+	homeOption := styles.SubtleStyle.Render("[h]") + " Home"
+	optionsLine := backOption + "    " + homeOption
+	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, optionsLine))
+	b.WriteString("\n")
+
+	// Fill remaining space
+	lines := strings.Count(b.String(), "\n") + 1
+	remainingLines := m.height - lines - 1
+	if remainingLines > 0 {
+		b.WriteString(strings.Repeat("\n", remainingLines))
+	}
+
+	// Status bar
+	statusItems := []string{"b Back", "h Home", "q Quit"}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()

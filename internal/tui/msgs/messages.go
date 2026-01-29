@@ -7,7 +7,10 @@ package msgs
 type GoToHomeMsg struct{}
 
 // GoToFilePickerMsg signals transition to the file picker view.
-type GoToFilePickerMsg struct{}
+// If CurrentDir is set, the file picker will start in that directory.
+type GoToFilePickerMsg struct {
+	CurrentDir string // optional: directory to start in
+}
 
 // GoToPlanListMsg signals transition to the plan list view.
 type GoToPlanListMsg struct{}

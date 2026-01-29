@@ -284,3 +284,47 @@ to break import cycles while maintaining clean separation of concerns.
 - Update all views and tests to use centralized message/style types
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+=== Task t09: SUCCESS ===
+
+
+=== Task t10, Attempt 1 ===
+Started: 2026-01-28T18:31:24-06:00
+
+Now let me verify each acceptance criterion:
+
+**Acceptance Criteria Verification:**
+
+1. ✅ **When terminal is smaller than 60x15, show centered size warning instead of normal view** - Implemented in `app.go:View()` and `renderTerminalTooSmall()`
+
+2. ✅ **Size warning shows both minimum and current dimensions** - The `renderTerminalTooSmall()` function shows format `"Minimum: 60x15\nCurrent: %dx%d"`
+
+3. ✅ **Locked plans (with .lock file) show lock indicator and cannot be selected in PlanList** - `isLocked()` function checks for `.lock` file, `formatPlanLine()` shows `*` indicator and "running (locked)" status
+
+4. ✅ **Attempting to select locked plan shows 'Plan is running elsewhere' message** - In `Update()` case "enter", if plan is locked, sets `lockedErrMsg`
+
+5. ✅ **Before plan creation, check for claude CLI; show descriptive error if not found** - `checkCLI()` called in `Init()`, transitions to `stateCLINotFound` if not found
+
+6. ✅ **Error message for missing Claude CLI includes installation hint** - `renderCLINotFound()` shows "Install Claude CLI and ensure it's in your PATH" and URL
+
+7. ✅ **OutputViewport ring buffer verified: adding 1001+ lines keeps only latest 1000** - Already tested in `TestNewOutputViewport_DefaultMaxLines`
+
+8. ✅ **Network timeout in Creating shows specific timeout error with Retry option** - `isTimeoutError()` detects timeouts, `renderError()` shows "Connection Timeout" title and "Retry (Recommended)"
+
+9. ✅ **Retry in Creating re-attempts extraction with same source file** - In error state, 'r' key resets state to `stateExtracting` and calls `startExtraction()` which uses `m.sourceFile`
+
+10. ✅ **Ctrl+C in Creating cancels extraction and returns to FilePicker** - Both `stateCheckingCLI` and `stateExtracting` handle Ctrl+C to return `GoToFilePickerMsg`
+
+11. ✅ **FilePicker state (current directory) is preserved when returning from cancelled creation** - `GoToFilePickerMsg` now includes `CurrentDir` field, set to `filepath.Dir(m.sourceFile)`
+
+12. ✅ **Ctrl+C in Running triggers graceful stop, waits for current operation** - Calls `m.cancel()` which cancels the executor context
+
+13. ✅ **After Ctrl+C stop, Running shows 'Stopped. Completed X/Y tasks.' summary** - `finalMessage` set to format "Stopped. Completed %d/%d tasks."
+
+14. ✅ **Plan state is saved after Ctrl+C stop (completed tasks remain completed)** - Executor saves plan state after each task completion and on context cancellation
+
+15. ✅ **Unit tests exist for: terminal size check, locked plan detection, buffer overflow handling** - Tests added in `app_test.go`, `planlist_test.go`, and existing `output_test.go`
+
+16. ✅ **make test passes** - Verified above
+
+SUGGESTED_COMMIT_MESSAGE: Handle edge cases and error states for production-ready TUI

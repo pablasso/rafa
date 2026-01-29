@@ -1,14 +1,22 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/pablasso/rafa/internal/plan"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 	"github.com/pablasso/rafa/internal/tui/views"
+)
+
+// Minimum terminal size requirements
+const (
+	MinTerminalWidth  = 60
+	MinTerminalHeight = 15
 )
 
 // View represents the different screens in the TUI.
@@ -119,7 +127,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msgs.GoToFilePickerMsg:
 		m.currentView = ViewFilePicker
-		m.filePicker = views.NewFilePickerModel(m.repoRoot)
+		startDir := m.repoRoot
+		if msg.CurrentDir != "" {
+			startDir = msg.CurrentDir
+		}
+		m.filePicker = views.NewFilePickerModel(startDir)
 		m.filePicker.SetSize(m.width, m.height)
 		return m, m.filePicker.Init()
 
@@ -245,6 +257,11 @@ func (m Model) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View implements tea.Model.
 func (m Model) View() string {
+	// Check for minimum terminal size
+	if m.width < MinTerminalWidth || m.height < MinTerminalHeight {
+		return m.renderTerminalTooSmall()
+	}
+
 	switch m.currentView {
 	case ViewHome:
 		return m.home.View()
@@ -258,4 +275,18 @@ func (m Model) View() string {
 		return m.running.View()
 	}
 	return "Unknown view"
+}
+
+// renderTerminalTooSmall displays a warning when terminal is below minimum size.
+func (m Model) renderTerminalTooSmall() string {
+	msg := fmt.Sprintf(
+		"Terminal too small.\nMinimum: %dx%d\nCurrent: %dx%d",
+		MinTerminalWidth, MinTerminalHeight,
+		m.width, m.height,
+	)
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		msg,
+	)
 }

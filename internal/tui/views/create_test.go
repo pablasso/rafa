@@ -19,8 +19,8 @@ func TestNewCreatingModel(t *testing.T) {
 	if m.SourceFile() != sourceFile {
 		t.Errorf("expected sourceFile to be %s, got %s", sourceFile, m.SourceFile())
 	}
-	if m.State() != stateExtracting {
-		t.Errorf("expected initial state to be stateExtracting, got %d", m.State())
+	if m.State() != stateCheckingCLI {
+		t.Errorf("expected initial state to be stateCheckingCLI, got %d", m.State())
 	}
 	if m.PlanID() != "" {
 		t.Errorf("expected empty planID, got %s", m.PlanID())
@@ -70,9 +70,9 @@ func TestCreatingModel_Update_SpinnerTickMsg(t *testing.T) {
 	if cmd == nil {
 		t.Error("expected command from spinner tick")
 	}
-	// State should still be extracting
-	if newM.State() != stateExtracting {
-		t.Errorf("expected state to remain stateExtracting, got %d", newM.State())
+	// State should still be checkingCLI (initial state)
+	if newM.State() != stateCheckingCLI {
+		t.Errorf("expected state to remain stateCheckingCLI, got %d", newM.State())
 	}
 }
 
@@ -121,10 +121,8 @@ func TestCreatingModel_Update_PlanCreationErrorMsg(t *testing.T) {
 
 func TestCreatingModel_Update_CtrlC_DuringExtraction(t *testing.T) {
 	m := NewCreatingModel("/path/to/design.md")
-	// Ensure we're in extracting state
-	if m.State() != stateExtracting {
-		t.Fatal("expected initial state to be stateExtracting")
-	}
+	// Move to extracting state
+	m.state = stateExtracting
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 
@@ -133,8 +131,37 @@ func TestCreatingModel_Update_CtrlC_DuringExtraction(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
+	fpMsg, ok := msg.(msgs.GoToFilePickerMsg)
+	if !ok {
 		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
+	}
+	// Should preserve directory
+	if fpMsg.CurrentDir == "" {
+		t.Error("expected CurrentDir to be preserved")
+	}
+}
+
+func TestCreatingModel_Update_CtrlC_DuringCLICheck(t *testing.T) {
+	m := NewCreatingModel("/path/to/design.md")
+	// Initial state is stateCheckingCLI
+	if m.State() != stateCheckingCLI {
+		t.Fatal("expected initial state to be stateCheckingCLI")
+	}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	if cmd == nil {
+		t.Fatal("expected command from Ctrl+C during CLI check")
+	}
+
+	msg := cmd()
+	fpMsg, ok := msg.(msgs.GoToFilePickerMsg)
+	if !ok {
+		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
+	}
+	// Should preserve directory
+	if fpMsg.CurrentDir == "" {
+		t.Error("expected CurrentDir to be preserved")
 	}
 }
 
@@ -303,6 +330,7 @@ func TestCreatingModel_View_EmptyDimensions(t *testing.T) {
 
 func TestCreatingModel_View_Extracting(t *testing.T) {
 	m := NewCreatingModel("/path/to/design.md")
+	m.state = stateExtracting
 	m.SetSize(80, 24)
 
 	view := m.View()
@@ -403,12 +431,12 @@ func TestCreatingModel_View_Success(t *testing.T) {
 func TestCreatingModel_View_Error(t *testing.T) {
 	m := NewCreatingModel("/path/to/design.md")
 	m.state = stateError
-	m.err = errors.New("Network timeout connecting to Claude API")
+	m.err = errors.New("failed to parse response") // Use a non-timeout error
 	m.SetSize(80, 24)
 
 	view := m.View()
 
-	// Check for title
+	// Check for title (non-timeout errors show "Plan Creation Failed")
 	if !strings.Contains(view, "Plan Creation Failed") {
 		t.Error("expected view to contain 'Plan Creation Failed'")
 	}
@@ -427,7 +455,7 @@ func TestCreatingModel_View_Error(t *testing.T) {
 	if !strings.Contains(view, "Details:") {
 		t.Error("expected view to contain 'Details:'")
 	}
-	if !strings.Contains(view, "Network timeout") {
+	if !strings.Contains(view, "failed to parse response") {
 		t.Error("expected view to contain error details")
 	}
 
@@ -664,5 +692,175 @@ func TestCreatingModel_View_ErrorWithNilError(t *testing.T) {
 	// Should not contain "Details:" when error is nil
 	if strings.Contains(view, "Details:") {
 		t.Error("expected view NOT to contain 'Details:' when error is nil")
+	}
+}
+
+func TestCreatingModel_Update_ClaudeCLINotFoundMsg(t *testing.T) {
+	m := NewCreatingModel("/path/to/design.md")
+
+	newM, cmd := m.Update(ClaudeCLINotFoundMsg{})
+
+	if cmd != nil {
+		t.Error("expected no command from ClaudeCLINotFoundMsg")
+	}
+	if newM.State() != stateCLINotFound {
+		t.Errorf("expected state to be stateCLINotFound, got %d", newM.State())
+	}
+}
+
+func TestCreatingModel_View_CLINotFound(t *testing.T) {
+	m := NewCreatingModel("/path/to/design.md")
+	m.state = stateCLINotFound
+	m.SetSize(80, 24)
+
+	view := m.View()
+
+	// Check for title
+	if !strings.Contains(view, "Claude CLI Not Found") {
+		t.Error("expected view to contain 'Claude CLI Not Found'")
+	}
+
+	// Check for error mark
+	if !strings.Contains(view, "✗") {
+		t.Error("expected view to contain error mark")
+	}
+
+	// Check for help text
+	if !strings.Contains(view, "Install Claude CLI") {
+		t.Error("expected view to contain 'Install Claude CLI'")
+	}
+
+	// Check for URL
+	if !strings.Contains(view, "https://docs.anthropic.com/claude-cli") {
+		t.Error("expected view to contain installation URL")
+	}
+
+	// Check for options
+	if !strings.Contains(view, "[b]") {
+		t.Error("expected view to contain '[b]' option")
+	}
+	if !strings.Contains(view, "[h]") {
+		t.Error("expected view to contain '[h]' option")
+	}
+
+	// Check for status bar
+	if !strings.Contains(view, "b Back") {
+		t.Error("expected view to contain 'b Back' in status bar")
+	}
+}
+
+func TestCreatingModel_Update_KeyB_InCLINotFoundState(t *testing.T) {
+	m := NewCreatingModel("/path/to/design.md")
+	m.state = stateCLINotFound
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+
+	if cmd == nil {
+		t.Fatal("expected command from 'b' in CLI not found state")
+	}
+
+	msg := cmd()
+	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
+		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
+	}
+}
+
+func TestCreatingModel_Update_KeyH_InCLINotFoundState(t *testing.T) {
+	m := NewCreatingModel("/path/to/design.md")
+	m.state = stateCLINotFound
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+
+	if cmd == nil {
+		t.Fatal("expected command from 'h' in CLI not found state")
+	}
+
+	msg := cmd()
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected msgs.GoToHomeMsg, got %T", msg)
+	}
+}
+
+func TestCreatingModel_Update_CtrlC_InCLINotFoundState(t *testing.T) {
+	m := NewCreatingModel("/path/to/design.md")
+	m.state = stateCLINotFound
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	if cmd == nil {
+		t.Fatal("expected command from Ctrl+C in CLI not found state")
+	}
+
+	msg := cmd()
+	if _, ok := msg.(tea.QuitMsg); !ok {
+		t.Errorf("expected tea.QuitMsg, got %T", msg)
+	}
+}
+
+func TestCreatingModel_View_ErrorWithTimeout(t *testing.T) {
+	m := NewCreatingModel("/path/to/design.md")
+	m.state = stateError
+	m.err = errors.New("task extraction timed out")
+	m.SetSize(80, 24)
+
+	view := m.View()
+
+	// Should show timeout-specific title
+	if !strings.Contains(view, "Connection Timeout") {
+		t.Error("expected view to contain 'Connection Timeout' for timeout errors")
+	}
+
+	// Should mention timeout in error message
+	if !strings.Contains(view, "timeout") {
+		t.Error("expected view to contain 'timeout'")
+	}
+
+	// Should recommend retry
+	if !strings.Contains(view, "Recommended") {
+		t.Error("expected view to contain 'Recommended' for timeout retry")
+	}
+}
+
+func TestIsTimeoutError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"nil error", nil, false},
+		{"timeout error", errors.New("task extraction timed out"), true},
+		{"deadline exceeded", errors.New("context deadline exceeded"), true},
+		{"timeout in message", errors.New("network timeout connecting to server"), true},
+		{"other error", errors.New("connection refused"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isTimeoutError(tt.err)
+			if result != tt.expected {
+				t.Errorf("isTimeoutError(%v) = %v, want %v", tt.err, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCheckClaudeCLIFunc_Override(t *testing.T) {
+	// Test that we can override the checkClaudeCLI function for testing
+	originalFunc := checkClaudeCLI
+	defer func() { checkClaudeCLI = originalFunc }()
+
+	called := false
+	checkClaudeCLI = func() error {
+		called = true
+		return ErrClaudeCLINotFound
+	}
+
+	// Verify the override works
+	err := checkClaudeCLI()
+	if err != ErrClaudeCLINotFound {
+		t.Errorf("expected ErrClaudeCLINotFound, got %v", err)
+	}
+	if !called {
+		t.Error("expected checkClaudeCLI to be called")
 	}
 }

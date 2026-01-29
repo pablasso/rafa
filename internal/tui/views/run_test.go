@@ -288,8 +288,8 @@ func TestRunningModel_Update_CtrlC_DuringRunning(t *testing.T) {
 	if !cancelled {
 		t.Error("expected cancel function to be called")
 	}
-	if !strings.Contains(newM.FinalMessage(), "Cancelled") {
-		t.Errorf("expected finalMessage to contain 'Cancelled', got %s", newM.FinalMessage())
+	if !strings.Contains(newM.FinalMessage(), "Stopped") {
+		t.Errorf("expected finalMessage to contain 'Stopped', got %s", newM.FinalMessage())
 	}
 }
 

@@ -301,8 +301,9 @@ func TestPlanListModel_Update_EnterReturnsRunPlanMsg(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected msgs.RunPlanMsg, got %T", msg)
 	}
-	if runMsg.PlanID != "xK9pQ2" {
-		t.Errorf("expected PlanID to be 'xK9pQ2', got %s", runMsg.PlanID)
+	// PlanID should be in "shortID-name" format
+	if runMsg.PlanID != "xK9pQ2-feature-auth" {
+		t.Errorf("expected PlanID to be 'xK9pQ2-feature-auth', got %s", runMsg.PlanID)
 	}
 }
 
@@ -539,5 +540,173 @@ func TestPlanListModel_Selection_ChangesOnNavigation(t *testing.T) {
 	// Views should be different (different selection styling)
 	if view1 == view2 {
 		t.Error("expected views to differ after navigation")
+	}
+}
+
+func TestPlanListModel_LockedPlan_Detection(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	plansDir := filepath.Join(rafaDir, "plans")
+	if err := os.MkdirAll(plansDir, 0755); err != nil {
+		t.Fatalf("failed to create plans dir: %v", err)
+	}
+
+	// Create a plan without lock
+	createTestPlan(t, plansDir, "unlocked", "test1", plan.PlanStatusNotStarted, nil)
+
+	// Create a plan with lock
+	createTestPlan(t, plansDir, "locked", "test2", plan.PlanStatusInProgress, nil)
+	lockedPlanDir := filepath.Join(plansDir, "locked-test2")
+	lockFile := filepath.Join(lockedPlanDir, ".lock")
+	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	m := NewPlanListModel(rafaDir)
+
+	if len(m.Plans()) != 2 {
+		t.Errorf("expected 2 plans, got %d", len(m.Plans()))
+	}
+
+	// Find the locked plan and verify it's marked as locked
+	var foundLocked, foundUnlocked bool
+	for _, p := range m.Plans() {
+		if p.ID == "locked" {
+			foundLocked = true
+			if !p.Locked {
+				t.Error("expected plan 'locked' to have Locked=true")
+			}
+		}
+		if p.ID == "unlocked" {
+			foundUnlocked = true
+			if p.Locked {
+				t.Error("expected plan 'unlocked' to have Locked=false")
+			}
+		}
+	}
+	if !foundLocked {
+		t.Error("locked plan not found")
+	}
+	if !foundUnlocked {
+		t.Error("unlocked plan not found")
+	}
+}
+
+func TestPlanListModel_LockedPlan_CannotSelect(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	plansDir := filepath.Join(rafaDir, "plans")
+	if err := os.MkdirAll(plansDir, 0755); err != nil {
+		t.Fatalf("failed to create plans dir: %v", err)
+	}
+
+	// Create a locked plan
+	createTestPlan(t, plansDir, "locked", "test", plan.PlanStatusInProgress, nil)
+	lockedPlanDir := filepath.Join(plansDir, "locked-test")
+	lockFile := filepath.Join(lockedPlanDir, ".lock")
+	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	m := NewPlanListModel(rafaDir)
+	m.SetSize(80, 24)
+
+	// Try to select the locked plan with Enter
+	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Should not return a RunPlanMsg command
+	if cmd != nil {
+		t.Error("expected no command when selecting locked plan")
+	}
+
+	// Should set error message
+	if newM.LockedErrMsg() == "" {
+		t.Error("expected error message when selecting locked plan")
+	}
+	if !strings.Contains(newM.LockedErrMsg(), "running elsewhere") {
+		t.Errorf("expected error message to mention 'running elsewhere', got: %s", newM.LockedErrMsg())
+	}
+}
+
+func TestPlanListModel_LockedPlan_ShowsLockIndicator(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	plansDir := filepath.Join(rafaDir, "plans")
+	if err := os.MkdirAll(plansDir, 0755); err != nil {
+		t.Fatalf("failed to create plans dir: %v", err)
+	}
+
+	// Create a locked plan
+	createTestPlan(t, plansDir, "locked", "test", plan.PlanStatusInProgress, nil)
+	lockedPlanDir := filepath.Join(plansDir, "locked-test")
+	lockFile := filepath.Join(lockedPlanDir, ".lock")
+	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	m := NewPlanListModel(rafaDir)
+	m.SetSize(80, 24)
+
+	view := m.View()
+
+	// Should show "(locked)" in the status
+	if !strings.Contains(view, "locked") {
+		t.Error("expected view to contain 'locked' indicator")
+	}
+}
+
+func TestPlanListModel_LockedPlan_ErrMsgClearedOnNavigation(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	plansDir := filepath.Join(rafaDir, "plans")
+	if err := os.MkdirAll(plansDir, 0755); err != nil {
+		t.Fatalf("failed to create plans dir: %v", err)
+	}
+
+	// Create two plans, first one locked
+	createTestPlan(t, plansDir, "locked", "test1", plan.PlanStatusInProgress, nil)
+	lockedPlanDir := filepath.Join(plansDir, "locked-test1")
+	lockFile := filepath.Join(lockedPlanDir, ".lock")
+	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	createTestPlan(t, plansDir, "unlocked", "test2", plan.PlanStatusNotStarted, nil)
+
+	m := NewPlanListModel(rafaDir)
+	m.SetSize(80, 24)
+
+	// Try to select the locked plan
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.LockedErrMsg() == "" {
+		t.Fatal("expected error message after selecting locked plan")
+	}
+
+	// Navigate down
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+
+	// Error message should be cleared
+	if m.LockedErrMsg() != "" {
+		t.Error("expected error message to be cleared after navigation")
+	}
+}
+
+func TestIsLocked(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Test without lock file
+	if isLocked(tmpDir) {
+		t.Error("expected isLocked to return false for directory without .lock")
+	}
+
+	// Create lock file
+	lockFile := filepath.Join(tmpDir, ".lock")
+	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	// Test with lock file
+	if !isLocked(tmpDir) {
+		t.Error("expected isLocked to return true for directory with .lock")
 	}
 }

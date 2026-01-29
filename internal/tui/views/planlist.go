@@ -22,15 +22,17 @@ type PlanSummary struct {
 	TaskCount int
 	Status    string // "not_started", "in_progress", "completed", "failed"
 	Completed int    // for in_progress: how many tasks are done
+	Locked    bool   // true if plan has a .lock file (running elsewhere)
 }
 
 // PlanListModel is the model for the plan selection view.
 type PlanListModel struct {
-	plans   []PlanSummary
-	cursor  int
-	rafaDir string
-	width   int
-	height  int
+	plans        []PlanSummary
+	cursor       int
+	rafaDir      string
+	width        int
+	height       int
+	lockedErrMsg string // temporary error message when trying to select locked plan
 }
 
 // NewPlanListModel creates a new PlanListModel and loads plans from the rafaDir.
@@ -57,7 +59,8 @@ func (m PlanListModel) loadPlans() []PlanSummary {
 			continue
 		}
 
-		planJSONPath := filepath.Join(plansPath, entry.Name(), "plan.json")
+		planDir := filepath.Join(plansPath, entry.Name())
+		planJSONPath := filepath.Join(planDir, "plan.json")
 		data, err := os.ReadFile(planJSONPath)
 		if err != nil {
 			continue
@@ -76,16 +79,27 @@ func (m PlanListModel) loadPlans() []PlanSummary {
 			}
 		}
 
+		// Check if plan is locked
+		locked := isLocked(planDir)
+
 		summaries = append(summaries, PlanSummary{
 			ID:        p.ID,
 			Name:      p.Name,
 			TaskCount: len(p.Tasks),
 			Status:    p.Status,
 			Completed: completed,
+			Locked:    locked,
 		})
 	}
 
 	return summaries
+}
+
+// isLocked checks if a plan directory has a .lock file indicating it's running elsewhere.
+func isLocked(planDir string) bool {
+	lockFile := filepath.Join(planDir, ".lock")
+	_, err := os.Stat(lockFile)
+	return err == nil
 }
 
 // Init implements tea.Model.
@@ -124,15 +138,23 @@ func (m PlanListModel) Update(msg tea.Msg) (PlanListModel, tea.Cmd) {
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
+				m.lockedErrMsg = "" // Clear error on navigation
 			}
 		case "down", "j":
 			if m.cursor < len(m.plans)-1 {
 				m.cursor++
+				m.lockedErrMsg = "" // Clear error on navigation
 			}
 		case "enter":
 			if m.cursor < len(m.plans) {
 				selectedPlan := m.plans[m.cursor]
-				return m, func() tea.Msg { return msgs.RunPlanMsg{PlanID: selectedPlan.ID} }
+				if selectedPlan.Locked {
+					m.lockedErrMsg = "Plan is running elsewhere"
+					return m, nil
+				}
+				// Send full plan ID in format "shortID-name" to match directory naming
+				fullPlanID := fmt.Sprintf("%s-%s", selectedPlan.ID, selectedPlan.Name)
+				return m, func() tea.Msg { return msgs.RunPlanMsg{PlanID: fullPlanID} }
 			}
 		}
 	}
@@ -169,9 +191,12 @@ func (m PlanListModel) renderNormalView() string {
 
 	planList := strings.Join(planLines, "\n")
 
-	// Calculate vertical centering
+	// Calculate vertical centering (add 2 for potential error message)
 	statusBarHeight := 1
 	contentHeight := 2 + len(m.plans) // title + spacing + plans
+	if m.lockedErrMsg != "" {
+		contentHeight += 2 // error message + spacing
+	}
 	availableHeight := m.height - statusBarHeight
 
 	topPadding := (availableHeight - contentHeight) / 3 // bias towards top
@@ -184,6 +209,13 @@ func (m PlanListModel) renderNormalView() string {
 	b.WriteString(titleLine)
 	b.WriteString("\n\n")
 	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, planList))
+
+	// Show locked error message if present
+	if m.lockedErrMsg != "" {
+		b.WriteString("\n\n")
+		errLine := styles.ErrorStyle.Render(m.lockedErrMsg)
+		b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, errLine))
+	}
 
 	// Calculate remaining lines for bottom padding
 	currentLines := topPadding + contentHeight
@@ -202,10 +234,14 @@ func (m PlanListModel) renderNormalView() string {
 
 // formatPlanLine formats a single plan line for display.
 func (m PlanListModel) formatPlanLine(index int, p PlanSummary) string {
-	// Selection indicator
-	indicator := "○"
-	if index == m.cursor {
+	// Selection indicator - show lock icon for locked plans
+	var indicator string
+	if p.Locked {
+		indicator = styles.SubtleStyle.Render("*")
+	} else if index == m.cursor {
 		indicator = "●"
+	} else {
+		indicator = "○"
 	}
 
 	// Plan ID-Name
@@ -217,7 +253,7 @@ func (m PlanListModel) formatPlanLine(index int, p PlanSummary) string {
 		taskCountStr = "1 task"
 	}
 
-	// Status
+	// Status - append "(locked)" for locked plans
 	var statusStr string
 	switch p.Status {
 	case plan.PlanStatusInProgress:
@@ -225,13 +261,19 @@ func (m PlanListModel) formatPlanLine(index int, p PlanSummary) string {
 	default:
 		statusStr = p.Status
 	}
+	if p.Locked {
+		statusStr = "running (locked)"
+	}
 
 	// Build the line with alignment
 	// Format: ● idName       taskCount   status
 	line := fmt.Sprintf("%s %-30s %10s   %s", indicator, idName, taskCountStr, statusStr)
 
 	// Apply styling based on selection and status
-	if index == m.cursor {
+	if p.Locked {
+		// Locked plans are always shown in subtle style
+		line = styles.SubtleStyle.Render(line)
+	} else if index == m.cursor {
 		line = styles.SelectedStyle.Render(line)
 	} else if p.Status == plan.PlanStatusCompleted {
 		line = styles.SubtleStyle.Render(line)
@@ -306,4 +348,9 @@ func (m PlanListModel) Cursor() int {
 // RafaDir returns the rafa directory path.
 func (m PlanListModel) RafaDir() string {
 	return m.rafaDir
+}
+
+// LockedErrMsg returns the current locked error message (if any).
+func (m PlanListModel) LockedErrMsg() string {
+	return m.lockedErrMsg
 }
