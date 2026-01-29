@@ -125,8 +125,8 @@
         "Unit tests verify: empty state display, plan loading, selection, status formatting",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t07",

@@ -127,3 +127,31 @@ Let me verify all the acceptance criteria are met:
 All acceptance criteria are met.
 
 SUGGESTED_COMMIT_MESSAGE: Implement Creating view with AI integration for plan creation progress
+
+=== Task t05: SUCCESS ===
+
+
+=== Task t06, Attempt 1 ===
+Started: 2026-01-28T17:56:32-06:00
+
+Let me verify the acceptance criteria against my implementation:
+
+**Acceptance Criteria Verification:**
+
+1. ✅ `internal/tui/views/planlist.go implements PlanListModel` - Done (lines 26-33)
+2. ✅ `View loads plans from .rafa/plans/ directory on initialization` - Done in `NewPlanListModel` (lines 35-42) and `loadPlans` (lines 44-88)
+3. ✅ `Each plan row shows: selection indicator (●/○), plan ID-name, task count, status` - Done in `formatPlanLine` (lines 202-240)
+4. ✅ `In-progress plans show progress fraction like 'in_progress (2/3)'` - Done (lines 221-224)
+5. ✅ `Completed plans are visually distinct (e.g., dimmed) but still selectable` - Done with `tui.SubtleStyle` (lines 235-237)
+6. ✅ `Arrow keys navigate plan list, ● shows on currently selected item` - Done (lines 123-130 for navigation, lines 205-208 for indicator)
+7. ✅ `Enter on selected plan returns RunPlanMsg with plan ID` - Done (lines 131-135)
+8. ✅ `When no plans exist, shows 'No plans found.' with hint to create one` - Done in `renderEmptyView` (lines 251-252)
+9. ✅ `In empty state, 'c' key returns GoToFilePickerMsg to create a plan` - Done (lines 107-108)
+10. ✅ `Escape returns GoToHomeMsg` - Done (lines 109-110 for empty state, lines 119-120 for normal state)
+11. ✅ `StatusBar shows: '↑↓ Navigate • Enter Run • Esc Back'` - Done (line 196)
+12. ✅ `Unit tests verify: empty state display, plan loading, selection, status formatting` - Done in planlist_test.go
+13. ✅ `make test passes` - Verified above
+
+All acceptance criteria are met!
+
+SUGGESTED_COMMIT_MESSAGE: Implement PlanList view for selecting existing plans to run
