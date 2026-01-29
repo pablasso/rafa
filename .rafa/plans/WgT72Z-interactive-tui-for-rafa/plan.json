@@ -4,7 +4,7 @@
   "description": "Add an interactive Terminal User Interface to Rafa that allows users to create plans from design documents and monitor execution progress without leaving the terminal.",
   "sourceFile": "docs/designs/tui-interactive.md",
   "createdAt": "2026-01-28T17:23:36.144337-06:00",
-  "status": "in_progress",
+  "status": "completed",
   "tasks": [
     {
       "id": "t01",

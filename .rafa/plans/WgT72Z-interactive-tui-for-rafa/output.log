@@ -421,3 +421,6 @@ All changes look correct. Let me verify all acceptance criteria are met:
 15. **go build ./cmd/rafa succeeds with no warnings** - DONE. Build completed successfully.
 
 SUGGESTED_COMMIT_MESSAGE: Polish TUI appearance and update documentation
+
+=== Task t12: SUCCESS ===
+
