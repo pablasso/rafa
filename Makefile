@@ -1,4 +1,4 @@
-.PHONY: fmt check-fmt test build clean release-dry-run release
+.PHONY: fmt check-fmt test build clean release-dry-run release watch watch-mac dev dev-demo
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -48,3 +48,31 @@ endif
 	git tag $(VERSION)
 	git push origin $(VERSION)
 	@echo "Release $(VERSION) pushed. GitHub Actions will handle the rest."
+
+# Hot reload for TUI development
+# Terminal 1: make dev (or make dev-demo)
+# Terminal 2: make watch (Linux) or make watch-mac (macOS)
+# Edit .go files and save - TUI restarts automatically
+
+# Watch for changes, rebuild, and kill running TUI (triggers restart in dev loop)
+# Linux version (requires inotify-tools: sudo apt install inotify-tools)
+watch:
+	@while true; do \
+		inotifywait -q -e modify -e attrib $$(find . -name '*.go' -not -path './vendor/*') && \
+		$(MAKE) build && killall rafa 2>/dev/null || true; \
+	done
+
+# macOS version (requires fswatch: brew install fswatch)
+watch-mac:
+	@fswatch -o $$(find . -name '*.go' -not -path './vendor/*') | xargs -n1 sh -c '$(MAKE) build && killall rafa 2>/dev/null || true'
+
+# Run TUI in a loop (restarts when killed by watch)
+# Close the terminal tab/pane to exit
+dev:
+	@$(MAKE) build
+	@while true; do ./bin/rafa || true; done
+
+# Run demo mode in a loop (restarts when killed by watch)
+dev-demo:
+	@$(MAKE) build
+	@while true; do ./bin/rafa demo || true; done

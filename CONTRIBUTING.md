@@ -26,6 +26,27 @@ make build
 - `make install` - Install to PATH
 - `make release-dry-run` - Test release locally
 
+### Hot Reload
+
+For live TUI development with auto-restart on file changes:
+
+```bash
+# One-time setup
+sudo apt install inotify-tools  # Linux
+brew install fswatch            # macOS
+
+# Terminal 1: Run TUI in a loop
+make dev       # or: make dev-demo
+
+# Terminal 2: Watch and rebuild
+make watch     # Linux
+make watch-mac # macOS
+```
+
+Edit any `.go` file and save - the TUI restarts automatically with your changes.
+
+To exit, close the terminal tab/pane.
+
 ### Code Formatting
 
 Run `make fmt` before committing. CI checks formatting.
