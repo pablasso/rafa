@@ -25,8 +25,11 @@ func TestNewConfig_SpeedNormal(t *testing.T) {
 	if config.Speed != SpeedNormal {
 		t.Errorf("Speed = %v, want %v", config.Speed, SpeedNormal)
 	}
-	if config.TaskDelay != 2*time.Second {
-		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 2*time.Second)
+	if config.TaskDelay != 10*time.Second {
+		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 10*time.Second)
+	}
+	if config.TaskCount != 18 {
+		t.Errorf("TaskCount = %v, want %v", config.TaskCount, 18)
 	}
 }
 
@@ -36,17 +39,23 @@ func TestNewConfig_SpeedSlow(t *testing.T) {
 	if config.Speed != SpeedSlow {
 		t.Errorf("Speed = %v, want %v", config.Speed, SpeedSlow)
 	}
-	if config.TaskDelay != 5*time.Second {
-		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 5*time.Second)
+	if config.TaskDelay != 30*time.Second {
+		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 30*time.Second)
+	}
+	if config.TaskCount != 60 {
+		t.Errorf("TaskCount = %v, want %v", config.TaskCount, 60)
 	}
 }
 
 func TestNewConfig_UnknownSpeedDefaultsToNormal(t *testing.T) {
-	// Unknown speed should default to normal (2s)
+	// Unknown speed should default to normal (10s, 18 tasks)
 	config := NewConfig(ScenarioSuccess, Speed("unknown"))
 
-	if config.TaskDelay != 2*time.Second {
-		t.Errorf("Unknown speed TaskDelay = %v, want %v (normal default)", config.TaskDelay, 2*time.Second)
+	if config.TaskDelay != 10*time.Second {
+		t.Errorf("Unknown speed TaskDelay = %v, want %v (normal default)", config.TaskDelay, 10*time.Second)
+	}
+	if config.TaskCount != 18 {
+		t.Errorf("Unknown speed TaskCount = %v, want %v (normal default)", config.TaskCount, 18)
 	}
 }
 
@@ -146,5 +155,135 @@ func TestSpeedConstants(t *testing.T) {
 	}
 	if SpeedSlow != "slow" {
 		t.Errorf("SpeedSlow = %q, want %q", SpeedSlow, "slow")
+	}
+	if SpeedMarathon != "marathon" {
+		t.Errorf("SpeedMarathon = %q, want %q", SpeedMarathon, "marathon")
+	}
+	if SpeedExtended != "extended" {
+		t.Errorf("SpeedExtended = %q, want %q", SpeedExtended, "extended")
+	}
+}
+
+func TestNewConfig_SpeedMarathon(t *testing.T) {
+	config := NewConfig(ScenarioSuccess, SpeedMarathon)
+
+	if config.Speed != SpeedMarathon {
+		t.Errorf("Speed = %v, want %v", config.Speed, SpeedMarathon)
+	}
+	if config.TaskDelay != 1*time.Minute {
+		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 1*time.Minute)
+	}
+	if config.TaskCount != 120 {
+		t.Errorf("TaskCount = %v, want %v", config.TaskCount, 120)
+	}
+}
+
+func TestNewConfig_SpeedExtended(t *testing.T) {
+	config := NewConfig(ScenarioSuccess, SpeedExtended)
+
+	if config.Speed != SpeedExtended {
+		t.Errorf("Speed = %v, want %v", config.Speed, SpeedExtended)
+	}
+	if config.TaskDelay != 2*time.Minute {
+		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 2*time.Minute)
+	}
+	if config.TaskCount != 360 {
+		t.Errorf("TaskCount = %v, want %v", config.TaskCount, 360)
+	}
+}
+
+func TestNewConfig_SpeedFast_TaskCount(t *testing.T) {
+	config := NewConfig(ScenarioSuccess, SpeedFast)
+
+	if config.TaskCount != 5 {
+		t.Errorf("TaskCount = %v, want %v", config.TaskCount, 5)
+	}
+}
+
+func TestNewConfigWithOptions_OverrideTaskDelay(t *testing.T) {
+	config := NewConfigWithOptions(ScenarioSuccess, SpeedNormal, 3*time.Minute, 0)
+
+	// TaskDelay should be overridden
+	if config.TaskDelay != 3*time.Minute {
+		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 3*time.Minute)
+	}
+	// TaskCount should use preset default
+	if config.TaskCount != 18 {
+		t.Errorf("TaskCount = %v, want %v", config.TaskCount, 18)
+	}
+}
+
+func TestNewConfigWithOptions_OverrideTaskCount(t *testing.T) {
+	config := NewConfigWithOptions(ScenarioSuccess, SpeedMarathon, 0, 60)
+
+	// TaskDelay should use preset default
+	if config.TaskDelay != 1*time.Minute {
+		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 1*time.Minute)
+	}
+	// TaskCount should be overridden
+	if config.TaskCount != 60 {
+		t.Errorf("TaskCount = %v, want %v", config.TaskCount, 60)
+	}
+}
+
+func TestNewConfigWithOptions_OverrideBoth(t *testing.T) {
+	config := NewConfigWithOptions(ScenarioSuccess, SpeedFast, 5*time.Second, 100)
+
+	if config.TaskDelay != 5*time.Second {
+		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 5*time.Second)
+	}
+	if config.TaskCount != 100 {
+		t.Errorf("TaskCount = %v, want %v", config.TaskCount, 100)
+	}
+}
+
+func TestNewConfigWithOptions_NoOverrides(t *testing.T) {
+	config := NewConfigWithOptions(ScenarioSuccess, SpeedNormal, 0, 0)
+
+	// Should use preset defaults
+	if config.TaskDelay != 10*time.Second {
+		t.Errorf("TaskDelay = %v, want %v", config.TaskDelay, 10*time.Second)
+	}
+	if config.TaskCount != 18 {
+		t.Errorf("TaskCount = %v, want %v", config.TaskCount, 18)
+	}
+}
+
+func TestCreateDemoPlanWithTaskCount(t *testing.T) {
+	testCases := []struct {
+		count int
+	}{
+		{5},
+		{18},
+		{60},
+		{120},
+	}
+
+	for _, tc := range testCases {
+		plan := CreateDemoPlanWithTaskCount(tc.count)
+
+		if plan == nil {
+			t.Fatalf("CreateDemoPlanWithTaskCount(%d) returned nil", tc.count)
+		}
+		if len(plan.Tasks) != tc.count {
+			t.Errorf("CreateDemoPlanWithTaskCount(%d) has %d tasks, want %d",
+				tc.count, len(plan.Tasks), tc.count)
+		}
+
+		// Check all tasks have required fields
+		for i, task := range plan.Tasks {
+			if task.ID == "" {
+				t.Errorf("Task %d ID should not be empty", i)
+			}
+			if task.Title == "" {
+				t.Errorf("Task %d Title should not be empty", i)
+			}
+			if task.Description == "" {
+				t.Errorf("Task %d Description should not be empty", i)
+			}
+			if len(task.AcceptanceCriteria) == 0 {
+				t.Errorf("Task %d should have acceptance criteria", i)
+			}
+		}
 	}
 }

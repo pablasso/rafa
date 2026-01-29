@@ -73,8 +73,9 @@ func (d *DemoRunner) generateOutput(task *plan.Task, attempt int) []string {
 // generateWorkLines returns task-specific realistic output.
 // Each task ID (t01-t05) has a custom template that simulates
 // realistic work being performed for that type of task.
+// Dynamic tasks (t06+) generate output based on title keywords.
 func (d *DemoRunner) generateWorkLines(task *plan.Task) []string {
-	// Task-specific realistic output
+	// Task-specific realistic output for core tasks
 	workTemplates := map[string][]string{
 		"t01": {
 			"Creating directory structure...",
@@ -153,17 +154,135 @@ func (d *DemoRunner) generateWorkLines(task *plan.Task) []string {
 		return lines
 	}
 
-	// Generic fallback
+	// Dynamic output generation for tasks t06+
+	return d.generateDynamicWorkLines(task)
+}
+
+// generateDynamicWorkLines creates output based on task title keywords.
+func (d *DemoRunner) generateDynamicWorkLines(task *plan.Task) []string {
+	title := strings.ToLower(task.Title)
+
+	// Pattern-based output templates
+	if strings.Contains(title, "setup") {
+		return []string{
+			"Initializing project structure...",
+			"  - Creating directories",
+			"  - Setting up configuration",
+			"",
+			"Running initial build check...",
+			"Build successful.",
+		}
+	}
+
+	if strings.Contains(title, "data model") || strings.Contains(title, "models") {
+		return []string{
+			"Defining data structures...",
+			"",
+			"```go",
+			"type Entity struct {",
+			"    ID        string `json:\"id\"`",
+			"    CreatedAt time.Time",
+			"}",
+			"```",
+			"",
+			"Writing model tests...",
+			"Running `make test`... All tests pass",
+		}
+	}
+
+	if strings.Contains(title, "business logic") || strings.Contains(title, "logic") {
+		return []string{
+			"Implementing core logic...",
+			"",
+			"Added functions:",
+			"  - Process(): handles main workflow",
+			"  - Validate(): input validation",
+			"",
+			"Writing unit tests...",
+			"Running `make test`... All tests pass",
+		}
+	}
+
+	if strings.Contains(title, "api") || strings.Contains(title, "endpoint") {
+		return []string{
+			"Registering routes...",
+			"",
+			"| Method | Path     | Handler    |",
+			"|--------|----------|------------|",
+			"| GET    | /api/... | List       |",
+			"| POST   | /api/... | Create     |",
+			"",
+			"Running integration tests...",
+			"All endpoints verified.",
+		}
+	}
+
+	if strings.Contains(title, "documentation") || strings.Contains(title, "docs") {
+		return []string{
+			"Updating documentation...",
+			"",
+			"  - README.md updated",
+			"  - API docs generated",
+			"  - Examples added",
+			"",
+			"Documentation complete.",
+		}
+	}
+
+	if strings.Contains(title, "caching") || strings.Contains(title, "cache") {
+		return []string{
+			"Implementing caching layer...",
+			"",
+			"Cache configuration:",
+			"  - TTL: 5 minutes",
+			"  - Max entries: 1000",
+			"  - Eviction: LRU",
+			"",
+			"Running cache tests...",
+			"Cache layer verified.",
+		}
+	}
+
+	if strings.Contains(title, "monitoring") || strings.Contains(title, "metrics") {
+		return []string{
+			"Setting up monitoring...",
+			"",
+			"Metrics added:",
+			"  - request_count",
+			"  - request_duration",
+			"  - error_rate",
+			"",
+			"Configuring dashboards...",
+			"Monitoring setup complete.",
+		}
+	}
+
+	if strings.Contains(title, "migration") {
+		return []string{
+			"Creating database migrations...",
+			"",
+			"Migration files:",
+			"  - 001_create_tables.up.sql",
+			"  - 001_create_tables.down.sql",
+			"",
+			"Running migration tests...",
+			"Migrations verified.",
+		}
+	}
+
+	// Generic fallback with variety based on task ID
 	return []string{
 		"Analyzing requirements...",
-		"Implementing changes...",
+		fmt.Sprintf("Implementing %s...", task.Title),
+		"",
 		"Running verification...",
+		"Task complete.",
 	}
 }
 
 // generateCommitMessage returns a suggested commit message for the task.
-// Each task ID (t01-t05) has a specific commit message, with a fallback
-// for unknown task IDs.
+// Each task ID (t01-t05) has a specific commit message, with dynamic
+// generation for other tasks based on title.
 func (d *DemoRunner) generateCommitMessage(task *plan.Task) string {
 	messages := map[string]string{
 		"t01": "Set up project structure with configuration files",
@@ -176,5 +295,25 @@ func (d *DemoRunner) generateCommitMessage(task *plan.Task) string {
 	if msg, ok := messages[task.ID]; ok {
 		return msg
 	}
-	return fmt.Sprintf("Complete %s", strings.ToLower(task.Title))
+
+	// Generate commit message from title
+	title := strings.ToLower(task.Title)
+	switch {
+	case strings.Contains(title, "setup"):
+		return fmt.Sprintf("Set up %s", task.Title)
+	case strings.Contains(title, "data model"):
+		return fmt.Sprintf("Implement %s", task.Title)
+	case strings.Contains(title, "api") || strings.Contains(title, "endpoint"):
+		return fmt.Sprintf("Add %s", task.Title)
+	case strings.Contains(title, "documentation"):
+		return fmt.Sprintf("Document %s", task.Title)
+	case strings.Contains(title, "caching"):
+		return fmt.Sprintf("Add %s", task.Title)
+	case strings.Contains(title, "monitoring"):
+		return fmt.Sprintf("Configure %s", task.Title)
+	case strings.Contains(title, "migration"):
+		return fmt.Sprintf("Create %s", task.Title)
+	default:
+		return fmt.Sprintf("Complete %s", strings.ToLower(task.Title))
+	}
 }

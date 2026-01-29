@@ -73,6 +73,7 @@ dev:
 	@while true; do ./bin/rafa || true; done
 
 # Run demo mode in a loop (restarts when killed by watch)
+# Usage: make dev-demo DEMO_ARGS="--speed=marathon"
 dev-demo:
 	@$(MAKE) build
-	@while true; do ./bin/rafa demo || true; done
+	@while true; do ./bin/rafa demo $(DEMO_ARGS) || true; done

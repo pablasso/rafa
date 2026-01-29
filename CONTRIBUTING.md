@@ -56,7 +56,7 @@ Run `make fmt` before committing. CI checks formatting.
 For TUI development without Claude authentication:
 
 ```bash
-rafa demo [--scenario=<SCENARIO>] [--speed=<SPEED>]
+rafa demo [--scenario=<SCENARIO>] [--speed=<SPEED>] [--tasks=N] [--task-delay=DURATION]
 ```
 
 **Scenarios:**
@@ -68,18 +68,42 @@ rafa demo [--scenario=<SCENARIO>] [--speed=<SPEED>]
 | fail     | All tasks fail |
 | retry    | Tasks fail twice, succeed on 3rd attempt |
 
-**Speeds:**
+**Speed Presets:**
 
-| Speed  | Delay per task | Use case |
-|--------|----------------|----------|
-| fast   | 500ms | Quick iteration |
-| normal | 2s | Default viewing |
-| slow   | 5s | Demos/presentations |
+| Speed    | Delay | Tasks | Duration | Use case |
+|----------|-------|-------|----------|----------|
+| fast     | 500ms | 5     | ~2.5s    | Quick dev iteration |
+| normal   | 10s   | 18    | ~3 min   | Default demos |
+| slow     | 30s   | 60    | ~30 min  | Presentations |
+| marathon | 1m    | 120   | ~2 hrs   | Long demos |
+| extended | 2m    | 360   | ~12 hrs  | All-day |
+
+**Override Flags:**
+
+- `--tasks=N` - Override task count from speed preset
+- `--task-delay=DURATION` - Override delay (e.g., "30s", "1m", "2m30s")
+
+**Examples:**
+
+```bash
+rafa demo                              # normal: 18 tasks, 10s each
+rafa demo --speed=marathon             # 120 tasks, 1m each (~2 hrs)
+rafa demo --speed=marathon --tasks=60  # 60 tasks, 1m each (~1 hr)
+rafa demo --task-delay=3m              # 18 tasks, 3m each
+```
+
+**Development with demo flags:**
+
+```bash
+make dev-demo DEMO_ARGS="--speed=marathon"
+make dev-demo DEMO_ARGS="--speed=fast --tasks=10"
+```
 
 Demo mode is useful for:
 - Iterating on TUI changes without API calls
 - Testing UI states (success, failure, retry)
 - Demonstrating Rafa to others
+- Long-running demos for presentations or displays
 
 ## Testing
 

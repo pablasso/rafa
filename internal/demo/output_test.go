@@ -321,23 +321,20 @@ func TestGenerateWorkLines_UnknownTaskFallback(t *testing.T) {
 	config := NewConfig(ScenarioSuccess, SpeedFast)
 	runner := NewDemoRunner(config)
 
-	task := &plan.Task{ID: "unknown-task"}
+	task := &plan.Task{ID: "unknown-task", Title: "Some unknown task"}
 	lines := runner.generateWorkLines(task)
 
-	if len(lines) != 3 {
-		t.Errorf("Unknown task should return 3 fallback lines, got %d", len(lines))
+	// Dynamic tasks generate 5 lines for generic fallback
+	if len(lines) != 5 {
+		t.Errorf("Unknown task should return 5 fallback lines, got %d", len(lines))
 	}
 
-	expectedFallback := []string{
-		"Analyzing requirements...",
-		"Implementing changes...",
-		"Running verification...",
+	// First and last lines should match generic fallback pattern
+	if lines[0] != "Analyzing requirements..." {
+		t.Errorf("Fallback line 0: got %q, want %q", lines[0], "Analyzing requirements...")
 	}
-
-	for i, expected := range expectedFallback {
-		if lines[i] != expected {
-			t.Errorf("Fallback line %d: got %q, want %q", i, lines[i], expected)
-		}
+	if lines[4] != "Task complete." {
+		t.Errorf("Fallback line 4: got %q, want %q", lines[4], "Task complete.")
 	}
 }
 

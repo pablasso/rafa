@@ -399,11 +399,11 @@ func TestGenerateWorkLines(t *testing.T) {
 		}
 	}
 
-	// Test unknown task ID returns fallback
-	unknownTask := &plan.Task{ID: "unknown"}
+	// Test unknown task ID returns dynamic fallback (5 lines for generic case)
+	unknownTask := &plan.Task{ID: "unknown", Title: "Some unknown task"}
 	lines := runner.generateWorkLines(unknownTask)
-	if len(lines) != 3 {
-		t.Errorf("generateWorkLines(unknown) returned %d lines, want 3", len(lines))
+	if len(lines) != 5 {
+		t.Errorf("generateWorkLines(unknown) returned %d lines, want 5", len(lines))
 	}
 	if !strings.Contains(lines[0], "Analyzing requirements") {
 		t.Error("Fallback should contain 'Analyzing requirements'")

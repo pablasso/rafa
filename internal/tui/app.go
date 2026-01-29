@@ -245,8 +245,8 @@ func (m Model) transitionToRunning(planID string) (tea.Model, tea.Cmd) {
 
 // transitionToDemoRunning creates an in-memory demo plan and transitions to the running view.
 func (m Model) transitionToDemoRunning() (tea.Model, tea.Cmd) {
-	// Create demo plan in memory
-	demoPlan := demo.CreateDemoPlan()
+	// Create demo plan in memory with configured task count
+	demoPlan := demo.CreateDemoPlanWithTaskCount(m.demoConfig.TaskCount)
 
 	m.currentView = ViewRunning
 	m.running = views.NewRunningModelWithDemo("DEMO", demoPlan.Name, demoPlan.Tasks, demoPlan, m.demoConfig)
