@@ -31,8 +31,8 @@
         "Unit tests exist for shouldFail covering all scenarios and edge cases",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t03",
