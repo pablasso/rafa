@@ -16,7 +16,8 @@
       "Bash(go run:*)",
       "Bash(tree:*)",
       "Bash(head:*)",
-      "Bash(go clean:*)"
+      "Bash(go clean:*)",
+      "WebSearch"
     ]
   }
 }
