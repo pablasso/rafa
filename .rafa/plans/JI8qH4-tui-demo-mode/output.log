@@ -1,0 +1,15 @@
+
+=== Task t01, Attempt 1 ===
+Started: 2026-01-28T21:01:48-06:00
+
+All acceptance criteria are verified:
+
+1. ✅ `internal/demo/demo.go` exists with `Scenario` and `Speed` types as string constants (lines 9-26)
+2. ✅ `Config` struct has `Scenario`, `Speed`, and `TaskDelay` fields (lines 28-33) with `NewConfig` constructor computing delays: fast=500ms, normal=2s, slow=5s (lines 36-46)
+3. ✅ `CreateDemoPlan` returns a `plan.Plan` with ID 'demo-001', name 'demo-feature', and 5 tasks (t01-t05) matching the design spec (lines 49-116)
+4. ✅ `make build` succeeds with no compilation errors
+5. ✅ `make fmt && make check-fmt` passes
+
+The implementation is complete and follows the design document specification.
+
+SUGGESTED_COMMIT_MESSAGE: Add internal/demo package with configuration and plan generation
