@@ -328,3 +328,49 @@ Now let me verify each acceptance criterion:
 16. ✅ **make test passes** - Verified above
 
 SUGGESTED_COMMIT_MESSAGE: Handle edge cases and error states for production-ready TUI
+
+=== Task t10: SUCCESS ===
+
+
+=== Task t11, Attempt 1 ===
+Started: 2026-01-28T18:40:53-06:00
+
+All acceptance criteria have been verified. Here's a summary of the implementation:
+
+## Summary
+
+I implemented comprehensive integration tests for the TUI flows in `/Users/pablasso/dev/personal/rafa/internal/tui/integration_test.go`.
+
+### Changes Made
+
+1. **New file: `internal/tui/integration_test.go`** - Contains all integration tests with:
+   - **Test helpers**: `setupTestEnv`, `setupTestEnvWithDesignDoc`, `createTestPlan`, `createLockedPlan`, `createTestModel`, `sendKey`, `sendWindowSize`, `processCmd`
+   - **Mock AI support**: `mockAI` struct and `setupMockAI` function for controlling extraction results
+   - **TestCreatePlanFlow**: Verifies Home → FilePicker → Creating → success → Running flow
+   - **TestRunExistingPlanFlow**: Verifies Home → PlanList → Running → Home flow
+   - **TestKeyboardNavigation**: Tests arrow navigation and Enter/Escape in Home, FilePicker, and PlanList views
+   - **TestWindowResize**: Tests layout adaptation and minimum size warning
+   - **TestErrorStates**: Tests no .rafa/ message, empty plan list, extraction error, and locked plan handling
+   - **TestCancellation**: Tests Ctrl+C behavior in Creating and Running views
+
+2. **Modified: `internal/tui/views/create.go`** - Added getter/setter functions for dependency injection:
+   - `GetExtractTasksFunc` / `SetExtractTasksFunc`
+   - `GetCreatePlanFolderFunc` / `SetCreatePlanFolderFunc`
+   - `GetCheckClaudeCLIFunc` / `SetCheckClaudeCLIFunc`
+
+### All Acceptance Criteria Met
+- ✅ `internal/tui/integration_test.go` exists
+- ✅ Test helper creates temp directory with .rafa/ structure
+- ✅ Mock AI implementation allows controlling extraction results
+- ✅ TestCreatePlanFlow verifies complete create flow
+- ✅ TestRunExistingPlanFlow verifies run existing plan flow
+- ✅ TestKeyboardNavigation verifies navigation in all views
+- ✅ TestWindowResize verifies layout adaptation
+- ✅ TestWindowResize verifies minimum size warning
+- ✅ TestErrorStates covers all error scenarios
+- ✅ TestCancellation verifies Ctrl+C behavior
+- ✅ Tests clean up using `t.TempDir()`
+- ✅ All tests pass with `make test`
+- ✅ Tests don't require network (all external calls mocked)
+
+SUGGESTED_COMMIT_MESSAGE: Add integration tests for TUI flows

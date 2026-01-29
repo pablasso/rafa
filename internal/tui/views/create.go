@@ -83,6 +83,38 @@ func defaultCheckClaudeCLI() error {
 	return nil
 }
 
+// Getter and setter functions for testing
+
+// GetExtractTasksFunc returns the current extractTasks function.
+func GetExtractTasksFunc() ExtractTasksFunc {
+	return extractTasks
+}
+
+// SetExtractTasksFunc sets the extractTasks function (for testing).
+func SetExtractTasksFunc(f ExtractTasksFunc) {
+	extractTasks = f
+}
+
+// GetCreatePlanFolderFunc returns the current createPlanFolder function.
+func GetCreatePlanFolderFunc() CreatePlanFolderFunc {
+	return createPlanFolder
+}
+
+// SetCreatePlanFolderFunc sets the createPlanFolder function (for testing).
+func SetCreatePlanFolderFunc(f CreatePlanFolderFunc) {
+	createPlanFolder = f
+}
+
+// GetCheckClaudeCLIFunc returns the current checkClaudeCLI function.
+func GetCheckClaudeCLIFunc() CheckClaudeCLIFunc {
+	return checkClaudeCLI
+}
+
+// SetCheckClaudeCLIFunc sets the checkClaudeCLI function (for testing).
+func SetCheckClaudeCLIFunc(f CheckClaudeCLIFunc) {
+	checkClaudeCLI = f
+}
+
 // NewCreatingModel creates a new CreatingModel for the given source file.
 func NewCreatingModel(sourceFile string) CreatingModel {
 	s := spinner.New()

@@ -239,8 +239,8 @@
         "All integration tests pass with make test",
         "Tests don't require network (all external calls mocked)"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t12",
