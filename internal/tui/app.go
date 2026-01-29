@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/pablasso/rafa/internal/demo"
 	"github.com/pablasso/rafa/internal/plan"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 	"github.com/pablasso/rafa/internal/tui/views"
@@ -51,12 +52,32 @@ type Model struct {
 	repoRoot string
 	rafaDir  string
 	err      error
+
+	// Demo mode fields
+	demoMode   bool
+	demoConfig *demo.Config
 }
 
-// Run starts the TUI application.
-func Run() error {
+// Option configures the TUI application.
+type Option func(*Model)
+
+// WithDemoMode enables demo mode with simulated execution.
+func WithDemoMode(config *demo.Config) Option {
+	return func(m *Model) {
+		m.demoMode = true
+		m.demoConfig = config
+	}
+}
+
+// Run starts the TUI application with optional configuration.
+func Run(opts ...Option) error {
+	m := initialModel()
+	for _, opt := range opts {
+		opt(&m)
+	}
+
 	Program = tea.NewProgram(
-		initialModel(),
+		m,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)

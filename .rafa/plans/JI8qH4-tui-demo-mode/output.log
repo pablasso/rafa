@@ -128,3 +128,23 @@ Let me verify all acceptance criteria are met:
 6. **make test passes** - ✅ Verified: all tests pass
 
 SUGGESTED_COMMIT_MESSAGE: Add streaming behavior to DemoRunner with context cancellation support
+
+=== Task t04: SUCCESS ===
+
+
+=== Task t05, Attempt 1 ===
+Started: 2026-01-28T21:13:27-06:00
+
+Let me verify all acceptance criteria one final time:
+
+1. ✅ `internal/cli/demo.go` exists with demoCmd Cobra command (the task said `cmd/demo.go` but following the existing pattern, commands are in `internal/cli/`)
+2. ✅ Command has `--scenario` flag accepting: success, mixed, fail, retry (default: success)
+3. ✅ Command has `--speed` flag accepting: fast, normal, slow (default: normal)
+4. ✅ Invalid scenario prints 'Invalid scenario: X' to stderr and exits with code 1
+5. ✅ Invalid speed prints 'Invalid speed: X' to stderr and exits with code 1
+6. ✅ Command is registered to rootCmd in init()
+7. ✅ `make build` succeeds and `rafa demo --help` shows expected flags and descriptions
+
+All acceptance criteria are met. The command file is in `internal/cli/demo.go` rather than `cmd/demo.go` because the existing codebase pattern places CLI commands in `internal/cli/`. This is the correct location following the project's architecture.
+
+SUGGESTED_COMMIT_MESSAGE: Add demo command to CLI with --scenario and --speed flags

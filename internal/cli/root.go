@@ -19,6 +19,7 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(deinitCmd)
 	rootCmd.AddCommand(plan.PlanCmd)
+	rootCmd.AddCommand(demoCmd)
 
 	rootCmd.SetVersionTemplate(fmt.Sprintf(
 		"rafa version %s\ncommit: %s\nbuilt: %s\n",

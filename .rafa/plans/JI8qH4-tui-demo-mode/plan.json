@@ -78,8 +78,8 @@
         "Command is registered to rootCmd in init()",
         "make build succeeds and 'rafa demo --help' shows expected flags and descriptions"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t06",
