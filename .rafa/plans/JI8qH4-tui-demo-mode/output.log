@@ -148,3 +148,42 @@ Let me verify all acceptance criteria one final time:
 All acceptance criteria are met. The command file is in `internal/cli/demo.go` rather than `cmd/demo.go` because the existing codebase pattern places CLI commands in `internal/cli/`. This is the correct location following the project's architecture.
 
 SUGGESTED_COMMIT_MESSAGE: Add demo command to CLI with --scenario and --speed flags
+
+=== Task t05: SUCCESS ===
+
+
+=== Task t06, Attempt 1 ===
+Started: 2026-01-28T21:17:45-06:00
+
+The code is properly formatted.
+
+## Summary
+
+The task **t06: Add demo mode support to TUI app** is complete. The implementation in `internal/tui/app.go` includes:
+
+1. **Demo mode fields in Model struct** (lines 56-58):
+   - `demoMode bool`
+   - `demoConfig *demo.Config`
+
+2. **Option type** (line 62):
+   - `type Option func(*Model)`
+
+3. **WithDemoMode function** (lines 64-70):
+   - Returns an Option that sets `demoMode = true` and assigns the config
+
+4. **Run function with variadic options** (lines 73-86):
+   - Signature: `func Run(opts ...Option) error`
+   - Options are applied via loop before `tea.NewProgram` is called
+
+All acceptance criteria verified:
+- ✅ Model struct fields present
+- ✅ Option type defined
+- ✅ WithDemoMode function works correctly
+- ✅ Run function accepts variadic Option parameters
+- ✅ Options applied before tea.NewProgram
+- ✅ `make build` succeeds
+- ✅ `make test` passes
+
+No changes were required as the implementation was already present and complete.
+
+SUGGESTED_COMMIT_MESSAGE: Add demo mode support to TUI app with Option pattern for configuration
