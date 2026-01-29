@@ -108,8 +108,8 @@
         "make build succeeds",
         "make fmt \u0026\u0026 make check-fmt passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t08",

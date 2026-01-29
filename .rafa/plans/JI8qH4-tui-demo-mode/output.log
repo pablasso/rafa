@@ -187,3 +187,15 @@ All acceptance criteria verified:
 No changes were required as the implementation was already present and complete.
 
 SUGGESTED_COMMIT_MESSAGE: Add demo mode support to TUI app with Option pattern for configuration
+
+=== Task t06: SUCCESS ===
+
+
+=== Task t07, Attempt 1 ===
+Started: 2026-01-28T21:19:01-06:00
+
+The relevant code changes are in:
+- `internal/tui/app.go` - Demo mode initialization and transition logic
+- `internal/tui/views/run.go` - Demo-specific running model constructor, demo executor, and `[DEMO]` status bar indicator
+
+SUGGESTED_COMMIT_MESSAGE: Integrate demo mode into home view with [DEMO] status bar indicator

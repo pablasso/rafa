@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -121,8 +122,18 @@ func findRepoRoot(dir string) string {
 	}
 }
 
+// demoStartMsg is sent when we need to start demo mode after receiving window size.
+type demoStartMsg struct{}
+
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
+	if m.demoMode {
+		// In demo mode, we need window size before transitioning to running view.
+		// Return a command that will trigger the transition after window size is received.
+		return func() tea.Msg {
+			return demoStartMsg{}
+		}
+	}
 	return m.home.Init()
 }
 
@@ -134,6 +145,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// Propagate to current view
 		return m.propagateWindowSize(msg)
+
+	case demoStartMsg:
+		// Wait for window size to be set before transitioning
+		if m.width > 0 && m.height > 0 {
+			return m.transitionToDemoRunning()
+		}
+		// Window size not yet received, retry after a small delay to avoid busy-loop
+		return m, tea.Tick(10*time.Millisecond, func(time.Time) tea.Msg {
+			return demoStartMsg{}
+		})
 
 	case tea.KeyMsg:
 		// Global quit key only from home view
@@ -219,6 +240,22 @@ func (m Model) transitionToRunning(planID string) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		m.running.Init(),
 		m.running.StartExecutor(Program),
+	)
+}
+
+// transitionToDemoRunning creates an in-memory demo plan and transitions to the running view.
+func (m Model) transitionToDemoRunning() (tea.Model, tea.Cmd) {
+	// Create demo plan in memory
+	demoPlan := demo.CreateDemoPlan()
+
+	m.currentView = ViewRunning
+	m.running = views.NewRunningModelWithDemo("DEMO", demoPlan.Name, demoPlan.Tasks, demoPlan, m.demoConfig)
+	m.running.SetSize(m.width, m.height)
+
+	// Start the demo executor in a background goroutine
+	return m, tea.Batch(
+		m.running.Init(),
+		m.running.StartDemoExecutor(Program, m.demoConfig),
 	)
 }
 

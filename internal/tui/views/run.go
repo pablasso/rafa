@@ -3,12 +3,14 @@ package views
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/pablasso/rafa/internal/demo"
 	"github.com/pablasso/rafa/internal/executor"
 	"github.com/pablasso/rafa/internal/plan"
 	"github.com/pablasso/rafa/internal/tui/components"
@@ -53,6 +55,10 @@ type RunningModel struct {
 	// Plan execution context
 	planDir string
 	plan    *plan.Plan
+
+	// Demo mode fields
+	demoMode   bool
+	demoConfig *demo.Config
 
 	// Final status
 	finalSuccess bool
@@ -142,6 +148,41 @@ func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string,
 	}
 }
 
+// NewRunningModelWithDemo creates a new RunningModel for demo mode execution.
+// In demo mode, no plan directory is used and execution is simulated.
+func NewRunningModelWithDemo(planID, planName string, tasks []plan.Task, p *plan.Plan, config *demo.Config) RunningModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = styles.SelectedStyle
+
+	taskDisplays := make([]TaskDisplay, len(tasks))
+	for i, t := range tasks {
+		taskDisplays[i] = TaskDisplay{
+			Title:  t.Title,
+			Status: "pending",
+		}
+	}
+
+	return RunningModel{
+		state:       stateRunning,
+		planID:      planID,
+		planName:    planName,
+		tasks:       taskDisplays,
+		currentTask: 0,
+		totalTasks:  len(tasks),
+		attempt:     0,
+		maxAttempts: executor.MaxAttempts,
+		startTime:   time.Now(),
+		spinner:     s,
+		output:      components.NewOutputViewport(80, 20, 0), // Will be resized
+		outputChan:  make(chan string, 100),                  // Buffered channel
+		planDir:     "",                                      // No plan directory in demo mode
+		plan:        p,
+		demoMode:    true,
+		demoConfig:  config,
+	}
+}
+
 // Init implements tea.Model.
 func (m RunningModel) Init() tea.Cmd {
 	return tea.Batch(
@@ -225,6 +266,111 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 
 		return nil
 	}
+}
+
+// StartDemoExecutor creates a command that starts demo execution in a goroutine.
+// It uses the DemoRunner instead of ClaudeRunner to simulate execution without
+// requiring Claude CLI authentication.
+func (m *RunningModel) StartDemoExecutor(program *tea.Program, config *demo.Config) tea.Cmd {
+	return func() tea.Msg {
+		// Guard against nil program
+		if program == nil {
+			return PlanDoneMsg{Success: false, Message: "Internal error: program is nil"}
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancel = cancel
+
+		// Create events handler to send messages to TUI
+		events := NewRunningModelEvents(program)
+
+		// Use provided config or fall back to model's stored config
+		cfg := config
+		if cfg == nil {
+			cfg = m.demoConfig
+		}
+
+		// Create demo runner
+		demoRunner := demo.NewDemoRunner(cfg)
+
+		// Run demo execution in background goroutine
+		go func() {
+			defer close(m.outputChan)
+
+			startTime := time.Now()
+			succeeded := 0
+
+			for i := range m.plan.Tasks {
+				task := &m.plan.Tasks[i]
+
+				// Check for cancellation
+				if ctx.Err() != nil {
+					return
+				}
+
+				// Emit task start event
+				events.OnTaskStart(i+1, len(m.plan.Tasks), task, 1)
+
+				// Create a simple output writer that sends to our channel
+				output := &demoOutputWriter{ch: m.outputChan}
+
+				// Run the demo task
+				err := demoRunner.Run(ctx, task, "", 1, executor.MaxAttempts, output)
+
+				if err != nil {
+					events.OnTaskFailed(task, 1, err)
+					events.OnPlanFailed(task, err.Error())
+					program.Send(PlanDoneMsg{
+						Success: false,
+						Message: fmt.Sprintf("Task %s failed: %v", task.ID, err),
+					})
+					return
+				}
+
+				// Emit task complete event
+				events.OnTaskComplete(task)
+				succeeded++
+			}
+
+			// All tasks completed
+			duration := time.Since(startTime)
+			events.OnPlanComplete(succeeded, len(m.plan.Tasks), duration)
+		}()
+
+		return nil
+	}
+}
+
+// demoOutputWriter implements executor.OutputWriter for demo mode.
+type demoOutputWriter struct {
+	ch chan string
+}
+
+func (w *demoOutputWriter) Stdout() io.Writer {
+	return &demoLineWriter{ch: w.ch}
+}
+
+func (w *demoOutputWriter) Stderr() io.Writer {
+	return &demoLineWriter{ch: w.ch}
+}
+
+type demoLineWriter struct {
+	ch chan string
+}
+
+func (w *demoLineWriter) Write(p []byte) (n int, err error) {
+	// Split by newlines and send each line
+	lines := strings.Split(string(p), "\n")
+	for _, line := range lines {
+		if line != "" {
+			select {
+			case w.ch <- line:
+			default:
+				// Channel full, skip
+			}
+		}
+	}
+	return len(p), nil
 }
 
 // Update implements tea.Model.
@@ -425,6 +571,9 @@ func (m RunningModel) renderRunning() string {
 
 	// Status bar
 	statusItems := []string{"Running...", "Ctrl+C Cancel"}
+	if m.demoMode {
+		statusItems = append([]string{"[DEMO]"}, statusItems...)
+	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
@@ -589,6 +738,9 @@ func (m RunningModel) renderDone() string {
 
 	// Status bar
 	statusItems := []string{"Enter Home", "q Quit"}
+	if m.demoMode {
+		statusItems = append([]string{"[DEMO]"}, statusItems...)
+	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
@@ -634,6 +786,9 @@ func (m RunningModel) renderCancelled() string {
 
 	// Status bar
 	statusItems := []string{"Enter Home", "q Quit"}
+	if m.demoMode {
+		statusItems = append([]string{"[DEMO]"}, statusItems...)
+	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
