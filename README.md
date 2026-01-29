@@ -316,38 +316,7 @@ rm -rf .rafa/
 
 ## Development
 
-```bash
-# Run tests
-make test
-
-# Format code
-make fmt
-
-# Check formatting
-make check-fmt
-
-# Build locally
-make build
-
-# Test release process locally
-make release-dry-run
-```
-
-## Releasing
-
-Releases are automated via GitHub Actions when a version tag is pushed.
-
-To create a new release:
-
-1. Ensure all changes are committed and tests pass (`make test`)
-2. Tag the release:
-   ```bash
-   git tag v0.1.2
-   git push origin v0.1.2
-   ```
-3. GitHub Actions will automatically build and publish the release
-
-The changelog is auto-generated from commit messages.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and release process.
 
 ## License
 
