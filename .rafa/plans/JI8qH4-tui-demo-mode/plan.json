@@ -4,7 +4,7 @@
   "description": "Add a rafa demo command that launches the TUI with simulated execution for rapid iteration on TUI changes without requiring real Claude Code execution.",
   "sourceFile": "docs/designs/tui-demo-mode.md",
   "createdAt": "2026-01-28T20:27:45.097362-06:00",
-  "status": "in_progress",
+  "status": "completed",
   "tasks": [
     {
       "id": "t01",
