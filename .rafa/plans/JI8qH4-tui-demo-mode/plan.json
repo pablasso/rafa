@@ -154,8 +154,8 @@
         "Help text (rafa demo --help) accurately describes all options",
         "make build \u0026\u0026 make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     }
   ]
 }
