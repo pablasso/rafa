@@ -3,7 +3,6 @@ package views
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -222,6 +221,7 @@ func (m *RunningModel) SetCancel(cancel context.CancelFunc) {
 
 // StartExecutor creates a command that starts plan execution in a goroutine.
 // It creates the executor with events integration and output capture.
+// In demo mode, it injects DemoRunner and skips persistence operations.
 func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 	return func() tea.Msg {
 		// Guard against nil program
@@ -235,7 +235,43 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 		// Create events handler to send messages to TUI
 		events := NewRunningModelEvents(program)
 
-		// Create output capture with streaming to TUI
+		// In demo mode, use simplified execution without file-based output capture
+		if m.demoMode {
+			// Create demo runner with config
+			demoRunner := demo.NewDemoRunner(m.demoConfig)
+
+			// Create output capture for demo mode (no file, just channel streaming)
+			output := executor.NewOutputCaptureForDemo(m.outputChan)
+
+			// Create executor with demo runner injected
+			// Note: planDir is empty in demo mode, but WithSkipPersistence prevents file operations
+			exec := executor.New(m.planDir, m.plan).
+				WithRunner(demoRunner).
+				WithEvents(events).
+				WithOutput(output).
+				WithSkipPersistence(true) // Skips git checks, commits, and file persistence
+
+			// Run in background goroutine
+			go func() {
+				defer output.Close()
+				defer close(m.outputChan)
+
+				// Run executor and send error as message if it fails
+				if err := exec.Run(ctx); err != nil {
+					// Only send error if context wasn't cancelled (user didn't press Ctrl+C)
+					if ctx.Err() == nil {
+						program.Send(PlanDoneMsg{
+							Success: false,
+							Message: err.Error(),
+						})
+					}
+				}
+			}()
+
+			return nil
+		}
+
+		// Normal execution mode with file-based output capture
 		output, err := executor.NewOutputCaptureWithEvents(m.planDir, m.outputChan)
 		if err != nil {
 			return PlanDoneMsg{Success: false, Message: fmt.Sprintf("Failed to create output capture: %v", err)}
@@ -266,111 +302,6 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 
 		return nil
 	}
-}
-
-// StartDemoExecutor creates a command that starts demo execution in a goroutine.
-// It uses the DemoRunner instead of ClaudeRunner to simulate execution without
-// requiring Claude CLI authentication.
-func (m *RunningModel) StartDemoExecutor(program *tea.Program, config *demo.Config) tea.Cmd {
-	return func() tea.Msg {
-		// Guard against nil program
-		if program == nil {
-			return PlanDoneMsg{Success: false, Message: "Internal error: program is nil"}
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		m.cancel = cancel
-
-		// Create events handler to send messages to TUI
-		events := NewRunningModelEvents(program)
-
-		// Use provided config or fall back to model's stored config
-		cfg := config
-		if cfg == nil {
-			cfg = m.demoConfig
-		}
-
-		// Create demo runner
-		demoRunner := demo.NewDemoRunner(cfg)
-
-		// Run demo execution in background goroutine
-		go func() {
-			defer close(m.outputChan)
-
-			startTime := time.Now()
-			succeeded := 0
-
-			for i := range m.plan.Tasks {
-				task := &m.plan.Tasks[i]
-
-				// Check for cancellation
-				if ctx.Err() != nil {
-					return
-				}
-
-				// Emit task start event
-				events.OnTaskStart(i+1, len(m.plan.Tasks), task, 1)
-
-				// Create a simple output writer that sends to our channel
-				output := &demoOutputWriter{ch: m.outputChan}
-
-				// Run the demo task
-				err := demoRunner.Run(ctx, task, "", 1, executor.MaxAttempts, output)
-
-				if err != nil {
-					events.OnTaskFailed(task, 1, err)
-					events.OnPlanFailed(task, err.Error())
-					program.Send(PlanDoneMsg{
-						Success: false,
-						Message: fmt.Sprintf("Task %s failed: %v", task.ID, err),
-					})
-					return
-				}
-
-				// Emit task complete event
-				events.OnTaskComplete(task)
-				succeeded++
-			}
-
-			// All tasks completed
-			duration := time.Since(startTime)
-			events.OnPlanComplete(succeeded, len(m.plan.Tasks), duration)
-		}()
-
-		return nil
-	}
-}
-
-// demoOutputWriter implements executor.OutputWriter for demo mode.
-type demoOutputWriter struct {
-	ch chan string
-}
-
-func (w *demoOutputWriter) Stdout() io.Writer {
-	return &demoLineWriter{ch: w.ch}
-}
-
-func (w *demoOutputWriter) Stderr() io.Writer {
-	return &demoLineWriter{ch: w.ch}
-}
-
-type demoLineWriter struct {
-	ch chan string
-}
-
-func (w *demoLineWriter) Write(p []byte) (n int, err error) {
-	// Split by newlines and send each line
-	lines := strings.Split(string(p), "\n")
-	for _, line := range lines {
-		if line != "" {
-			select {
-			case w.ch <- line:
-			default:
-				// Channel full, skip
-			}
-		}
-	}
-	return len(p), nil
 }
 
 // Update implements tea.Model.

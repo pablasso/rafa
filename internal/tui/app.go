@@ -252,10 +252,11 @@ func (m Model) transitionToDemoRunning() (tea.Model, tea.Cmd) {
 	m.running = views.NewRunningModelWithDemo("DEMO", demoPlan.Name, demoPlan.Tasks, demoPlan, m.demoConfig)
 	m.running.SetSize(m.width, m.height)
 
-	// Start the demo executor in a background goroutine
+	// Start the executor in a background goroutine
+	// StartExecutor detects demo mode and injects DemoRunner automatically
 	return m, tea.Batch(
 		m.running.Init(),
-		m.running.StartDemoExecutor(Program, m.demoConfig),
+		m.running.StartExecutor(Program),
 	)
 }
 

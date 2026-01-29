@@ -105,9 +105,12 @@ func (oc *OutputCapture) Stderr() io.Writer {
 	return oc.multiErr
 }
 
-// Close closes the log file.
+// Close closes the log file. Safe to call when no log file is open (demo mode).
 func (oc *OutputCapture) Close() error {
-	return oc.logFile.Close()
+	if oc.logFile != nil {
+		return oc.logFile.Close()
+	}
+	return nil
 }
 
 // EventsChan returns the events channel for TUI streaming, or nil for CLI mode.
@@ -116,14 +119,22 @@ func (oc *OutputCapture) EventsChan() chan string {
 }
 
 // WriteTaskHeader writes a header line to the log for a new task attempt.
+// Safe to call when no log file is open (demo mode).
 func (oc *OutputCapture) WriteTaskHeader(taskID string, attempt int) {
+	if oc.logFile == nil {
+		return
+	}
 	header := fmt.Sprintf("\n=== Task %s, Attempt %d ===\n", taskID, attempt)
 	oc.logFile.WriteString(header)
 	oc.logFile.WriteString(fmt.Sprintf("Started: %s\n\n", time.Now().Format(time.RFC3339)))
 }
 
 // WriteTaskFooter writes a footer line to the log after task completion.
+// Safe to call when no log file is open (demo mode).
 func (oc *OutputCapture) WriteTaskFooter(taskID string, success bool) {
+	if oc.logFile == nil {
+		return
+	}
 	result := "SUCCESS"
 	if !success {
 		result = "FAILED"
@@ -136,6 +147,30 @@ const (
 	commitMessagePrefix = "SUGGESTED_COMMIT_MESSAGE:"
 	maxLinesToSearch    = 100
 )
+
+// NewOutputCaptureForDemo creates an output capture for demo mode that only streams to a channel.
+// No file is created; all output goes to the provided channel for TUI display.
+// Use this when running in demo mode where persistence is disabled.
+func NewOutputCaptureForDemo(eventsChan chan string) *OutputCapture {
+	oc := &OutputCapture{
+		logFile:    nil,
+		eventsChan: eventsChan,
+	}
+
+	// Create streaming writers that only write to the channel (no file)
+	streamingOut := &streamingWriter{
+		underlying: io.Discard, // Discard underlying writes
+		eventsChan: eventsChan,
+	}
+	streamingErr := &streamingWriter{
+		underlying: io.Discard,
+		eventsChan: eventsChan,
+	}
+	oc.multiOut = streamingOut
+	oc.multiErr = streamingErr
+
+	return oc
+}
 
 // ExtractCommitMessage searches the captured output for a suggested commit message.
 // It looks for a line starting with 'SUGGESTED_COMMIT_MESSAGE:' in the last 100 lines

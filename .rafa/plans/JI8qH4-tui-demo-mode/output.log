@@ -199,3 +199,34 @@ The relevant code changes are in:
 - `internal/tui/views/run.go` - Demo-specific running model constructor, demo executor, and `[DEMO]` status bar indicator
 
 SUGGESTED_COMMIT_MESSAGE: Integrate demo mode into home view with [DEMO] status bar indicator
+
+=== Task t07: SUCCESS ===
+
+
+=== Task t08, Attempt 1 ===
+Started: 2026-01-28T21:23:58-06:00
+
+All acceptance criteria are met. Here's a summary of the changes made:
+
+## Summary of Changes
+
+### `internal/executor/executor.go`
+- Added `skipPersistence` field to the `Executor` struct to disable all file system operations (for demo mode)
+- Added `WithSkipPersistence(bool)` method that sets skipPersistence and implicitly sets allowDirty=true to skip git checks
+- Modified `Run()` to skip lock acquisition, plan saving, and logging when skipPersistence is true
+- Modified `executeTask()` to skip plan saves and task logging when skipPersistence is true
+
+### `internal/executor/output.go`
+- Added `NewOutputCaptureForDemo(eventsChan)` function that creates an OutputCapture without a log file, using `io.Discard` for underlying writes
+- Made `Close()`, `WriteTaskHeader()`, and `WriteTaskFooter()` methods nil-safe for demo mode
+
+### `internal/tui/views/run.go`
+- Modified `StartExecutor()` to detect demo mode and inject `DemoRunner` via `Executor.WithRunner()`
+- Removed the separate `StartDemoExecutor()` method (now handled by unified StartExecutor)
+- Removed unused `demoOutputWriter` and `demoLineWriter` types
+- Removed unused `io` import
+
+### `internal/tui/app.go`
+- Updated `transitionToDemoRunning()` to call `StartExecutor()` instead of `StartDemoExecutor()` (the unified method auto-detects demo mode)
+
+SUGGESTED_COMMIT_MESSAGE: Integrate demo mode into run view with DemoRunner injection via Executor.WithRunner()
