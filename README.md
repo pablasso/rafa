@@ -320,4 +320,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and relea
 
 ## License
 
-MIT
+[MIT](LICENSE)
