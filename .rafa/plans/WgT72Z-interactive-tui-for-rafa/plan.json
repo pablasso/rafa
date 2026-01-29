@@ -192,8 +192,8 @@
         "All views receive correct width/height on resize",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t10",

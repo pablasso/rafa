@@ -3,7 +3,7 @@ package components
 import (
 	"strings"
 
-	"github.com/pablasso/rafa/internal/tui"
+	"github.com/pablasso/rafa/internal/tui/styles"
 )
 
 // StatusBar renders a bottom help bar showing contextual help items.
@@ -18,10 +18,10 @@ func NewStatusBar() StatusBar {
 // Items are joined with " • " separator and padded to fill the width.
 func (s StatusBar) Render(width int, items []string) string {
 	if len(items) == 0 {
-		return tui.StatusBarStyle.Width(width).Render("")
+		return styles.StatusBarStyle.Width(width).Render("")
 	}
 
 	content := strings.Join(items, " • ")
 
-	return tui.StatusBarStyle.Width(width).Render(content)
+	return styles.StatusBarStyle.Width(width).Render(content)
 }

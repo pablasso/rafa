@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pablasso/rafa/internal/executor"
 	"github.com/pablasso/rafa/internal/plan"
+	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
 func TestNewRunningModel(t *testing.T) {
@@ -304,8 +305,8 @@ func TestRunningModel_Update_Enter_AfterDone(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToHomeMsg); !ok {
-		t.Errorf("expected GoToHomeMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected msgs.GoToHomeMsg, got %T", msg)
 	}
 }
 
@@ -338,8 +339,8 @@ func TestRunningModel_Update_H_AfterCancelled(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToHomeMsg); !ok {
-		t.Errorf("expected GoToHomeMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected msgs.GoToHomeMsg, got %T", msg)
 	}
 }
 

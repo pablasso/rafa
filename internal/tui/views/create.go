@@ -13,8 +13,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/pablasso/rafa/internal/ai"
 	"github.com/pablasso/rafa/internal/plan"
-	"github.com/pablasso/rafa/internal/tui"
 	"github.com/pablasso/rafa/internal/tui/components"
+	"github.com/pablasso/rafa/internal/tui/msgs"
+	"github.com/pablasso/rafa/internal/tui/styles"
 	"github.com/pablasso/rafa/internal/util"
 )
 
@@ -27,20 +28,9 @@ const (
 	stateError
 )
 
-// PlanCreatedMsg is sent when plan creation succeeds.
-type PlanCreatedMsg struct {
-	PlanID string
-	Tasks  []string // task titles for display
-}
-
 // PlanCreationErrorMsg is sent when plan creation fails.
 type PlanCreationErrorMsg struct {
 	Err error
-}
-
-// RunPlanMsg signals that the user wants to run the created plan.
-type RunPlanMsg struct {
-	PlanID string
 }
 
 // CreatingModel is the model for the plan creation progress view.
@@ -73,7 +63,7 @@ var (
 func NewCreatingModel(sourceFile string) CreatingModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot // ⣾ style spinner
-	s.Style = tui.SelectedStyle
+	s.Style = styles.SelectedStyle
 
 	return CreatingModel{
 		state:      stateExtracting,
@@ -164,7 +154,7 @@ func (m CreatingModel) startExtraction() tea.Cmd {
 		}
 
 		planID := fmt.Sprintf("%s-%s", p.ID, p.Name)
-		return PlanCreatedMsg{
+		return msgs.PlanCreatedMsg{
 			PlanID: planID,
 			Tasks:  taskTitles,
 		}
@@ -227,7 +217,7 @@ func (m CreatingModel) Update(msg tea.Msg) (CreatingModel, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
-	case PlanCreatedMsg:
+	case msgs.PlanCreatedMsg:
 		m.state = stateSuccess
 		m.planID = msg.PlanID
 		m.tasks = msg.Tasks
@@ -251,15 +241,15 @@ func (m CreatingModel) handleKeyPress(msg tea.KeyMsg) (CreatingModel, tea.Cmd) {
 	case stateExtracting:
 		// During extraction, only Ctrl+C to cancel
 		if msg.String() == "ctrl+c" {
-			return m, func() tea.Msg { return GoToFilePickerMsg{} }
+			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
 		}
 
 	case stateSuccess:
 		switch msg.String() {
 		case "r":
-			return m, func() tea.Msg { return RunPlanMsg{PlanID: m.planID} }
+			return m, func() tea.Msg { return msgs.RunPlanMsg{PlanID: m.planID} }
 		case "h":
-			return m, func() tea.Msg { return GoToHomeMsg{} }
+			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
@@ -275,9 +265,9 @@ func (m CreatingModel) handleKeyPress(msg tea.KeyMsg) (CreatingModel, tea.Cmd) {
 				m.startExtraction(),
 			)
 		case "b":
-			return m, func() tea.Msg { return GoToFilePickerMsg{} }
+			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
 		case "h":
-			return m, func() tea.Msg { return GoToHomeMsg{} }
+			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
@@ -309,13 +299,13 @@ func (m CreatingModel) renderExtracting() string {
 	var b strings.Builder
 
 	// Title
-	title := tui.TitleStyle.Render("Creating Plan")
+	title := styles.TitleStyle.Render("Creating Plan")
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	b.WriteString(titleLine)
 	b.WriteString("\n\n")
 
 	// Source file
-	sourceLabel := tui.SubtleStyle.Render("Source: ")
+	sourceLabel := styles.SubtleStyle.Render("Source: ")
 	sourcePath := m.sourceFile
 	// Truncate if too long
 	maxPathLen := m.width - 10
@@ -351,20 +341,20 @@ func (m CreatingModel) renderSuccess() string {
 	var b strings.Builder
 
 	// Title
-	title := tui.TitleStyle.Render("Plan Created")
+	title := styles.TitleStyle.Render("Plan Created")
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	b.WriteString(titleLine)
 	b.WriteString("\n\n")
 
 	// Success message
-	checkMark := tui.SuccessStyle.Render("✓")
+	checkMark := styles.SuccessStyle.Render("✓")
 	successMsg := fmt.Sprintf("%s Plan created: %s", checkMark, m.planID)
 	successLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, successMsg)
 	b.WriteString(successLine)
 	b.WriteString("\n\n")
 
 	// Tasks header
-	tasksHeader := tui.SubtleStyle.Render("Tasks:")
+	tasksHeader := styles.SubtleStyle.Render("Tasks:")
 	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, tasksHeader))
 	b.WriteString("\n")
 
@@ -379,8 +369,8 @@ func (m CreatingModel) renderSuccess() string {
 	b.WriteString("\n\n")
 
 	// Options
-	runOption := tui.SelectedStyle.Render("[r]") + " Run this plan now"
-	homeOption := tui.SubtleStyle.Render("[h]") + " Return to home"
+	runOption := styles.SelectedStyle.Render("[r]") + " Run this plan now"
+	homeOption := styles.SubtleStyle.Render("[h]") + " Return to home"
 	optionsLine := runOption + "    " + homeOption
 	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, optionsLine))
 	b.WriteString("\n")
@@ -404,13 +394,13 @@ func (m CreatingModel) renderError() string {
 	var b strings.Builder
 
 	// Title
-	title := tui.TitleStyle.Render("Plan Creation Failed")
+	title := styles.TitleStyle.Render("Plan Creation Failed")
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	b.WriteString(titleLine)
 	b.WriteString("\n\n")
 
 	// Error message
-	errorMark := tui.ErrorStyle.Render("✗")
+	errorMark := styles.ErrorStyle.Render("✗")
 	errorMsg := fmt.Sprintf("%s Error: Failed to extract tasks", errorMark)
 	errorLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, errorMsg)
 	b.WriteString(errorLine)
@@ -418,7 +408,7 @@ func (m CreatingModel) renderError() string {
 
 	// Error details
 	if m.err != nil {
-		detailsLabel := tui.SubtleStyle.Render("Details: ")
+		detailsLabel := styles.SubtleStyle.Render("Details: ")
 		errStr := m.err.Error()
 		// Truncate if too long
 		maxErrLen := m.width - 15
@@ -431,9 +421,9 @@ func (m CreatingModel) renderError() string {
 	}
 
 	// Options
-	retryOption := tui.SelectedStyle.Render("[r]") + " Retry"
-	backOption := tui.SubtleStyle.Render("[b]") + " Back to file picker"
-	homeOption := tui.SubtleStyle.Render("[h]") + " Home"
+	retryOption := styles.SelectedStyle.Render("[r]") + " Retry"
+	backOption := styles.SubtleStyle.Render("[b]") + " Back to file picker"
+	homeOption := styles.SubtleStyle.Render("[h]") + " Home"
 	optionsLine := retryOption + "    " + backOption + "    " + homeOption
 	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, optionsLine))
 	b.WriteString("\n")

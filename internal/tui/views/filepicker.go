@@ -7,17 +7,10 @@ import (
 	"github.com/charmbracelet/bubbles/filepicker"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/pablasso/rafa/internal/tui"
 	"github.com/pablasso/rafa/internal/tui/components"
+	"github.com/pablasso/rafa/internal/tui/msgs"
+	"github.com/pablasso/rafa/internal/tui/styles"
 )
-
-// FileSelectedMsg is sent when a file is selected.
-type FileSelectedMsg struct {
-	Path string // absolute path to selected file
-}
-
-// GoToHomeMsg signals transition back to home view.
-type GoToHomeMsg struct{}
 
 // FilePickerModel is the model for the file picker view.
 type FilePickerModel struct {
@@ -63,7 +56,7 @@ func (m FilePickerModel) Update(msg tea.Msg) (FilePickerModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
-			return m, func() tea.Msg { return GoToHomeMsg{} }
+			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
 		case "ctrl+c":
 			return m, tea.Quit
 		}
@@ -81,7 +74,7 @@ func (m FilePickerModel) Update(msg tea.Msg) (FilePickerModel, tea.Cmd) {
 			m.err = err
 			return m, nil
 		}
-		return m, func() tea.Msg { return FileSelectedMsg{Path: absPath} }
+		return m, func() tea.Msg { return msgs.FileSelectedMsg{Path: absPath} }
 	}
 
 	// Check if user tried to select a non-.md file (disabled by AllowedTypes filter)
@@ -102,7 +95,7 @@ func (m FilePickerModel) View() string {
 	var b strings.Builder
 
 	// Title
-	title := tui.TitleStyle.Render("Select Design Document")
+	title := styles.TitleStyle.Render("Select Design Document")
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	b.WriteString(titleLine)
 	b.WriteString("\n\n")

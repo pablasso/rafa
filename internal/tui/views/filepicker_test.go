@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
 func TestNewFilePickerModel(t *testing.T) {
@@ -66,8 +67,8 @@ func TestFilePickerModel_Update_EscapeReturnsGoToHomeMsg(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToHomeMsg); !ok {
-		t.Errorf("expected GoToHomeMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected msgs.GoToHomeMsg, got %T", msg)
 	}
 }
 

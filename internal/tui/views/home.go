@@ -6,15 +6,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/pablasso/rafa/internal/tui"
 	"github.com/pablasso/rafa/internal/tui/components"
+	"github.com/pablasso/rafa/internal/tui/msgs"
+	"github.com/pablasso/rafa/internal/tui/styles"
 )
-
-// GoToFilePickerMsg signals transition to the file picker view.
-type GoToFilePickerMsg struct{}
-
-// GoToPlanListMsg signals transition to the plan list view.
-type GoToPlanListMsg struct{}
 
 // MenuItem represents a menu option in the home view.
 type MenuItem struct {
@@ -77,9 +72,9 @@ func (m HomeModel) Update(msg tea.Msg) (HomeModel, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "c":
-			return m, func() tea.Msg { return GoToFilePickerMsg{} }
+			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
 		case "r":
-			return m, func() tea.Msg { return GoToPlanListMsg{} }
+			return m, func() tea.Msg { return msgs.GoToPlanListMsg{} }
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
@@ -99,9 +94,9 @@ func (m HomeModel) Update(msg tea.Msg) (HomeModel, tea.Cmd) {
 func (m HomeModel) selectCurrentItem() (HomeModel, tea.Cmd) {
 	switch m.cursor {
 	case 0: // Create new plan
-		return m, func() tea.Msg { return GoToFilePickerMsg{} }
+		return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
 	case 1: // Run existing plan
-		return m, func() tea.Msg { return GoToPlanListMsg{} }
+		return m, func() tea.Msg { return msgs.GoToPlanListMsg{} }
 	case 2: // Quit
 		return m, tea.Quit
 	}
@@ -126,8 +121,8 @@ func (m HomeModel) View() string {
 
 // renderHeader returns the centered title and tagline.
 func (m HomeModel) renderHeader() (titleLine, taglineLine string) {
-	title := tui.TitleStyle.Render("R A F A")
-	tagline := tui.SubtleStyle.Render("Task Loop Runner for AI")
+	title := styles.TitleStyle.Render("R A F A")
+	tagline := styles.SubtleStyle.Render("Task Loop Runner for AI")
 
 	titleLine = lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	taglineLine = lipgloss.PlaceHorizontal(m.width, lipgloss.Center, tagline)
@@ -147,9 +142,9 @@ func (m HomeModel) renderNormalView() string {
 		line := shortcut + " " + item.Label
 
 		if i == m.cursor {
-			line = tui.SelectedStyle.Render(line)
+			line = styles.SelectedStyle.Render(line)
 		} else {
-			line = tui.SubtleStyle.Render(line)
+			line = styles.SubtleStyle.Render(line)
 		}
 		menuLines = append(menuLines, line)
 	}
@@ -200,8 +195,8 @@ func (m HomeModel) renderNoRafaView() string {
 	titleLine, taglineLine := m.renderHeader()
 
 	// Warning message
-	warning1 := tui.ErrorStyle.Render("No .rafa/ directory found.")
-	warning2 := tui.SubtleStyle.Render("Run 'rafa init' first to initialize this repository.")
+	warning1 := styles.ErrorStyle.Render("No .rafa/ directory found.")
+	warning2 := styles.SubtleStyle.Render("Run 'rafa init' first to initialize this repository.")
 
 	warning1Line := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, warning1)
 	warning2Line := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, warning2)

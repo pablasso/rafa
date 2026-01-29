@@ -231,3 +231,56 @@ Let me verify the acceptance criteria are all met:
 15. ✅ make test passes
 
 SUGGESTED_COMMIT_MESSAGE: Implement Running view with split layout for TUI execution monitor
+
+=== Task t08: SUCCESS ===
+
+
+=== Task t09, Attempt 1 ===
+Started: 2026-01-28T18:16:50-06:00
+
+The implementation is complete. Here's a summary of all the acceptance criteria:
+
+## Acceptance Criteria Verification
+
+1. ✅ **internal/tui/msgs/messages.go defines all transition message types** - All 7 message types are defined: `GoToHomeMsg`, `GoToFilePickerMsg`, `GoToPlanListMsg`, `FileSelectedMsg`, `PlanCreatedMsg`, `RunPlanMsg`, `ExecutionDoneMsg`
+
+2. ✅ **App Update() handles all transition messages and switches currentView** - The `Update()` method in app.go handles all message types and transitions appropriately
+
+3. ✅ **App View() renders the correct view based on currentView** - The `View()` method switches on `currentView` and delegates to the appropriate sub-view
+
+4. ✅ **Window resize (tea.WindowSizeMsg) propagates size to all sub-views** - `propagateWindowSize()` method updates size on all views
+
+5. ✅ **Data flows between views** - FilePicker→Creating via `FileSelectedMsg.Path`, Creating→Running and PlanList→Running via `RunPlanMsg.PlanID`
+
+6. ✅ **Complete create flow works** - Home → 'c' → FilePicker → select → Creating → success → 'r' → Running → done → Home
+
+7. ✅ **Complete run flow works** - Home → 'r' → PlanList → select → Running → done → Home
+
+8. ✅ **Escape from FilePicker returns to Home** - filepicker.go sends `GoToHomeMsg` on Escape
+
+9. ✅ **Escape from PlanList returns to Home** - planlist.go sends `GoToHomeMsg` on Escape
+
+10. ✅ **Escape from Creating (before completion) returns to FilePicker** - create.go sends `GoToFilePickerMsg` on Ctrl+C during extraction
+
+11. ✅ **After Running completes, transitions to Home** - Running view sends `GoToHomeMsg` when user presses Enter/h after completion
+
+12. ✅ **All views receive correct width/height on resize** - Handled by `propagateWindowSize()` and `SetSize()` calls
+
+13. ✅ **make test passes** - Confirmed
+
+SUGGESTED_COMMIT_MESSAGE: Wire up view transitions and complete TUI flow
+
+Connect all TUI views through a central orchestration layer in app.go.
+Create shared packages for messages (tui/msgs) and styles (tui/styles)
+to break import cycles while maintaining clean separation of concerns.
+
+- Add msgs package with all view transition message types
+- Add styles package with shared lipgloss style definitions
+- Update app.go Model to hold sub-models for all views
+- Implement Update() to handle all transition messages
+- Implement View() to render correct view based on currentView
+- Propagate WindowSizeMsg to all sub-views via SetSize()
+- Wire data flow: FilePicker→Creating (path), Creating/PlanList→Running (planID)
+- Update all views and tests to use centralized message/style types
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>

@@ -11,8 +11,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/pablasso/rafa/internal/executor"
 	"github.com/pablasso/rafa/internal/plan"
-	"github.com/pablasso/rafa/internal/tui"
 	"github.com/pablasso/rafa/internal/tui/components"
+	"github.com/pablasso/rafa/internal/tui/msgs"
+	"github.com/pablasso/rafa/internal/tui/styles"
 )
 
 // runState represents the current state of the running view.
@@ -101,7 +102,7 @@ type tickMsg time.Time
 func NewRunningModel(planID, planName string, tasks []plan.Task) RunningModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = tui.SelectedStyle
+	s.Style = styles.SelectedStyle
 
 	taskDisplays := make([]TaskDisplay, len(tasks))
 	for i, t := range tasks {
@@ -275,7 +276,7 @@ func (m RunningModel) handleKeyPress(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
 	case stateDone, stateCancelled:
 		switch msg.String() {
 		case "enter", "h":
-			return m, func() tea.Msg { return GoToHomeMsg{} }
+			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
@@ -329,7 +330,7 @@ func (m RunningModel) renderRunning() string {
 	var b strings.Builder
 
 	// Title
-	title := tui.TitleStyle.Render(fmt.Sprintf("Running: %s-%s", m.planID, m.planName))
+	title := styles.TitleStyle.Render(fmt.Sprintf("Running: %s-%s", m.planID, m.planName))
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	b.WriteString(titleLine)
 	b.WriteString("\n")
@@ -382,7 +383,7 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 	var lines []string
 
 	// Header
-	lines = append(lines, tui.SubtleStyle.Render("Progress"))
+	lines = append(lines, styles.SubtleStyle.Render("Progress"))
 	lines = append(lines, "")
 
 	// Current task info
@@ -417,7 +418,7 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 	lines = append(lines, "")
 
 	// Task list header
-	lines = append(lines, tui.SubtleStyle.Render("Tasks:"))
+	lines = append(lines, styles.SubtleStyle.Render("Tasks:"))
 
 	// Task list with status indicators
 	for i, task := range m.tasks {
@@ -448,7 +449,7 @@ func (m RunningModel) renderRightPanel(width, height int) string {
 	var lines []string
 
 	// Header
-	lines = append(lines, tui.SubtleStyle.Render("Output"))
+	lines = append(lines, styles.SubtleStyle.Render("Output"))
 	lines = append(lines, "")
 
 	// Update output viewport size
@@ -470,16 +471,16 @@ func (m RunningModel) renderRightPanel(width, height int) string {
 func (m RunningModel) getTaskIndicator(status string, isCurrent bool) string {
 	switch status {
 	case "completed":
-		return tui.SuccessStyle.Render("✓")
+		return styles.SuccessStyle.Render("✓")
 	case "failed":
-		return tui.ErrorStyle.Render("✗")
+		return styles.ErrorStyle.Render("✗")
 	case "running":
 		if isCurrent {
 			return m.spinner.View()
 		}
 		return "⣾"
 	default: // pending
-		return tui.SubtleStyle.Render("○")
+		return styles.SubtleStyle.Render("○")
 	}
 }
 
@@ -490,9 +491,9 @@ func (m RunningModel) renderDone() string {
 	// Title
 	var title string
 	if m.finalSuccess {
-		title = tui.SuccessStyle.Render("Plan Completed")
+		title = styles.SuccessStyle.Render("Plan Completed")
 	} else {
-		title = tui.ErrorStyle.Render("Plan Failed")
+		title = styles.ErrorStyle.Render("Plan Failed")
 	}
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	b.WriteString(titleLine)
@@ -501,17 +502,17 @@ func (m RunningModel) renderDone() string {
 	// Result message
 	var resultLine string
 	if m.finalSuccess {
-		checkMark := tui.SuccessStyle.Render("✓")
+		checkMark := styles.SuccessStyle.Render("✓")
 		resultLine = fmt.Sprintf("%s %s", checkMark, m.finalMessage)
 	} else {
-		errorMark := tui.ErrorStyle.Render("✗")
+		errorMark := styles.ErrorStyle.Render("✗")
 		resultLine = fmt.Sprintf("%s %s", errorMark, m.finalMessage)
 	}
 	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, resultLine))
 	b.WriteString("\n\n")
 
 	// Task summary
-	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, tui.SubtleStyle.Render("Task Summary:")))
+	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, styles.SubtleStyle.Render("Task Summary:")))
 	b.WriteString("\n")
 
 	for i, task := range m.tasks {
@@ -523,7 +524,7 @@ func (m RunningModel) renderDone() string {
 	b.WriteString("\n")
 
 	// Options
-	homeOption := tui.SelectedStyle.Render("[Enter]") + " Return to home"
+	homeOption := styles.SelectedStyle.Render("[Enter]") + " Return to home"
 	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, homeOption))
 	b.WriteString("\n")
 
@@ -546,7 +547,7 @@ func (m RunningModel) renderCancelled() string {
 	var b strings.Builder
 
 	// Title
-	title := tui.SubtleStyle.Render("Execution Cancelled")
+	title := styles.SubtleStyle.Render("Execution Cancelled")
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	b.WriteString(titleLine)
 	b.WriteString("\n\n")
@@ -556,7 +557,7 @@ func (m RunningModel) renderCancelled() string {
 	b.WriteString("\n\n")
 
 	// Task summary
-	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, tui.SubtleStyle.Render("Task Summary:")))
+	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, styles.SubtleStyle.Render("Task Summary:")))
 	b.WriteString("\n")
 
 	for i, task := range m.tasks {
@@ -568,7 +569,7 @@ func (m RunningModel) renderCancelled() string {
 	b.WriteString("\n")
 
 	// Options
-	homeOption := tui.SelectedStyle.Render("[Enter]") + " Return to home"
+	homeOption := styles.SelectedStyle.Render("[Enter]") + " Return to home"
 	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, homeOption))
 	b.WriteString("\n")
 

@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pablasso/rafa/internal/plan"
+	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
 // createTestPlan creates a plan.json file in the specified directory.
@@ -149,8 +150,8 @@ func TestPlanListModel_Update_EmptyState_EscReturnsHome(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToHomeMsg); !ok {
-		t.Errorf("expected GoToHomeMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected msgs.GoToHomeMsg, got %T", msg)
 	}
 }
 
@@ -164,8 +165,8 @@ func TestPlanListModel_Update_EmptyState_CReturnsFilePicker(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToFilePickerMsg); !ok {
-		t.Errorf("expected GoToFilePickerMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
+		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
 	}
 }
 
@@ -296,9 +297,9 @@ func TestPlanListModel_Update_EnterReturnsRunPlanMsg(t *testing.T) {
 	}
 
 	msg := cmd()
-	runMsg, ok := msg.(RunPlanMsg)
+	runMsg, ok := msg.(msgs.RunPlanMsg)
 	if !ok {
-		t.Fatalf("expected RunPlanMsg, got %T", msg)
+		t.Fatalf("expected msgs.RunPlanMsg, got %T", msg)
 	}
 	if runMsg.PlanID != "xK9pQ2" {
 		t.Errorf("expected PlanID to be 'xK9pQ2', got %s", runMsg.PlanID)
@@ -324,8 +325,8 @@ func TestPlanListModel_Update_EscReturnsHome(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToHomeMsg); !ok {
-		t.Errorf("expected GoToHomeMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected msgs.GoToHomeMsg, got %T", msg)
 	}
 }
 

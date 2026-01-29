@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
 func TestNewHomeModel_WithExistingRafaDir(t *testing.T) {
@@ -165,8 +166,8 @@ func TestHomeModel_Update_ShortcutC(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToFilePickerMsg); !ok {
-		t.Errorf("expected GoToFilePickerMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
+		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
 	}
 }
 
@@ -185,8 +186,8 @@ func TestHomeModel_Update_ShortcutR(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToPlanListMsg); !ok {
-		t.Errorf("expected GoToPlanListMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToPlanListMsg); !ok {
+		t.Errorf("expected msgs.GoToPlanListMsg, got %T", msg)
 	}
 }
 
@@ -247,8 +248,8 @@ func TestHomeModel_Update_EnterOnCreate(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToFilePickerMsg); !ok {
-		t.Errorf("expected GoToFilePickerMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
+		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
 	}
 }
 
@@ -268,8 +269,8 @@ func TestHomeModel_Update_EnterOnRun(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToPlanListMsg); !ok {
-		t.Errorf("expected GoToPlanListMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToPlanListMsg); !ok {
+		t.Errorf("expected msgs.GoToPlanListMsg, got %T", msg)
 	}
 }
 

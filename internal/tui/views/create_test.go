@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pablasso/rafa/internal/plan"
+	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
 func TestNewCreatingModel(t *testing.T) {
@@ -78,7 +79,7 @@ func TestCreatingModel_Update_SpinnerTickMsg(t *testing.T) {
 func TestCreatingModel_Update_PlanCreatedMsg(t *testing.T) {
 	m := NewCreatingModel("/path/to/design.md")
 
-	msg := PlanCreatedMsg{
+	msg := msgs.PlanCreatedMsg{
 		PlanID: "abc123-my-plan",
 		Tasks:  []string{"Task 1", "Task 2", "Task 3"},
 	}
@@ -86,7 +87,7 @@ func TestCreatingModel_Update_PlanCreatedMsg(t *testing.T) {
 	newM, cmd := m.Update(msg)
 
 	if cmd != nil {
-		t.Error("expected no command from PlanCreatedMsg")
+		t.Error("expected no command from msgs.PlanCreatedMsg")
 	}
 	if newM.State() != stateSuccess {
 		t.Errorf("expected state to be stateSuccess, got %d", newM.State())
@@ -132,8 +133,8 @@ func TestCreatingModel_Update_CtrlC_DuringExtraction(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToFilePickerMsg); !ok {
-		t.Errorf("expected GoToFilePickerMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
+		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
 	}
 }
 
@@ -149,9 +150,9 @@ func TestCreatingModel_Update_KeyR_InSuccessState(t *testing.T) {
 	}
 
 	msg := cmd()
-	runMsg, ok := msg.(RunPlanMsg)
+	runMsg, ok := msg.(msgs.RunPlanMsg)
 	if !ok {
-		t.Errorf("expected RunPlanMsg, got %T", msg)
+		t.Errorf("expected msgs.RunPlanMsg, got %T", msg)
 	}
 	if runMsg.PlanID != "abc123-my-plan" {
 		t.Errorf("expected planID abc123-my-plan, got %s", runMsg.PlanID)
@@ -169,8 +170,8 @@ func TestCreatingModel_Update_KeyH_InSuccessState(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToHomeMsg); !ok {
-		t.Errorf("expected GoToHomeMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected msgs.GoToHomeMsg, got %T", msg)
 	}
 }
 
@@ -237,8 +238,8 @@ func TestCreatingModel_Update_KeyB_InErrorState(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToFilePickerMsg); !ok {
-		t.Errorf("expected GoToFilePickerMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
+		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
 	}
 }
 
@@ -253,8 +254,8 @@ func TestCreatingModel_Update_KeyH_InErrorState(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(GoToHomeMsg); !ok {
-		t.Errorf("expected GoToHomeMsg, got %T", msg)
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected msgs.GoToHomeMsg, got %T", msg)
 	}
 }
 
@@ -504,7 +505,7 @@ func TestCreatingModel_SpinnerAnimation(t *testing.T) {
 }
 
 func TestPlanCreatedMsg_Structure(t *testing.T) {
-	msg := PlanCreatedMsg{
+	msg := msgs.PlanCreatedMsg{
 		PlanID: "test-plan-id",
 		Tasks:  []string{"Task 1", "Task 2"},
 	}
@@ -527,7 +528,7 @@ func TestPlanCreationErrorMsg_Structure(t *testing.T) {
 }
 
 func TestRunPlanMsg_Structure(t *testing.T) {
-	msg := RunPlanMsg{PlanID: "my-plan-id"}
+	msg := msgs.RunPlanMsg{PlanID: "my-plan-id"}
 
 	if msg.PlanID != "my-plan-id" {
 		t.Errorf("expected PlanID to be my-plan-id, got %s", msg.PlanID)

@@ -10,8 +10,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/pablasso/rafa/internal/plan"
-	"github.com/pablasso/rafa/internal/tui"
 	"github.com/pablasso/rafa/internal/tui/components"
+	"github.com/pablasso/rafa/internal/tui/msgs"
+	"github.com/pablasso/rafa/internal/tui/styles"
 )
 
 // PlanSummary contains summary information about a plan for display.
@@ -105,9 +106,9 @@ func (m PlanListModel) Update(msg tea.Msg) (PlanListModel, tea.Cmd) {
 		if len(m.plans) == 0 {
 			switch msg.String() {
 			case "c":
-				return m, func() tea.Msg { return GoToFilePickerMsg{} }
+				return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
 			case "esc":
-				return m, func() tea.Msg { return GoToHomeMsg{} }
+				return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
 			case "ctrl+c":
 				return m, tea.Quit
 			}
@@ -117,7 +118,7 @@ func (m PlanListModel) Update(msg tea.Msg) (PlanListModel, tea.Cmd) {
 		// Handle normal state with plans
 		switch msg.String() {
 		case "esc":
-			return m, func() tea.Msg { return GoToHomeMsg{} }
+			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
 		case "ctrl+c":
 			return m, tea.Quit
 		case "up", "k":
@@ -131,7 +132,7 @@ func (m PlanListModel) Update(msg tea.Msg) (PlanListModel, tea.Cmd) {
 		case "enter":
 			if m.cursor < len(m.plans) {
 				selectedPlan := m.plans[m.cursor]
-				return m, func() tea.Msg { return RunPlanMsg{PlanID: selectedPlan.ID} }
+				return m, func() tea.Msg { return msgs.RunPlanMsg{PlanID: selectedPlan.ID} }
 			}
 		}
 	}
@@ -156,7 +157,7 @@ func (m PlanListModel) renderNormalView() string {
 	var b strings.Builder
 
 	// Title
-	title := tui.TitleStyle.Render("Select Plan to Run")
+	title := styles.TitleStyle.Render("Select Plan to Run")
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 
 	// Plan list
@@ -231,9 +232,9 @@ func (m PlanListModel) formatPlanLine(index int, p PlanSummary) string {
 
 	// Apply styling based on selection and status
 	if index == m.cursor {
-		line = tui.SelectedStyle.Render(line)
+		line = styles.SelectedStyle.Render(line)
 	} else if p.Status == plan.PlanStatusCompleted {
-		line = tui.SubtleStyle.Render(line)
+		line = styles.SubtleStyle.Render(line)
 	}
 
 	return line
@@ -244,14 +245,14 @@ func (m PlanListModel) renderEmptyView() string {
 	var b strings.Builder
 
 	// Title
-	title := tui.TitleStyle.Render("Select Plan to Run")
+	title := styles.TitleStyle.Render("Select Plan to Run")
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 
 	// Message
 	msg1 := "No plans found."
 	msg2 := "Press 'c' to create a new plan, or Esc to go back."
 	msg1Line := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, msg1)
-	msg2Line := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, tui.SubtleStyle.Render(msg2))
+	msg2Line := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, styles.SubtleStyle.Render(msg2))
 
 	// Calculate vertical centering
 	statusBarHeight := 1
