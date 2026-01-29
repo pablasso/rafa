@@ -264,6 +264,69 @@ func TestDemoRunner_Run_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestStreamOutput_ContextCancellationStopsStreaming(t *testing.T) {
+	config := NewConfig(ScenarioSuccess, SpeedNormal)
+	// Use a long delay per line to ensure we can cancel mid-stream
+	config.TaskDelay = 10 * time.Second
+	runner := NewDemoRunner(config)
+
+	// Task that generates many lines of output
+	task := &plan.Task{
+		ID:    "t01",
+		Title: "Test task",
+		AcceptanceCriteria: []string{
+			"Criterion 1",
+			"Criterion 2",
+			"Criterion 3",
+			"Criterion 4",
+			"Criterion 5",
+		},
+	}
+
+	// Cancel context after a short time - should stop streaming
+	ctx, cancel := context.WithCancel(context.Background())
+	output := newMockOutputWriter()
+
+	// Generate expected output to count lines
+	expectedLines := runner.generateOutput(task, 1)
+	totalExpectedLines := len(expectedLines)
+
+	// Start streaming in a goroutine
+	done := make(chan struct{})
+	go func() {
+		runner.streamOutput(ctx, task, 1, output)
+		close(done)
+	}()
+
+	// Wait a bit for some output to be written, then cancel
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	// Wait for streamOutput to return
+	select {
+	case <-done:
+		// Good - streamOutput returned
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("streamOutput did not return promptly after context cancellation")
+	}
+
+	// Verify that NOT all lines were written (streaming was stopped)
+	outputStr := output.StdoutBuffer().String()
+	linesWritten := strings.Count(outputStr, "\n")
+
+	// Should have written fewer lines than total expected
+	// (since we cancelled early with a long delay)
+	if linesWritten >= totalExpectedLines {
+		t.Errorf("Context cancellation should stop streaming: wrote %d lines, expected fewer than %d",
+			linesWritten, totalExpectedLines)
+	}
+
+	// Verify at least some output was written before cancellation
+	if linesWritten == 0 {
+		t.Error("Expected some output to be written before cancellation")
+	}
+}
+
 func TestDemoRunner_Run_RetryAttempt(t *testing.T) {
 	config := NewConfig(ScenarioSuccess, SpeedFast)
 	config.TaskDelay = 10 * time.Millisecond // Speed up test

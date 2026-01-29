@@ -91,3 +91,40 @@ Now let me verify all acceptance criteria are met:
 All acceptance criteria are met.
 
 SUGGESTED_COMMIT_MESSAGE: Add output.go with realistic demo output generation including retry messages, progress sections, and task-specific work templates
+
+=== Task t03: SUCCESS ===
+
+
+=== Task t04, Attempt 1 ===
+Started: 2026-01-28T21:11:29-06:00
+
+Let me verify all acceptance criteria are met:
+
+**Acceptance Criteria Verification:**
+
+1. **streamOutput method writes lines to output.Stdout() with computed delays** - ✅ Verified at `runner.go:95-110`: `writer := output.Stdout()` and `fmt.Fprintln(writer, line)` with `time.After(lineDelay)`
+
+2. **Line delay minimum is 30ms regardless of computed value** - ✅ Verified at `runner.go:91-93`:
+   ```go
+   if lineDelay < 30*time.Millisecond {
+       lineDelay = 30 * time.Millisecond
+   }
+   ```
+
+3. **Context cancellation stops output streaming immediately** - ✅ Verified at `runner.go:97-110`: Two `select` statements check `ctx.Done()` - one before writing and one during the delay using `time.After`
+
+4. **Run method calls streamOutput before checking shouldFail** - ✅ Verified at `runner.go:38-41`:
+   ```go
+   d.streamOutput(ctx, task, attempt, output)
+   if d.shouldFail(task, attempt) {
+   ```
+
+5. **Unit test verifies context cancellation stops streaming** - ✅ Added `TestStreamOutput_ContextCancellationStopsStreaming` at `runner_test.go:266-320` which:
+   - Creates a long delay task
+   - Cancels context mid-stream
+   - Verifies streaming stopped (fewer lines than expected)
+   - Verifies prompt return after cancellation
+
+6. **make test passes** - ✅ Verified: all tests pass
+
+SUGGESTED_COMMIT_MESSAGE: Add streaming behavior to DemoRunner with context cancellation support

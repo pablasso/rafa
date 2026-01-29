@@ -77,6 +77,8 @@ func (d *DemoRunner) shouldFail(task *plan.Task, attempt int) bool {
 }
 
 // streamOutput writes realistic output for a task.
+// The line delay is computed as TaskDelay / (number of lines + 1), with a minimum of 30ms.
+// Context cancellation stops output streaming immediately.
 func (d *DemoRunner) streamOutput(
 	ctx context.Context,
 	task *plan.Task,
@@ -96,8 +98,15 @@ func (d *DemoRunner) streamOutput(
 		case <-ctx.Done():
 			return
 		default:
-			fmt.Fprintln(writer, line)
-			time.Sleep(lineDelay)
+		}
+
+		fmt.Fprintln(writer, line)
+
+		// Use select with timer to respect context cancellation during delay
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(lineDelay):
 		}
 	}
 }
