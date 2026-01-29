@@ -1,0 +1,161 @@
+{
+  "id": "JI8qH4",
+  "name": "tui-demo-mode",
+  "description": "Add a rafa demo command that launches the TUI with simulated execution for rapid iteration on TUI changes without requiring real Claude Code execution.",
+  "sourceFile": "docs/designs/tui-demo-mode.md",
+  "createdAt": "2026-01-28T20:27:45.097362-06:00",
+  "status": "not_started",
+  "tasks": [
+    {
+      "id": "t01",
+      "title": "Create internal/demo package with configuration and plan generation",
+      "description": "Create the internal/demo/ package with demo.go containing the core types and functions. This includes the Scenario type (success, mixed, fail, retry), Speed type (fast, normal, slow), Config struct with TaskDelay computation, NewConfig constructor, and CreateDemoPlan function that returns an in-memory plan with 5 demo tasks (t01-t05) as specified in the design document.",
+      "acceptanceCriteria": [
+        "internal/demo/demo.go exists with Scenario and Speed types as string constants",
+        "Config struct has Scenario, Speed, and TaskDelay fields with NewConfig constructor computing delays (fast=500ms, normal=2s, slow=5s)",
+        "CreateDemoPlan returns a plan.Plan with ID 'demo-001', name 'demo-feature', and 5 tasks (t01-t05) matching the design spec",
+        "make build succeeds with no compilation errors",
+        "make fmt \u0026\u0026 make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t02",
+      "title": "Implement DemoRunner with scenario-based execution logic",
+      "description": "Create runner.go in internal/demo/ implementing the executor.Runner interface. The DemoRunner must implement the Run method that streams output and determines success/failure based on scenario. Implement shouldFail logic: success always passes, fail always fails, retry fails first 2 attempts then succeeds, mixed has t02 need retry and t03 always fail. Include compile-time interface verification.",
+      "acceptanceCriteria": [
+        "internal/demo/runner.go exists with DemoRunner struct implementing executor.Runner interface",
+        "Compile-time interface check: var _ executor.Runner = (*DemoRunner)(nil)",
+        "shouldFail returns correct results: success=false, fail=true, retry=true for attempt\u003c3, mixed=t02 fails attempt\u003c2/t03 always fails/others pass",
+        "Unit tests exist for shouldFail covering all scenarios and edge cases",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t03",
+      "title": "Implement realistic output generation for demo runner",
+      "description": "Create output.go in internal/demo/ with the generateOutput and generateWorkLines methods. Output must match real Claude Code format including retry messages, work description sections, acceptance criteria verification with checkmarks/X marks, and SUGGESTED_COMMIT_MESSAGE. Include task-specific work templates for t01-t05 as specified in the design.",
+      "acceptanceCriteria": [
+        "internal/demo/output.go exists with generateOutput, generateWorkLines, and generateCommitMessage methods",
+        "Output includes retry attempt message when attempt \u003e 1",
+        "Output includes '## Implementation Progress' and '## Acceptance Criteria Verification' sections",
+        "Acceptance criteria show ✅ for passing and ❌ for failing criteria",
+        "Work templates exist for all 5 tasks (t01-t05) with realistic content matching the design",
+        "Unit tests verify output format includes expected sections and markers",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t04",
+      "title": "Add streaming behavior to DemoRunner",
+      "description": "Implement the streamOutput method in runner.go that writes output lines with appropriate delays. The line delay should be computed as TaskDelay divided by number of lines, with a minimum of 30ms. The method must respect context cancellation and write to the OutputWriter's Stdout.",
+      "acceptanceCriteria": [
+        "streamOutput method writes lines to output.Stdout() with computed delays",
+        "Line delay minimum is 30ms regardless of computed value",
+        "Context cancellation stops output streaming immediately",
+        "Run method calls streamOutput before checking shouldFail",
+        "Unit test verifies context cancellation stops streaming",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t05",
+      "title": "Add demo command to CLI",
+      "description": "Create cmd/demo.go with Cobra command implementing 'rafa demo'. Add --scenario flag (default 'success') and --speed flag (default 'normal'). Include input validation for both flags with error messages to stderr. Register command with rootCmd in init(). The command should call tui.Run with WithDemoMode option (to be implemented in next task).",
+      "acceptanceCriteria": [
+        "cmd/demo.go exists with demoCmd Cobra command",
+        "Command has --scenario flag accepting: success, mixed, fail, retry (default: success)",
+        "Command has --speed flag accepting: fast, normal, slow (default: normal)",
+        "Invalid scenario prints 'Invalid scenario: X' to stderr and exits with code 1",
+        "Invalid speed prints 'Invalid speed: X' to stderr and exits with code 1",
+        "Command is registered to rootCmd in init()",
+        "make build succeeds and 'rafa demo --help' shows expected flags and descriptions"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t06",
+      "title": "Add demo mode support to TUI app",
+      "description": "Modify internal/tui/app.go to support demo mode. Add demoMode bool and demoConfig *demo.Config fields to the Model struct. Create WithDemoMode(config *demo.Config) Option function. Modify Run function signature to accept variadic Option parameters and apply them to the model before starting the program.",
+      "acceptanceCriteria": [
+        "Model struct has demoMode bool and demoConfig *demo.Config fields",
+        "Option type defined as func(*Model)",
+        "WithDemoMode function returns Option that sets both demoMode and demoConfig",
+        "Run function signature is Run(opts ...Option) error",
+        "Options are applied to model before tea.NewProgram",
+        "make build succeeds",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t07",
+      "title": "Integrate demo mode into home view",
+      "description": "Modify internal/tui/views/home.go to handle demo mode. When in demo mode, skip to plan view with the demo plan from demo.CreateDemoPlan() instead of loading from disk. Add '[DEMO MODE]' or '[DEMO]' indicator to the status bar when demo mode is active.",
+      "acceptanceCriteria": [
+        "Home view checks for demo mode and uses demo.CreateDemoPlan() instead of loading from disk",
+        "Status bar displays '[DEMO]' or '[DEMO MODE]' indicator when in demo mode",
+        "Demo mode skips authentication check for Claude CLI",
+        "make build succeeds",
+        "make fmt \u0026\u0026 make check-fmt passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t08",
+      "title": "Integrate demo mode into run view with DemoRunner injection",
+      "description": "Modify internal/tui/views/run.go to inject DemoRunner when in demo mode. Use Executor.WithRunner(demo.NewDemoRunner(config)) to inject the demo runner. Skip git workspace cleanliness checks and commit operations when in demo mode.",
+      "acceptanceCriteria": [
+        "Run view checks for demo mode and creates DemoRunner with demo config",
+        "DemoRunner is injected via Executor.WithRunner() method",
+        "Git workspace cleanliness checks are skipped in demo mode",
+        "Git commit operations are skipped in demo mode",
+        "make build succeeds",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t09",
+      "title": "Add comprehensive unit tests for demo package",
+      "description": "Create test files for the demo package covering all scenarios and edge cases. Test DemoRunner output generation format, scenario behavior for all four scenarios, speed configuration delays, and context cancellation. Verify output matches expected Claude Code format.",
+      "acceptanceCriteria": [
+        "internal/demo/demo_test.go exists with tests for NewConfig delay calculations",
+        "internal/demo/runner_test.go exists with tests for all scenario behaviors",
+        "Tests verify ScenarioSuccess never fails, ScenarioFail always fails",
+        "Tests verify ScenarioRetry fails attempts 1-2, succeeds on attempt 3",
+        "Tests verify ScenarioMixed: t02 retries, t03 fails, others succeed",
+        "Tests verify output contains expected format markers (## sections, checkmarks)",
+        "make test passes with all new tests"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t10",
+      "title": "End-to-end integration and documentation",
+      "description": "Perform final integration testing ensuring the full demo flow works. Verify all command combinations work correctly: rafa demo, rafa demo --scenario=mixed, rafa demo --speed=fast, combined flags. Update any help text or command descriptions to accurately reflect functionality.",
+      "acceptanceCriteria": [
+        "'rafa demo' launches TUI in demo mode with success scenario",
+        "'rafa demo --scenario=mixed --speed=fast' applies both options correctly",
+        "TUI displays [DEMO] indicator when running in demo mode",
+        "Execution completes without errors for all scenario/speed combinations",
+        "Help text (rafa demo --help) accurately describes all options",
+        "make build \u0026\u0026 make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    }
+  ]
+}
