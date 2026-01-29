@@ -32,6 +32,7 @@ type Executor struct {
 	saveHook   func() // Optional hook called after each plan save (for testing)
 	display    *display.Display
 	events     ExecutorEvents // nil for CLI mode
+	output     *OutputCapture // Optional external output capture (for TUI)
 }
 
 // New creates a new Executor for the given plan directory and plan.
@@ -81,6 +82,13 @@ func (e *Executor) WithEvents(events ExecutorEvents) *Executor {
 	return e
 }
 
+// WithOutput sets an external output capture for TUI integration.
+// When set, the executor will use this instead of creating its own.
+func (e *Executor) WithOutput(output *OutputCapture) *Executor {
+	e.output = output
+	return e
+}
+
 // notifySave calls the save hook if one is configured.
 func (e *Executor) notifySave() {
 	if e.saveHook != nil {
@@ -112,14 +120,22 @@ func (e *Executor) Run(ctx context.Context) error {
 
 	// Check if all tasks are already completed
 	if e.plan.AllTasksCompleted() {
-		fmt.Println("All tasks already completed.")
+		if e.events == nil {
+			fmt.Println("All tasks already completed.")
+		} else {
+			e.events.OnPlanComplete(len(e.plan.Tasks), len(e.plan.Tasks), 0)
+		}
 		return nil
 	}
 
 	// Find first pending task
 	firstIdx := e.plan.FirstPendingTask()
 	if firstIdx == -1 {
-		fmt.Println("No pending tasks found.")
+		if e.events == nil {
+			fmt.Println("No pending tasks found.")
+		} else {
+			e.events.OnPlanComplete(e.countCompleted(), len(e.plan.Tasks), 0)
+		}
 		return nil
 	}
 
@@ -150,16 +166,23 @@ func (e *Executor) Run(ctx context.Context) error {
 	// Build plan context once
 	planContext := e.buildPlanContext()
 
-	// Create output capture for logging
-	output, err := NewOutputCapture(e.planDir)
-	if err != nil {
-		// Output capture is non-critical, log warning and continue
-		fmt.Printf("Warning: failed to create output capture: %v\n", err)
-		output = nil
+	// Use provided output capture or create our own
+	output := e.output
+	if output == nil {
+		var err error
+		output, err = NewOutputCapture(e.planDir)
+		if err != nil {
+			// Output capture is non-critical, log warning and continue
+			if e.events == nil {
+				fmt.Printf("Warning: failed to create output capture: %v\n", err)
+			}
+			output = nil
+		}
+		if output != nil {
+			defer output.Close()
+		}
 	}
-	if output != nil {
-		defer output.Close()
-	}
+	// Note: If output was provided externally, caller is responsible for closing it
 
 	// Execute tasks from first pending
 	for i := firstIdx; i < len(e.plan.Tasks); i++ {
@@ -176,7 +199,9 @@ func (e *Executor) Run(ctx context.Context) error {
 				// Context cancelled - reset task to pending
 				task.Status = plan.TaskStatusPending
 				if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
-					fmt.Printf("Warning: failed to save plan after cancel: %v\n", saveErr)
+					if e.events == nil {
+						fmt.Printf("Warning: failed to save plan after cancel: %v\n", saveErr)
+					}
 				} else {
 					e.notifySave()
 				}
@@ -190,7 +215,9 @@ func (e *Executor) Run(ctx context.Context) error {
 			// Max attempts reached - mark plan as failed
 			e.plan.Status = plan.PlanStatusFailed
 			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
-				fmt.Printf("Warning: failed to save plan after failure: %v\n", saveErr)
+				if e.events == nil {
+					fmt.Printf("Warning: failed to save plan after failure: %v\n", saveErr)
+				}
 			} else {
 				e.notifySave()
 			}
@@ -219,14 +246,17 @@ func (e *Executor) Run(ctx context.Context) error {
 	if !e.allowDirty {
 		msg := fmt.Sprintf("[rafa] Complete plan: %s (%d tasks)", e.plan.Name, len(e.plan.Tasks))
 		if err := git.CommitAll(e.repoRoot, msg); err != nil {
-			fmt.Printf("Warning: failed to commit plan completion: %v\n", err)
+			if e.events == nil {
+				fmt.Printf("Warning: failed to commit plan completion: %v\n", err)
+			}
 		}
 	}
 
-	fmt.Printf("\nPlan completed! (%s)\n", e.formatDuration(duration))
-	// Emit OnPlanComplete event for TUI integration
+	// Emit OnPlanComplete event for TUI integration, or print for CLI
 	if e.events != nil {
 		e.events.OnPlanComplete(e.countCompleted(), len(e.plan.Tasks), duration)
+	} else {
+		fmt.Printf("\nPlan completed! (%s)\n", e.formatDuration(duration))
 	}
 	return nil
 }
@@ -258,13 +288,12 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			e.display.UpdateAttempt(task.Attempts, MaxAttempts)
 		}
 
-		// Print progress
-		fmt.Printf("\nTask %d/%d: %s [Attempt %d/%d]\n",
-			idx+1, len(e.plan.Tasks), task.Title, task.Attempts, MaxAttempts)
-
-		// Emit OnTaskStart event for TUI integration
+		// Emit OnTaskStart event for TUI integration, or print for CLI
 		if e.events != nil {
 			e.events.OnTaskStart(idx+1, len(e.plan.Tasks), task, task.Attempts)
+		} else {
+			fmt.Printf("\nTask %d/%d: %s [Attempt %d/%d]\n",
+				idx+1, len(e.plan.Tasks), task.Title, task.Attempts, MaxAttempts)
 		}
 
 		// Log task started
@@ -322,12 +351,15 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 
 		// Task failed
 		if logErr := e.logger.TaskFailed(task.ID, task.Attempts); logErr != nil {
-			fmt.Printf("Warning: failed to log task failed: %v\n", logErr)
+			if e.events == nil {
+				fmt.Printf("Warning: failed to log task failed: %v\n", logErr)
+			}
 		}
-		fmt.Printf("Task failed: %v\n", err)
-		// Emit OnTaskFailed event for TUI integration
+		// Emit OnTaskFailed event for TUI integration, or print for CLI
 		if e.events != nil {
 			e.events.OnTaskFailed(task, task.Attempts, err)
+		} else {
+			fmt.Printf("Task failed: %v\n", err)
 		}
 		if output != nil {
 			output.WriteTaskFooter(task.ID, false)
@@ -337,7 +369,9 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		if task.Attempts >= MaxAttempts {
 			task.Status = plan.TaskStatusFailed
 			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
-				fmt.Printf("Warning: failed to save plan: %v\n", saveErr)
+				if e.events == nil {
+					fmt.Printf("Warning: failed to save plan: %v\n", saveErr)
+				}
 			} else {
 				e.notifySave()
 			}
@@ -352,7 +386,9 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			return ctx.Err()
 		}
 
-		fmt.Println("Spinning up fresh agent for retry...")
+		if e.events == nil {
+			fmt.Println("Spinning up fresh agent for retry...")
+		}
 	}
 
 	return fmt.Errorf("max attempts reached")

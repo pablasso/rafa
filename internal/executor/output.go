@@ -51,14 +51,16 @@ func NewOutputCaptureWithEvents(planDir string, eventsChan chan string) (*Output
 	}
 
 	// Create multi-writers for stdout and stderr
-	// When eventsChan is set, wrap with streamingWriter for TUI integration
+	// When eventsChan is set, use streamingWriter for TUI integration
+	// In TUI mode, we only write to the log file and stream to the channel
+	// (not to stdout/stderr, which would corrupt the TUI display)
 	if eventsChan != nil {
 		streamingOut := &streamingWriter{
-			underlying: io.MultiWriter(os.Stdout, f),
+			underlying: f, // Only write to log file in TUI mode
 			eventsChan: eventsChan,
 		}
 		streamingErr := &streamingWriter{
-			underlying: io.MultiWriter(os.Stderr, f),
+			underlying: f, // Only write to log file in TUI mode
 			eventsChan: eventsChan,
 		}
 		oc.multiOut = streamingOut

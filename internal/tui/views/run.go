@@ -50,6 +50,10 @@ type RunningModel struct {
 	outputChan chan string
 	cancel     context.CancelFunc // Set when executor starts
 
+	// Plan execution context
+	planDir string
+	plan    *plan.Plan
+
 	// Final status
 	finalSuccess bool
 	finalMessage string
@@ -99,7 +103,7 @@ type PlanDoneMsg struct {
 type tickMsg time.Time
 
 // NewRunningModel creates a new RunningModel for executing a plan.
-func NewRunningModel(planID, planName string, tasks []plan.Task) RunningModel {
+func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string, p *plan.Plan) RunningModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = styles.SelectedStyle
@@ -133,6 +137,8 @@ func NewRunningModel(planID, planName string, tasks []plan.Task) RunningModel {
 		spinner:     s,
 		output:      components.NewOutputViewport(80, 20, 0), // Will be resized
 		outputChan:  make(chan string, 100),                  // Buffered channel
+		planDir:     planDir,
+		plan:        p,
 	}
 }
 
@@ -171,6 +177,54 @@ func (m *RunningModel) OutputChan() chan string {
 // SetCancel sets the cancellation function for graceful shutdown.
 func (m *RunningModel) SetCancel(cancel context.CancelFunc) {
 	m.cancel = cancel
+}
+
+// StartExecutor creates a command that starts plan execution in a goroutine.
+// It creates the executor with events integration and output capture.
+func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
+	return func() tea.Msg {
+		// Guard against nil program
+		if program == nil {
+			return PlanDoneMsg{Success: false, Message: "Internal error: program is nil"}
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancel = cancel
+
+		// Create events handler to send messages to TUI
+		events := NewRunningModelEvents(program)
+
+		// Create output capture with streaming to TUI
+		output, err := executor.NewOutputCaptureWithEvents(m.planDir, m.outputChan)
+		if err != nil {
+			return PlanDoneMsg{Success: false, Message: fmt.Sprintf("Failed to create output capture: %v", err)}
+		}
+
+		// Create executor with events integration and output capture
+		exec := executor.New(m.planDir, m.plan).
+			WithEvents(events).
+			WithOutput(output).
+			WithAllowDirty(false)
+
+		// Run in background goroutine
+		go func() {
+			defer output.Close()
+			defer close(m.outputChan)
+
+			// Run executor and send error as message if it fails
+			if err := exec.Run(ctx); err != nil {
+				// Only send error if context wasn't cancelled (user didn't press Ctrl+C)
+				if ctx.Err() == nil {
+					program.Send(PlanDoneMsg{
+						Success: false,
+						Message: err.Error(),
+					})
+				}
+			}
+		}()
+
+		return nil
+	}
 }
 
 // Update implements tea.Model.

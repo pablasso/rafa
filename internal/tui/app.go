@@ -19,6 +19,10 @@ const (
 	MinTerminalHeight = 15
 )
 
+// Program is the Bubble Tea program instance, accessible for sending messages
+// from background goroutines (e.g., executor events).
+var Program *tea.Program
+
 // View represents the different screens in the TUI.
 type View int
 
@@ -51,12 +55,12 @@ type Model struct {
 
 // Run starts the TUI application.
 func Run() error {
-	p := tea.NewProgram(
+	Program = tea.NewProgram(
 		initialModel(),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
-	_, err := p.Run()
+	_, err := Program.Run()
 	return err
 }
 
@@ -187,13 +191,14 @@ func (m Model) transitionToRunning(planID string) (tea.Model, tea.Cmd) {
 	}
 
 	m.currentView = ViewRunning
-	m.running = views.NewRunningModel(shortID, planName, p.Tasks)
+	m.running = views.NewRunningModel(shortID, planName, p.Tasks, planDir, p)
 	m.running.SetSize(m.width, m.height)
 
-	// Note: The executor integration is handled separately.
-	// For now, the running view will display but won't actually execute.
-	// Full executor integration would require additional wiring.
-	return m, m.running.Init()
+	// Start the executor in a background goroutine
+	return m, tea.Batch(
+		m.running.Init(),
+		m.running.StartExecutor(Program),
+	)
 }
 
 // propagateWindowSize sends the window size message to the current view.

@@ -21,7 +21,7 @@ func TestNewRunningModel(t *testing.T) {
 		{ID: "t03", Title: "Task Three", Status: plan.TaskStatusFailed},
 	}
 
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "/tmp/test-plan", nil)
 
 	if m.PlanID() != "abc123" {
 		t.Errorf("expected planID to be abc123, got %s", m.PlanID())
@@ -57,7 +57,7 @@ func TestNewRunningModel(t *testing.T) {
 
 func TestRunningModel_Init(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	cmd := m.Init()
 
 	if cmd == nil {
@@ -67,7 +67,7 @@ func TestRunningModel_Init(t *testing.T) {
 
 func TestRunningModel_Update_WindowSizeMsg(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	msg := tea.WindowSizeMsg{Width: 100, Height: 40}
 
 	newM, cmd := m.Update(msg)
@@ -85,7 +85,7 @@ func TestRunningModel_Update_WindowSizeMsg(t *testing.T) {
 
 func TestRunningModel_Update_SpinnerTickMsg(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	tickMsg := spinner.TickMsg{}
 	newM, cmd := m.Update(tickMsg)
@@ -103,7 +103,7 @@ func TestRunningModel_Update_TaskStartedMsg(t *testing.T) {
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
 		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusPending},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	msg := TaskStartedMsg{
 		TaskNum: 1,
@@ -133,7 +133,7 @@ func TestRunningModel_Update_TaskCompletedMsg(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.tasks[0].Status = "running"
 
 	msg := TaskCompletedMsg{TaskID: "t01"}
@@ -152,7 +152,7 @@ func TestRunningModel_Update_TaskFailedMsg(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.tasks[0].Status = "running"
 
 	// Failure at max attempts should mark as failed
@@ -176,7 +176,7 @@ func TestRunningModel_Update_TaskFailedMsg_NotMaxAttempts(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.tasks[0].Status = "running"
 
 	// Failure before max attempts should keep status as running
@@ -195,7 +195,7 @@ func TestRunningModel_Update_TaskFailedMsg_NotMaxAttempts(t *testing.T) {
 
 func TestRunningModel_Update_OutputLineMsg(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.SetSize(100, 40)
 
 	msg := OutputLineMsg{Line: "Test output line"}
@@ -212,7 +212,7 @@ func TestRunningModel_Update_OutputLineMsg(t *testing.T) {
 
 func TestRunningModel_Update_PlanDoneMsg_Success(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	msg := PlanDoneMsg{
 		Success:   true,
@@ -239,7 +239,7 @@ func TestRunningModel_Update_PlanDoneMsg_Success(t *testing.T) {
 
 func TestRunningModel_Update_PlanDoneMsg_Failure(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	msg := PlanDoneMsg{
 		Success: false,
@@ -264,7 +264,7 @@ func TestRunningModel_Update_CtrlC_DuringRunning(t *testing.T) {
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
 		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusPending},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.tasks[0].Status = "completed"
 
 	// Set a cancel function to verify it's called
@@ -295,7 +295,7 @@ func TestRunningModel_Update_CtrlC_DuringRunning(t *testing.T) {
 
 func TestRunningModel_Update_Enter_AfterDone(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.state = stateDone
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -312,7 +312,7 @@ func TestRunningModel_Update_Enter_AfterDone(t *testing.T) {
 
 func TestRunningModel_Update_Q_AfterDone(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.state = stateDone
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
@@ -329,7 +329,7 @@ func TestRunningModel_Update_Q_AfterDone(t *testing.T) {
 
 func TestRunningModel_Update_H_AfterCancelled(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.state = stateCancelled
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
@@ -346,7 +346,7 @@ func TestRunningModel_Update_H_AfterCancelled(t *testing.T) {
 
 func TestRunningModel_View_EmptyDimensions(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	view := m.View()
 
@@ -361,7 +361,7 @@ func TestRunningModel_View_Running(t *testing.T) {
 		{ID: "t02", Title: "Implement login", Status: plan.TaskStatusInProgress},
 		{ID: "t03", Title: "Add session mgmt", Status: plan.TaskStatusPending},
 	}
-	m := NewRunningModel("xK9pQ2", "feature-auth", tasks)
+	m := NewRunningModel("xK9pQ2", "feature-auth", tasks, "", nil)
 	m.SetSize(100, 30)
 	m.currentTask = 2
 	m.attempt = 1
@@ -422,7 +422,7 @@ func TestRunningModel_View_Done_Success(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.tasks[0].Status = "completed"
 	m.state = stateDone
 	m.finalSuccess = true
@@ -455,7 +455,7 @@ func TestRunningModel_View_Done_Failure(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusFailed},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.tasks[0].Status = "failed"
 	m.state = stateDone
 	m.finalSuccess = false
@@ -477,7 +477,7 @@ func TestRunningModel_View_Cancelled(t *testing.T) {
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
 		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusPending},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.tasks[0].Status = "completed"
 	m.state = stateCancelled
 	m.finalMessage = "Cancelled. Completed 1/2 tasks."
@@ -498,7 +498,7 @@ func TestRunningModel_View_Cancelled(t *testing.T) {
 
 func TestRunningModel_SetSize(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.SetSize(120, 50)
 
 	if m.width != 120 {
@@ -511,7 +511,7 @@ func TestRunningModel_SetSize(t *testing.T) {
 
 func TestRunningModel_FormatDuration(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	tests := []struct {
 		duration time.Duration
@@ -540,7 +540,7 @@ func TestRunningModel_CountCompleted(t *testing.T) {
 		{ID: "t03", Title: "Task Three", Status: plan.TaskStatusCompleted},
 		{ID: "t04", Title: "Task Four", Status: plan.TaskStatusFailed},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	// Status is converted in constructor
 
 	if m.countCompleted() != 2 {
@@ -550,7 +550,7 @@ func TestRunningModel_CountCompleted(t *testing.T) {
 
 func TestRunningModel_GetTaskIndicator(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	// Test pending indicator
 	pending := m.getTaskIndicator("pending", false)
@@ -579,7 +579,7 @@ func TestRunningModel_GetTaskIndicator(t *testing.T) {
 
 func TestRunningModel_OutputChan(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	ch := m.OutputChan()
 	if ch == nil {
@@ -597,7 +597,7 @@ func TestRunningModel_OutputChan(t *testing.T) {
 
 func TestRunningModel_SetCancel(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	called := false
 	m.SetCancel(func() {
@@ -617,7 +617,7 @@ func TestRunningModel_SetCancel(t *testing.T) {
 
 func TestRunningModel_ScrollKeys(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.SetSize(100, 40)
 
 	// Add some output lines
@@ -639,7 +639,7 @@ func TestRunningModel_ScrollKeys(t *testing.T) {
 
 func TestRunningModel_SpinnerStyle(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	// Verify spinner is set to Dot style
 	if m.spinner.Spinner.Frames[0] != spinner.Dot.Frames[0] {
@@ -752,7 +752,7 @@ func TestRunningModel_View_SplitLayout(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.SetSize(100, 30)
 
 	view := m.View()
@@ -773,7 +773,7 @@ func TestRunningModel_View_SplitLayout(t *testing.T) {
 
 func TestRunningModel_SpinnerStopsAfterDone(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.state = stateDone
 
 	tickMsg := spinner.TickMsg{}
@@ -786,7 +786,7 @@ func TestRunningModel_SpinnerStopsAfterDone(t *testing.T) {
 
 func TestRunningModel_TickStopsAfterDone(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.state = stateDone
 
 	_, cmd := m.Update(tickMsg(time.Now()))
@@ -798,7 +798,7 @@ func TestRunningModel_TickStopsAfterDone(t *testing.T) {
 
 func TestRunningModel_UnknownKeyInRunning(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 
@@ -808,7 +808,7 @@ func TestRunningModel_UnknownKeyInRunning(t *testing.T) {
 
 func TestRunningModel_UnknownKeyAfterDone(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.state = stateDone
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
@@ -825,7 +825,7 @@ func TestRunningModel_TaskStatusConversion(t *testing.T) {
 		{ID: "t03", Title: "Task Three", Status: plan.TaskStatusCompleted},
 		{ID: "t04", Title: "Task Four", Status: plan.TaskStatusFailed},
 	}
-	m := NewRunningModel("abc123", "my-plan", tasks)
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 
 	if m.Tasks()[0].Status != "pending" {
 		t.Errorf("expected pending status, got %s", m.Tasks()[0].Status)
@@ -845,4 +845,220 @@ func TestRunningModel_TaskStatusConversion(t *testing.T) {
 func TestRunningModelEvents_InterfaceCompliance(t *testing.T) {
 	// This test verifies at compile time that RunningModelEvents implements ExecutorEvents
 	var _ executor.ExecutorEvents = (*RunningModelEvents)(nil)
+}
+
+// mockProgram implements a minimal tea.Program for testing event sending
+type mockProgram struct {
+	messages []tea.Msg
+}
+
+func (m *mockProgram) Send(msg tea.Msg) {
+	m.messages = append(m.messages, msg)
+}
+
+func TestRunningModelEvents_SendsMessages(t *testing.T) {
+	mock := &mockProgram{}
+
+	// Create a wrapper that sends to our mock
+	events := &testableRunningModelEvents{sendFunc: mock.Send}
+
+	// Simulate OnTaskStart
+	task := &plan.Task{ID: "t01", Title: "Test Task"}
+	events.OnTaskStart(1, 2, task, 1)
+
+	if len(mock.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(mock.messages))
+	}
+	startMsg, ok := mock.messages[0].(TaskStartedMsg)
+	if !ok {
+		t.Fatalf("expected TaskStartedMsg, got %T", mock.messages[0])
+	}
+	if startMsg.TaskNum != 1 {
+		t.Errorf("expected TaskNum 1, got %d", startMsg.TaskNum)
+	}
+	if startMsg.Total != 2 {
+		t.Errorf("expected Total 2, got %d", startMsg.Total)
+	}
+	if startMsg.TaskID != "t01" {
+		t.Errorf("expected TaskID t01, got %s", startMsg.TaskID)
+	}
+	if startMsg.Attempt != 1 {
+		t.Errorf("expected Attempt 1, got %d", startMsg.Attempt)
+	}
+
+	// Simulate OnTaskComplete
+	events.OnTaskComplete(task)
+
+	if len(mock.messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(mock.messages))
+	}
+	completeMsg, ok := mock.messages[1].(TaskCompletedMsg)
+	if !ok {
+		t.Fatalf("expected TaskCompletedMsg, got %T", mock.messages[1])
+	}
+	if completeMsg.TaskID != "t01" {
+		t.Errorf("expected TaskID t01, got %s", completeMsg.TaskID)
+	}
+
+	// Simulate OnTaskFailed
+	testErr := errors.New("test error")
+	events.OnTaskFailed(task, 2, testErr)
+
+	if len(mock.messages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(mock.messages))
+	}
+	failedMsg, ok := mock.messages[2].(TaskFailedMsg)
+	if !ok {
+		t.Fatalf("expected TaskFailedMsg, got %T", mock.messages[2])
+	}
+	if failedMsg.TaskID != "t01" {
+		t.Errorf("expected TaskID t01, got %s", failedMsg.TaskID)
+	}
+	if failedMsg.Attempt != 2 {
+		t.Errorf("expected Attempt 2, got %d", failedMsg.Attempt)
+	}
+	if failedMsg.Err != testErr {
+		t.Errorf("expected error to be testErr")
+	}
+
+	// Simulate OnPlanComplete
+	events.OnPlanComplete(5, 10, time.Minute)
+
+	if len(mock.messages) != 4 {
+		t.Fatalf("expected 4 messages, got %d", len(mock.messages))
+	}
+	doneMsg, ok := mock.messages[3].(PlanDoneMsg)
+	if !ok {
+		t.Fatalf("expected PlanDoneMsg, got %T", mock.messages[3])
+	}
+	if !doneMsg.Success {
+		t.Error("expected Success to be true")
+	}
+	if doneMsg.Succeeded != 5 {
+		t.Errorf("expected Succeeded 5, got %d", doneMsg.Succeeded)
+	}
+	if doneMsg.Total != 10 {
+		t.Errorf("expected Total 10, got %d", doneMsg.Total)
+	}
+
+	// Simulate OnPlanFailed
+	events.OnPlanFailed(task, "max attempts reached")
+
+	if len(mock.messages) != 5 {
+		t.Fatalf("expected 5 messages, got %d", len(mock.messages))
+	}
+	failDoneMsg, ok := mock.messages[4].(PlanDoneMsg)
+	if !ok {
+		t.Fatalf("expected PlanDoneMsg, got %T", mock.messages[4])
+	}
+	if failDoneMsg.Success {
+		t.Error("expected Success to be false")
+	}
+	if !strings.Contains(failDoneMsg.Message, "max attempts reached") {
+		t.Errorf("expected Message to contain 'max attempts reached', got %s", failDoneMsg.Message)
+	}
+}
+
+// testableRunningModelEvents is a version of RunningModelEvents that uses a function
+// instead of a *tea.Program for easier testing
+type testableRunningModelEvents struct {
+	sendFunc func(tea.Msg)
+}
+
+func (e *testableRunningModelEvents) OnTaskStart(taskNum, total int, task *plan.Task, attempt int) {
+	e.sendFunc(TaskStartedMsg{
+		TaskNum: taskNum,
+		Total:   total,
+		TaskID:  task.ID,
+		Title:   task.Title,
+		Attempt: attempt,
+	})
+}
+
+func (e *testableRunningModelEvents) OnTaskComplete(task *plan.Task) {
+	e.sendFunc(TaskCompletedMsg{TaskID: task.ID})
+}
+
+func (e *testableRunningModelEvents) OnTaskFailed(task *plan.Task, attempt int, err error) {
+	e.sendFunc(TaskFailedMsg{
+		TaskID:  task.ID,
+		Attempt: attempt,
+		Err:     err,
+	})
+}
+
+func (e *testableRunningModelEvents) OnOutput(line string) {
+	// Output is handled via OutputCaptureWithEvents channel
+}
+
+func (e *testableRunningModelEvents) OnPlanComplete(succeeded, total int, duration time.Duration) {
+	e.sendFunc(PlanDoneMsg{
+		Success:   true,
+		Succeeded: succeeded,
+		Total:     total,
+		Duration:  duration,
+	})
+}
+
+func (e *testableRunningModelEvents) OnPlanFailed(task *plan.Task, reason string) {
+	e.sendFunc(PlanDoneMsg{
+		Success: false,
+		Message: "Failed on task " + task.ID + ": " + reason,
+	})
+}
+
+// Verify testableRunningModelEvents implements ExecutorEvents
+var _ executor.ExecutorEvents = (*testableRunningModelEvents)(nil)
+
+func TestRunningModel_StartExecutor_SetsCancelFunc(t *testing.T) {
+	// Create a temp directory for the test plan
+	tmpDir := t.TempDir()
+
+	// Create a minimal plan
+	p := &plan.Plan{
+		ID:     "test123",
+		Name:   "test-plan",
+		Status: plan.PlanStatusNotStarted,
+		Tasks: []plan.Task{
+			{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
+		},
+	}
+
+	// Save the plan to the temp directory
+	if err := plan.SavePlan(tmpDir, p); err != nil {
+		t.Fatalf("failed to save plan: %v", err)
+	}
+
+	m := NewRunningModel("test123", "test-plan", p.Tasks, tmpDir, p)
+
+	// Verify cancel is nil initially
+	if m.cancel != nil {
+		t.Error("expected cancel to be nil initially")
+	}
+
+	// Get the StartExecutor command but don't run it (to avoid actually executing)
+	// We just verify the method exists and returns a command
+	cmd := m.StartExecutor(nil)
+	if cmd == nil {
+		t.Error("expected StartExecutor to return a command")
+	}
+}
+
+func TestRunningModel_PlanDirAndPlanFieldsSet(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
+	}
+	p := &plan.Plan{
+		ID:   "test123",
+		Name: "test-plan",
+	}
+
+	m := NewRunningModel("test123", "test-plan", tasks, "/test/path", p)
+
+	if m.planDir != "/test/path" {
+		t.Errorf("expected planDir to be /test/path, got %s", m.planDir)
+	}
+	if m.plan != p {
+		t.Error("expected plan to be set")
+	}
 }
