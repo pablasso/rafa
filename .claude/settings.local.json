@@ -17,7 +17,8 @@
       "Bash(tree:*)",
       "Bash(head:*)",
       "Bash(go clean:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(make build:*)"
     ]
   }
 }
