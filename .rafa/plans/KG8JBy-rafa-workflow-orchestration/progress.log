@@ -42,3 +42,4 @@
 {"timestamp":"2026-01-31T13:55:45.058814-06:00","event":"task_completed","data":{"task_id":"t20"}}
 {"timestamp":"2026-01-31T13:55:45.887298-06:00","event":"task_started","data":{"attempt":1,"task_id":"t21"}}
 {"timestamp":"2026-01-31T14:02:03.914942-06:00","event":"task_completed","data":{"task_id":"t21"}}
+{"timestamp":"2026-01-31T14:02:04.755767-06:00","event":"plan_completed","data":{"duration_ms":5448040,"succeeded_tasks":21,"total_tasks":21}}

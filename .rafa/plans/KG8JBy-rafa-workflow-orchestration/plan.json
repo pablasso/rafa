@@ -4,7 +4,7 @@
   "description": "Add end-to-end workflow orchestration to Rafa, enabling PRD and design document creation through AI-guided conversations with session persistence and automatic reviews.",
   "sourceFile": "docs/designs/rafa-workflow.md",
   "createdAt": "2026-01-31T02:40:18.985307-06:00",
-  "status": "in_progress",
+  "status": "completed",
   "tasks": [
     {
       "id": "t01",
