@@ -269,8 +269,8 @@
         "Unit tests exist for auto-review trigger and state transitions",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t18",

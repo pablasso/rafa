@@ -481,7 +481,7 @@ func (m *ConversationModel) triggerAutoReview() tea.Cmd {
 	}
 
 	m.state = StateReviewing
-	m.addActivity("Starting auto-review...", 0)
+	m.addActivity("Running automatic review...", 0)
 	m.isThinking = true
 
 	// Clear response view for review output
