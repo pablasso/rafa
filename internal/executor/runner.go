@@ -83,9 +83,10 @@ func (r *ClaudeRunner) buildPrompt(task *plan.Task, planContext string, attempt,
 	sb.WriteString("## Instructions\n")
 	sb.WriteString("1. Implement the task as described\n")
 	sb.WriteString("2. Verify ALL acceptance criteria are met\n")
-	sb.WriteString("3. Before finalizing, perform a code review of your changes. If you have a code review skill available (e.g., `/code-review`), use it to review your implementation and assess what findings are worth addressing vs. acceptable trade-offs\n")
-	sb.WriteString("4. DO NOT commit your changes - the orchestrator will handle the commit\n")
-	sb.WriteString("5. Output a suggested commit message in this exact format: SUGGESTED_COMMIT_MESSAGE: <your descriptive commit message>\n\n")
+	sb.WriteString("3. If you need additional context on requirements or implementation details, consult the Source document listed in the Context section above\n")
+	sb.WriteString("4. Before finalizing, perform a code review of your changes. If you have a code review skill available (e.g., `/code-review`), use it to review your implementation and assess what findings are worth addressing vs. acceptable trade-offs\n")
+	sb.WriteString("5. DO NOT commit your changes - the orchestrator will handle the commit\n")
+	sb.WriteString("6. Output a suggested commit message in this exact format: SUGGESTED_COMMIT_MESSAGE: <your descriptive commit message>\n\n")
 
 	sb.WriteString("IMPORTANT: Leave changes uncommitted. The orchestrator will commit after validating. Do not declare success unless ALL acceptance criteria are met.\n")
 
