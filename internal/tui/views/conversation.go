@@ -15,6 +15,7 @@ import (
 	"github.com/pablasso/rafa/internal/ai"
 	"github.com/pablasso/rafa/internal/session"
 	"github.com/pablasso/rafa/internal/tui/components"
+	"github.com/pablasso/rafa/internal/tui/msgs"
 	"github.com/pablasso/rafa/internal/tui/styles"
 )
 
@@ -417,15 +418,21 @@ func (m ConversationModel) handleKeyPress(msg tea.KeyMsg) (ConversationModel, te
 			return m, nil
 		}
 
+	case "m":
+		// Return to home menu from completed or cancelled state
+		if m.state == StateCompleted || m.state == StateCancelled {
+			return m, m.returnToHomeCmd()
+		}
+
 	case "n":
 		if m.state == StateSessionExpired {
 			return m.handleStartFreshSession()
 		}
 
 	case "q":
-		if m.state == StateSessionExpired {
+		// Quit from completed, cancelled, or session expired states
+		if m.state == StateSessionExpired || m.state == StateCompleted || m.state == StateCancelled {
 			m.cancel()
-			m.state = StateCancelled
 			return m, tea.Quit
 		}
 
@@ -436,6 +443,13 @@ func (m ConversationModel) handleKeyPress(msg tea.KeyMsg) (ConversationModel, te
 	}
 
 	return m, nil
+}
+
+// returnToHomeCmd returns a command to navigate back to the home menu.
+func (m ConversationModel) returnToHomeCmd() tea.Cmd {
+	return func() tea.Msg {
+		return msgs.GoToHomeMsg{}
+	}
 }
 
 // sendMessage sends user input to Claude.
@@ -509,13 +523,27 @@ func (m *ConversationModel) triggerAutoReview() tea.Cmd {
 }
 
 // handleApprove processes the approval action.
+// Saves document using the lastWritePath (or default pattern), persists session,
+// and shows completion message with next steps.
 func (m ConversationModel) handleApprove() (ConversationModel, tea.Cmd) {
 	m.state = StateCompleted
 	m.session.Status = session.StatusCompleted
 
+	// Set document path from the last Write tool target
+	if m.lastWritePath != "" {
+		m.session.DocumentPath = m.lastWritePath
+	}
+
 	// Persist session if storage is available
 	if m.storage != nil {
 		m.storage.Save(m.session)
+	}
+
+	// Add completion activity with checkmark
+	if m.session.DocumentPath != "" {
+		m.addActivity(fmt.Sprintf("✓ Document saved to %s", m.session.DocumentPath), 0)
+	} else {
+		m.addActivity("✓ Session completed", 0)
 	}
 
 	return m, nil
@@ -731,7 +759,7 @@ func (m ConversationModel) renderInput() string {
 	}
 
 	if m.state == StateCompleted {
-		return styles.SuccessStyle.Render("Session completed!")
+		return m.renderCompletionMessage()
 	}
 
 	if m.state == StateCancelled {
@@ -745,6 +773,55 @@ func (m ConversationModel) renderInput() string {
 	return m.input.View()
 }
 
+// renderCompletionMessage returns the completion message with document path and next steps.
+func (m ConversationModel) renderCompletionMessage() string {
+	var lines []string
+
+	// Show document saved message with checkmark
+	if m.session.DocumentPath != "" {
+		savedMsg := fmt.Sprintf("✓ %s saved to %s", m.phaseDocumentType(), m.session.DocumentPath)
+		lines = append(lines, styles.SuccessStyle.Render(savedMsg))
+	} else {
+		lines = append(lines, styles.SuccessStyle.Render("✓ Session completed!"))
+	}
+
+	// Show next steps based on phase
+	lines = append(lines, "")
+	lines = append(lines, m.renderNextSteps())
+
+	return strings.Join(lines, "\n")
+}
+
+// phaseDocumentType returns a human-readable document type for the current phase.
+func (m ConversationModel) phaseDocumentType() string {
+	switch m.phase {
+	case session.PhasePRD:
+		return "PRD"
+	case session.PhaseDesign:
+		return "Design"
+	case session.PhasePlanCreate:
+		return "Plan"
+	default:
+		return "Document"
+	}
+}
+
+// renderNextSteps returns next steps guidance based on the current phase.
+func (m ConversationModel) renderNextSteps() string {
+	var steps []string
+
+	switch m.phase {
+	case session.PhasePRD:
+		steps = append(steps, "Next: Create a technical design with 'rafa design'")
+	case session.PhaseDesign:
+		steps = append(steps, "Next: Create an execution plan with 'rafa plan create'")
+	case session.PhasePlanCreate:
+		steps = append(steps, "Next: Run the plan with 'rafa plan run'")
+	}
+
+	return styles.SubtleStyle.Render(strings.Join(steps, "\n"))
+}
+
 // renderActionBar returns the bottom action bar.
 func (m ConversationModel) renderActionBar() string {
 	var items []string
@@ -753,9 +830,9 @@ func (m ConversationModel) renderActionBar() string {
 	case StateWaitingApproval:
 		items = []string{"[a] Approve", "[c] Cancel", "(type to revise)"}
 	case StateCompleted:
-		items = []string{"Complete!", "[Enter] Continue"}
+		items = []string{"✓ Complete", "[m] Menu", "[q] Quit"}
 	case StateCancelled:
-		items = []string{"Cancelled", "[Enter] Return"}
+		items = []string{"Cancelled", "[m] Menu", "[q] Quit"}
 	case StateSessionExpired:
 		items = []string{"[n] New Session", "[q] Quit"}
 	default:

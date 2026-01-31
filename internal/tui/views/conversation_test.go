@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pablasso/rafa/internal/ai"
 	"github.com/pablasso/rafa/internal/session"
+	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
 // mockConversation implements a mock conversation for testing.
@@ -1197,8 +1198,8 @@ func TestConversationModel_View_CompletedState(t *testing.T) {
 	if !strings.Contains(view, "Session completed") {
 		t.Error("expected view to show 'Session completed' when completed")
 	}
-	if !strings.Contains(view, "Complete!") {
-		t.Error("expected view to show 'Complete!' in action bar when completed")
+	if !strings.Contains(view, "Complete") {
+		t.Error("expected view to show 'Complete' in action bar when completed")
 	}
 }
 
@@ -1416,11 +1417,9 @@ func TestConversationModel_KeyPress_Q_InSessionExpired(t *testing.T) {
 	m.state = StateSessionExpired
 
 	// Press 'q' to quit
-	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 
-	if newM.state != StateCancelled {
-		t.Errorf("expected state to be StateCancelled after 'q' press, got %d", newM.state)
-	}
+	// Note: state doesn't need to change to cancelled - 'q' just triggers quit command
 	if cmd == nil {
 		t.Error("expected quit command")
 	}
@@ -1731,5 +1730,510 @@ func TestConversationModel_AutoReview_OnlyWriteToolTracked(t *testing.T) {
 
 	if m.shouldAutoReview() {
 		t.Error("expected shouldAutoReview to return false when only Read was used")
+	}
+}
+
+// Phase completion flow tests
+
+func TestConversationModel_HandleApprove_SavesDocumentPath(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateWaitingApproval
+
+	// Simulate a Write to docs/prds/
+	m.lastWritePath = "docs/prds/user-auth.md"
+
+	storage := &mockSessionStorage{}
+	m.SetStorage(storage)
+
+	newM, _ := m.handleApprove()
+
+	// Verify document path is set on session
+	if newM.Session().DocumentPath != "docs/prds/user-auth.md" {
+		t.Errorf("expected DocumentPath to be docs/prds/user-auth.md, got %s", newM.Session().DocumentPath)
+	}
+
+	// Verify session was saved
+	if storage.saved == nil {
+		t.Error("expected session to be saved")
+	}
+
+	// Verify saved session has correct document path
+	if storage.saved.DocumentPath != "docs/prds/user-auth.md" {
+		t.Errorf("expected saved session DocumentPath to be docs/prds/user-auth.md, got %s", storage.saved.DocumentPath)
+	}
+}
+
+func TestConversationModel_HandleApprove_PersistsSessionWithStatusCompleted(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateWaitingApproval
+	m.lastWritePath = "docs/prds/test.md"
+
+	storage := &mockSessionStorage{}
+	m.SetStorage(storage)
+
+	newM, _ := m.handleApprove()
+
+	// Verify state is completed
+	if newM.State() != StateCompleted {
+		t.Errorf("expected state to be StateCompleted, got %d", newM.State())
+	}
+
+	// Verify session status is completed
+	if newM.Session().Status != session.StatusCompleted {
+		t.Errorf("expected session status to be completed, got %v", newM.Session().Status)
+	}
+
+	// Verify session was persisted
+	if storage.saved == nil {
+		t.Error("expected session to be persisted")
+	}
+	if storage.saved.Status != session.StatusCompleted {
+		t.Errorf("expected saved session status to be completed, got %v", storage.saved.Status)
+	}
+}
+
+func TestConversationModel_HandleApprove_AddsCompletionActivity(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateWaitingApproval
+	m.lastWritePath = "docs/prds/user-auth.md"
+
+	initialCount := len(m.Activities())
+
+	newM, _ := m.handleApprove()
+
+	activities := newM.Activities()
+	if len(activities) != initialCount+1 {
+		t.Errorf("expected %d activities after approve, got %d", initialCount+1, len(activities))
+	}
+
+	// Verify completion activity contains document path with checkmark
+	lastActivity := activities[len(activities)-1]
+	if !strings.Contains(lastActivity.Text, "✓") {
+		t.Error("expected completion activity to contain checkmark")
+	}
+	if !strings.Contains(lastActivity.Text, "docs/prds/user-auth.md") {
+		t.Errorf("expected completion activity to contain document path, got %s", lastActivity.Text)
+	}
+}
+
+func TestConversationModel_View_CompletedShowsDocumentPath(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.SetSize(100, 40)
+	m.state = StateCompleted
+	m.session.DocumentPath = "docs/prds/user-auth.md"
+
+	view := m.View()
+
+	// Should show document saved message with checkmark
+	if !strings.Contains(view, "✓") {
+		t.Error("expected view to contain checkmark when completed")
+	}
+	if !strings.Contains(view, "docs/prds/user-auth.md") {
+		t.Error("expected view to show document path when completed")
+	}
+	if !strings.Contains(view, "PRD") {
+		t.Error("expected view to show document type (PRD) when completed")
+	}
+}
+
+func TestConversationModel_View_CompletedShowsNextSteps_PRD(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.SetSize(100, 40)
+	m.state = StateCompleted
+	m.session.DocumentPath = "docs/prds/test.md"
+
+	view := m.View()
+
+	// Should show next step for PRD phase
+	if !strings.Contains(view, "rafa design") {
+		t.Error("expected view to show 'rafa design' as next step for PRD phase")
+	}
+}
+
+func TestConversationModel_View_CompletedShowsNextSteps_Design(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhaseDesign,
+		Name:  "test-design",
+	}
+
+	m := NewConversationModel(config)
+	m.SetSize(100, 40)
+	m.state = StateCompleted
+	m.session.DocumentPath = "docs/designs/test.md"
+
+	view := m.View()
+
+	// Should show next step for Design phase
+	if !strings.Contains(view, "rafa plan create") {
+		t.Error("expected view to show 'rafa plan create' as next step for Design phase")
+	}
+}
+
+func TestConversationModel_View_CompletedActionBar(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.SetSize(100, 40)
+	m.state = StateCompleted
+
+	view := m.View()
+
+	// Should show menu and quit options
+	if !strings.Contains(view, "[m] Menu") {
+		t.Error("expected view to show '[m] Menu' in action bar when completed")
+	}
+	if !strings.Contains(view, "[q] Quit") {
+		t.Error("expected view to show '[q] Quit' in action bar when completed")
+	}
+}
+
+func TestConversationModel_KeyPress_M_InCompleted_ReturnsToHome(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateCompleted
+
+	// Press 'm' to return to menu
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+
+	if cmd == nil {
+		t.Error("expected command to return to home menu")
+	}
+
+	// Execute the command to get the message
+	msg := cmd()
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected GoToHomeMsg, got %T", msg)
+	}
+}
+
+func TestConversationModel_KeyPress_M_InCancelled_ReturnsToHome(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateCancelled
+
+	// Press 'm' to return to menu
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+
+	if cmd == nil {
+		t.Error("expected command to return to home menu")
+	}
+
+	// Execute the command to get the message
+	msg := cmd()
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected GoToHomeMsg, got %T", msg)
+	}
+}
+
+func TestConversationModel_KeyPress_Q_InCompleted_Quits(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateCompleted
+
+	// Press 'q' to quit
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+
+	if cmd == nil {
+		t.Error("expected quit command")
+	}
+}
+
+func TestConversationModel_KeyPress_Q_InCancelled_Quits(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateCancelled
+
+	// Press 'q' to quit
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+
+	if cmd == nil {
+		t.Error("expected quit command")
+	}
+}
+
+func TestConversationModel_NoAutoProgressionToNextPhase(t *testing.T) {
+	// This test verifies that after completion, the model does NOT
+	// automatically transition to the next phase (e.g., PRD -> Design)
+
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateWaitingApproval
+	m.lastWritePath = "docs/prds/test.md"
+
+	storage := &mockSessionStorage{}
+	m.SetStorage(storage)
+
+	// Approve the session
+	newM, cmd := m.handleApprove()
+
+	// Verify we're in completed state, not a new phase
+	if newM.State() != StateCompleted {
+		t.Errorf("expected state to be StateCompleted, got %d", newM.State())
+	}
+
+	// Verify no command was returned that would start a new phase
+	if cmd != nil {
+		t.Error("expected no command after approval (no auto-progression)")
+	}
+
+	// Verify the phase hasn't changed
+	if newM.phase != session.PhasePRD {
+		t.Errorf("expected phase to remain PhasePRD, got %v", newM.phase)
+	}
+
+	// Verify session doesn't trigger any auto-start behavior
+	// (we stay in completed state until user explicitly navigates)
+}
+
+func TestConversationModel_PhaseDocumentType(t *testing.T) {
+	tests := []struct {
+		phase    session.Phase
+		expected string
+	}{
+		{session.PhasePRD, "PRD"},
+		{session.PhaseDesign, "Design"},
+		{session.PhasePlanCreate, "Plan"},
+	}
+
+	for _, tt := range tests {
+		config := ConversationConfig{
+			Phase: tt.phase,
+			Name:  "test",
+		}
+
+		m := NewConversationModel(config)
+		docType := m.phaseDocumentType()
+
+		if docType != tt.expected {
+			t.Errorf("phaseDocumentType() for %v = %s, want %s", tt.phase, docType, tt.expected)
+		}
+	}
+}
+
+func TestConversationModel_RenderNextSteps_PRD(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	steps := m.renderNextSteps()
+
+	if !strings.Contains(steps, "rafa design") {
+		t.Error("expected PRD next steps to mention 'rafa design'")
+	}
+}
+
+func TestConversationModel_RenderNextSteps_Design(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhaseDesign,
+		Name:  "test-design",
+	}
+
+	m := NewConversationModel(config)
+	steps := m.renderNextSteps()
+
+	if !strings.Contains(steps, "rafa plan create") {
+		t.Error("expected Design next steps to mention 'rafa plan create'")
+	}
+}
+
+func TestConversationModel_RenderNextSteps_PlanCreate(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePlanCreate,
+		Name:  "test-plan",
+	}
+
+	m := NewConversationModel(config)
+	steps := m.renderNextSteps()
+
+	if !strings.Contains(steps, "rafa plan run") {
+		t.Error("expected PlanCreate next steps to mention 'rafa plan run'")
+	}
+}
+
+func TestConversationModel_View_CancelledActionBar(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.SetSize(100, 40)
+	m.state = StateCancelled
+
+	view := m.View()
+
+	// Should show menu and quit options
+	if !strings.Contains(view, "[m] Menu") {
+		t.Error("expected view to show '[m] Menu' in action bar when cancelled")
+	}
+	if !strings.Contains(view, "[q] Quit") {
+		t.Error("expected view to show '[q] Quit' in action bar when cancelled")
+	}
+}
+
+func TestConversationModel_HandleApprove_WithoutDocumentPath(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateWaitingApproval
+	// Don't set lastWritePath
+
+	storage := &mockSessionStorage{}
+	m.SetStorage(storage)
+
+	newM, _ := m.handleApprove()
+
+	// Verify session completed even without document path
+	if newM.State() != StateCompleted {
+		t.Errorf("expected state to be StateCompleted, got %d", newM.State())
+	}
+	if newM.Session().Status != session.StatusCompleted {
+		t.Errorf("expected session status to be completed, got %v", newM.Session().Status)
+	}
+
+	// Document path should be empty
+	if newM.Session().DocumentPath != "" {
+		t.Errorf("expected DocumentPath to be empty, got %s", newM.Session().DocumentPath)
+	}
+
+	// Activity should say "Session completed" instead of document saved
+	activities := newM.Activities()
+	lastActivity := activities[len(activities)-1]
+	if !strings.Contains(lastActivity.Text, "Session completed") {
+		t.Errorf("expected activity to contain 'Session completed', got %s", lastActivity.Text)
+	}
+}
+
+func TestConversationModel_RenderCompletionMessage_WithPath(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.session.DocumentPath = "docs/prds/user-auth.md"
+	m.SetSize(100, 40)
+
+	message := m.renderCompletionMessage()
+
+	// Should contain checkmark and document path
+	if !strings.Contains(message, "✓") {
+		t.Error("expected completion message to contain checkmark")
+	}
+	if !strings.Contains(message, "PRD") {
+		t.Error("expected completion message to contain document type")
+	}
+	if !strings.Contains(message, "docs/prds/user-auth.md") {
+		t.Error("expected completion message to contain document path")
+	}
+}
+
+func TestConversationModel_RenderCompletionMessage_WithoutPath(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	// Don't set DocumentPath
+	m.SetSize(100, 40)
+
+	message := m.renderCompletionMessage()
+
+	// Should say session completed
+	if !strings.Contains(message, "✓") {
+		t.Error("expected completion message to contain checkmark")
+	}
+	if !strings.Contains(message, "Session completed") {
+		t.Error("expected completion message to say 'Session completed'")
+	}
+}
+
+func TestConversationModel_KeyPress_M_NotInCompletedOrCancelled_NoAction(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateConversing
+
+	// Press 'm' while conversing - should not return to menu
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+
+	if cmd != nil {
+		t.Error("expected no command when pressing 'm' in conversing state")
+	}
+}
+
+func TestConversationModel_ReturnToHomeCmd(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+
+	cmd := m.returnToHomeCmd()
+	if cmd == nil {
+		t.Error("expected returnToHomeCmd to return a command")
+	}
+
+	msg := cmd()
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Errorf("expected GoToHomeMsg, got %T", msg)
 	}
 }
