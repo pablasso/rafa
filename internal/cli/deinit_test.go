@@ -3,16 +3,28 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestRunDeinit(t *testing.T) {
+	// Save original factory
+	originalSkillsFactory := skillsInstallerFactory
+	t.Cleanup(func() {
+		skillsInstallerFactory = originalSkillsFactory
+	})
+
 	t.Run("deinit when not initialized fails", func(t *testing.T) {
 		// Create a temp dir without .rafa
 		tmpDir := t.TempDir()
 		originalWd, _ := os.Getwd()
 		os.Chdir(tmpDir)
 		defer os.Chdir(originalWd)
+
+		// Mock skills installer
+		skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+			return &mockSkillsInstaller{targetDir: targetDir}
+		}
 
 		// Run deinit command
 		err := runDeinit(nil, nil)
@@ -31,6 +43,11 @@ func TestRunDeinit(t *testing.T) {
 		originalWd, _ := os.Getwd()
 		os.Chdir(tmpDir)
 		defer os.Chdir(originalWd)
+
+		// Mock skills installer
+		skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+			return &mockSkillsInstaller{targetDir: targetDir}
+		}
 
 		// Create .rafa as a file instead of directory
 		if err := os.WriteFile(".rafa", []byte("test"), 0644); err != nil {
@@ -55,11 +72,22 @@ func TestRunDeinit(t *testing.T) {
 		os.Chdir(tmpDir)
 		defer os.Chdir(originalWd)
 
+		// Mock skills installer that tracks uninstall calls
+		var mockInstaller *mockSkillsInstaller
+		skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+			mockInstaller = &mockSkillsInstaller{targetDir: targetDir}
+			return mockInstaller
+		}
+
 		// Create .rafa directory structure
 		rafaPath := filepath.Join(tmpDir, ".rafa")
 		plansPath := filepath.Join(rafaPath, "plans")
+		sessionsPath := filepath.Join(rafaPath, "sessions")
 		if err := os.MkdirAll(plansPath, 0755); err != nil {
 			t.Fatalf("failed to create .rafa/plans: %v", err)
+		}
+		if err := os.MkdirAll(sessionsPath, 0755); err != nil {
+			t.Fatalf("failed to create .rafa/sessions: %v", err)
 		}
 
 		// Create a test plan directory
@@ -74,8 +102,8 @@ func TestRunDeinit(t *testing.T) {
 			t.Fatalf("failed to create test file: %v", err)
 		}
 
-		// Create .gitignore with rafa entry and another entry
-		if err := os.WriteFile(".gitignore", []byte("other-entry\n.rafa/**/*.lock\n"), 0644); err != nil {
+		// Create .gitignore with rafa entries and another entry
+		if err := os.WriteFile(".gitignore", []byte("other-entry\n.rafa/**/*.lock\n.rafa/sessions/\n"), 0644); err != nil {
 			t.Fatalf("failed to create .gitignore: %v", err)
 		}
 
@@ -97,13 +125,21 @@ func TestRunDeinit(t *testing.T) {
 			t.Errorf("unexpected error checking .rafa: %v", err)
 		}
 
-		// Verify .gitignore no longer contains rafa entry
+		// Verify skills uninstall was called
+		if mockInstaller == nil || !mockInstaller.uninstallCalled {
+			t.Error("expected skills installer Uninstall() to be called")
+		}
+
+		// Verify .gitignore no longer contains rafa entries
 		content, err := os.ReadFile(".gitignore")
 		if err != nil {
 			t.Fatalf("expected .gitignore to still exist: %v", err)
 		}
-		if string(content) != "other-entry\n" {
-			t.Errorf("expected gitignore to have rafa entry removed, got %q", string(content))
+		if strings.Contains(string(content), ".rafa") {
+			t.Errorf("expected gitignore to have all rafa entries removed, got %q", string(content))
+		}
+		if !strings.Contains(string(content), "other-entry") {
+			t.Errorf("expected gitignore to still have other-entry, got %q", string(content))
 		}
 	})
 }

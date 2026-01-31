@@ -58,13 +58,22 @@ func runDeinit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Remove skills
+	installer := skillsInstallerFactory(claudeSkillsDir)
+	if err := installer.Uninstall(); err != nil {
+		fmt.Printf("Warning: failed to remove skills: %v\n", err)
+	}
+
 	// Remove the directory
 	if err := os.RemoveAll(rafaDir); err != nil {
 		return fmt.Errorf("failed to remove .rafa/: %w", err)
 	}
 
-	// Remove lock file pattern from .gitignore
-	if err := removeFromGitignore(gitignoreEntry); err != nil {
+	// Remove gitignore entries
+	if err := removeFromGitignore(gitignoreLockEntry); err != nil {
+		return fmt.Errorf("failed to update .gitignore: %w", err)
+	}
+	if err := removeFromGitignore(gitignoreSessionsEntry); err != nil {
 		return fmt.Errorf("failed to update .gitignore: %w", err)
 	}
 
