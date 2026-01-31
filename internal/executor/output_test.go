@@ -452,17 +452,19 @@ func TestOutputCapture_WithEventsChan_StreamsOutput(t *testing.T) {
 		t.Fatalf("NewOutputCaptureWithEvents() error: %v", err)
 	}
 
-	// Write to stdout
+	// Write to stdout - with JSON parsing enabled, plain text lines
+	// are passed through with the newline stripped (line buffering)
 	testMessage := "Hello from stdout\n"
 	oc.Stdout().Write([]byte(testMessage))
 
 	oc.Close()
 
-	// Check the channel received the message
+	// Check the channel received the message (newline stripped due to line buffering)
 	select {
 	case msg := <-eventsChan:
-		if msg != testMessage {
-			t.Errorf("eventsChan received %q, want %q", msg, testMessage)
+		expected := "Hello from stdout"
+		if msg != expected {
+			t.Errorf("eventsChan received %q, want %q", msg, expected)
 		}
 	default:
 		t.Error("eventsChan should have received a message")
@@ -600,4 +602,175 @@ func TestOutputCapture_WithEventsChan_WritesToLogFile(t *testing.T) {
 	if !strings.Contains(string(content), "Test output message") {
 		t.Errorf("log file should contain test message, got: %s", string(content))
 	}
+}
+
+func TestFormatStreamLine_TextDelta(t *testing.T) {
+	// Test extracting text from stream_event with text_delta
+	jsonLine := `{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello world"}}}`
+
+	result := formatStreamLine(jsonLine)
+	expected := "Hello world"
+	if result != expected {
+		t.Errorf("formatStreamLine() = %q, want %q", result, expected)
+	}
+}
+
+func TestFormatStreamLine_ToolUse(t *testing.T) {
+	// Test extracting tool use from assistant message
+	jsonLine := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}`
+
+	result := formatStreamLine(jsonLine)
+	expected := "\n[Tool: Bash]"
+	if result != expected {
+		t.Errorf("formatStreamLine() = %q, want %q", result, expected)
+	}
+}
+
+func TestFormatStreamLine_SystemEvent(t *testing.T) {
+	// System events should be ignored
+	jsonLine := `{"type":"system","subtype":"init","session_id":"abc123"}`
+
+	result := formatStreamLine(jsonLine)
+	if result != "" {
+		t.Errorf("formatStreamLine() for system event = %q, want empty string", result)
+	}
+}
+
+func TestFormatStreamLine_ResultEvent(t *testing.T) {
+	// Result events should be ignored
+	jsonLine := `{"type":"result","subtype":"success","result":"done"}`
+
+	result := formatStreamLine(jsonLine)
+	if result != "" {
+		t.Errorf("formatStreamLine() for result event = %q, want empty string", result)
+	}
+}
+
+func TestFormatStreamLine_PlainText(t *testing.T) {
+	// Non-JSON input should pass through (demo mode compatibility)
+	plainText := "This is plain text output"
+
+	result := formatStreamLine(plainText)
+	if result != plainText {
+		t.Errorf("formatStreamLine() = %q, want %q", result, plainText)
+	}
+}
+
+func TestFormatStreamLine_EmptyLine(t *testing.T) {
+	result := formatStreamLine("")
+	if result != "" {
+		t.Errorf("formatStreamLine() for empty = %q, want empty string", result)
+	}
+
+	result = formatStreamLine("   ")
+	if result != "" {
+		t.Errorf("formatStreamLine() for whitespace = %q, want empty string", result)
+	}
+}
+
+func TestStreamingWriter_LineBuffering(t *testing.T) {
+	// Test that partial writes are buffered until newline
+	eventsChan := make(chan string, 10)
+
+	sw := &streamingWriter{
+		underlying: io.Discard,
+		eventsChan: eventsChan,
+		isStderr:   false,
+	}
+
+	// Write partial line
+	sw.Write([]byte("Hello "))
+	sw.Write([]byte("world"))
+
+	// No message yet (no newline)
+	select {
+	case msg := <-eventsChan:
+		t.Errorf("should not receive message before newline, got: %q", msg)
+	default:
+		// Expected
+	}
+
+	// Write newline - should now receive the complete line
+	sw.Write([]byte("\n"))
+
+	select {
+	case msg := <-eventsChan:
+		expected := "Hello world"
+		if msg != expected {
+			t.Errorf("received %q, want %q", msg, expected)
+		}
+	default:
+		t.Error("should have received message after newline")
+	}
+}
+
+func TestStreamingWriter_JSONParsing(t *testing.T) {
+	eventsChan := make(chan string, 10)
+
+	sw := &streamingWriter{
+		underlying: io.Discard,
+		eventsChan: eventsChan,
+		isStderr:   false,
+	}
+
+	// Write JSON stream event
+	jsonLine := `{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Streamed text"}}}` + "\n"
+	sw.Write([]byte(jsonLine))
+
+	select {
+	case msg := <-eventsChan:
+		expected := "Streamed text"
+		if msg != expected {
+			t.Errorf("received %q, want %q", msg, expected)
+		}
+	default:
+		t.Error("should have received parsed text from JSON")
+	}
+}
+
+func TestExtractCommitMessage_JSONFormat(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+
+	// Write JSON stream events including one with commit message
+	oc.Stdout().Write([]byte(`{"type":"system","subtype":"init"}` + "\n"))
+	oc.Stdout().Write([]byte(`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Working on the task..."}}}` + "\n"))
+	oc.Stdout().Write([]byte(`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"SUGGESTED_COMMIT_MESSAGE: Add JSON streaming support"}}}` + "\n"))
+	oc.Stdout().Write([]byte(`{"type":"result","subtype":"success"}` + "\n"))
+
+	oc.logFile.Sync()
+
+	msg := oc.ExtractCommitMessage()
+	expected := "Add JSON streaming support"
+	if msg != expected {
+		t.Errorf("ExtractCommitMessage() = %q, want %q", msg, expected)
+	}
+
+	oc.Close()
+}
+
+func TestExtractCommitMessage_AssistantMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oc, err := NewOutputCapture(tmpDir)
+	if err != nil {
+		t.Fatalf("NewOutputCapture() error: %v", err)
+	}
+
+	// Write assistant message with commit message in content
+	oc.Stdout().Write([]byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"Done!\nSUGGESTED_COMMIT_MESSAGE: Implement feature X\nAll tests pass."}]}}` + "\n"))
+
+	oc.logFile.Sync()
+
+	msg := oc.ExtractCommitMessage()
+	expected := "Implement feature X"
+	if msg != expected {
+		t.Errorf("ExtractCommitMessage() = %q, want %q", msg, expected)
+	}
+
+	oc.Close()
 }

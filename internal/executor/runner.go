@@ -25,6 +25,9 @@ func (r *ClaudeRunner) Run(ctx context.Context, task *plan.Task, planContext str
 	cmd := ai.CommandContext(ctx, "claude",
 		"-p", prompt,
 		"--dangerously-skip-permissions",
+		"--output-format", "stream-json",
+		"--verbose",
+		"--include-partial-messages",
 	)
 
 	// Use OutputWriter if provided, otherwise fall back to os.Stdout/os.Stderr

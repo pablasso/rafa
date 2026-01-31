@@ -2,6 +2,7 @@ package executor
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -58,10 +59,12 @@ func NewOutputCaptureWithEvents(planDir string, eventsChan chan string) (*Output
 		streamingOut := &streamingWriter{
 			underlying: f, // Only write to log file in TUI mode
 			eventsChan: eventsChan,
+			isStderr:   false,
 		}
 		streamingErr := &streamingWriter{
 			underlying: f, // Only write to log file in TUI mode
 			eventsChan: eventsChan,
+			isStderr:   true, // Pass through raw stderr for error messages
 		}
 		oc.multiOut = streamingOut
 		oc.multiErr = streamingErr
@@ -74,25 +77,117 @@ func NewOutputCaptureWithEvents(planDir string, eventsChan chan string) (*Output
 }
 
 // streamingWriter wraps a writer and sends output to a channel for TUI streaming.
+// It buffers partial lines and parses JSON stream events to extract displayable text.
 type streamingWriter struct {
 	underlying io.Writer
 	eventsChan chan string
+	lineBuf    strings.Builder // Buffer for partial lines
+	isStderr   bool            // If true, pass through raw (no JSON parsing)
 }
 
-// Write writes to the underlying writer and sends to eventsChan with non-blocking select.
+// Write writes to the underlying writer and sends parsed output to eventsChan.
+// For stdout, it parses JSON stream events and extracts displayable text.
+// For stderr, it passes through raw text for error messages.
 func (s *streamingWriter) Write(p []byte) (n int, err error) {
-	// Write to underlying writer (log file + terminal)
+	// Always write raw data to underlying writer (log file)
 	n, err = s.underlying.Write(p)
 
 	// Send to TUI if channel exists (non-blocking)
-	if s.eventsChan != nil {
+	if s.eventsChan == nil {
+		return
+	}
+
+	// For stderr, pass through raw text (actual errors)
+	if s.isStderr {
 		select {
 		case s.eventsChan <- string(p):
 		default:
 			// Drop if buffer full, don't block execution
 		}
+		return
 	}
+
+	// For stdout, buffer and process complete lines for JSON parsing
+	s.lineBuf.Write(p)
+	content := s.lineBuf.String()
+
+	for {
+		idx := strings.Index(content, "\n")
+		if idx == -1 {
+			break
+		}
+		line := content[:idx]
+		content = content[idx+1:]
+
+		// Parse JSON and extract displayable text
+		formatted := formatStreamLine(line)
+		if formatted != "" {
+			select {
+			case s.eventsChan <- formatted:
+			default:
+				// Drop if buffer full, don't block execution
+			}
+		}
+	}
+
+	s.lineBuf.Reset()
+	s.lineBuf.WriteString(content)
 	return
+}
+
+// streamEvent represents the JSON structure from Claude's stream-json output.
+type streamEvent struct {
+	Type    string `json:"type"`
+	Subtype string `json:"subtype,omitempty"`
+	Event   *struct {
+		Type  string `json:"type"`
+		Delta *struct {
+			Type string `json:"type"`
+			Text string `json:"text,omitempty"`
+		} `json:"delta,omitempty"`
+	} `json:"event,omitempty"`
+	Message *struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text,omitempty"`
+			Name string `json:"name,omitempty"`
+		} `json:"content"`
+	} `json:"message,omitempty"`
+}
+
+// formatStreamLine parses a JSON stream line and extracts displayable text.
+// For non-JSON input (e.g., demo mode), it returns the line unchanged.
+func formatStreamLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+
+	var event streamEvent
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		// Not JSON - return as-is (demo mode compatibility)
+		return line
+	}
+
+	switch event.Type {
+	case "stream_event":
+		// Token-level streaming - extract delta text
+		if event.Event != nil && event.Event.Type == "content_block_delta" {
+			if event.Event.Delta != nil && event.Event.Delta.Type == "text_delta" {
+				return event.Event.Delta.Text
+			}
+		}
+	case "assistant":
+		// Full message - extract tool use notifications
+		if event.Message != nil {
+			for _, c := range event.Message.Content {
+				if c.Type == "tool_use" && c.Name != "" {
+					return fmt.Sprintf("\n[Tool: %s]", c.Name)
+				}
+			}
+		}
+	}
+	return "" // Ignore system, user, result events
 }
 
 // Stdout returns the writer for stdout.
@@ -158,13 +253,16 @@ func NewOutputCaptureForDemo(eventsChan chan string) *OutputCapture {
 	}
 
 	// Create streaming writers that only write to the channel (no file)
+	// Demo mode uses plain text, so both stdout and stderr pass through raw
 	streamingOut := &streamingWriter{
 		underlying: io.Discard, // Discard underlying writes
 		eventsChan: eventsChan,
+		isStderr:   true, // Demo mode uses plain text, not JSON
 	}
 	streamingErr := &streamingWriter{
 		underlying: io.Discard,
 		eventsChan: eventsChan,
+		isStderr:   true,
 	}
 	oc.multiOut = streamingOut
 	oc.multiErr = streamingErr
@@ -173,12 +271,11 @@ func NewOutputCaptureForDemo(eventsChan chan string) *OutputCapture {
 }
 
 // ExtractCommitMessage searches the captured output for a suggested commit message.
-// It looks for a line starting with 'SUGGESTED_COMMIT_MESSAGE:' in the last 100 lines
-// of output for efficiency. Returns the trimmed message after the prefix, or empty
-// string if no message is found or on read error. If multiple messages exist within
-// the last 100 lines, returns the most recent one. Callers should ensure the log
-// file is synced (via Sync() or close/reopen) before calling if recent writes need
-// to be included.
+// It handles both JSON stream format (from Claude CLI) and plain text format (demo mode).
+// For JSON, it searches text_delta events for the commit message prefix.
+// Returns the trimmed message after the prefix, or empty string if no message is found.
+// Searches the last 100 lines for efficiency. If multiple messages exist, returns the
+// most recent one. Callers should ensure the log file is synced before calling.
 func (oc *OutputCapture) ExtractCommitMessage() string {
 	// Get the log file path from the open file
 	logPath := oc.logFile.Name()
@@ -209,8 +306,61 @@ func (oc *OutputCapture) ExtractCommitMessage() string {
 	// Search from most recent lines first (reverse order)
 	for i := len(lines) - 1; i >= start; i-- {
 		line := lines[i]
-		if strings.HasPrefix(line, commitMessagePrefix) {
-			return strings.TrimSpace(strings.TrimPrefix(line, commitMessagePrefix))
+
+		// Try to extract commit message from this line (handles both JSON and plain text)
+		if msg := extractCommitMessageFromLine(line); msg != "" {
+			return msg
+		}
+	}
+
+	return ""
+}
+
+// extractCommitMessageFromLine extracts a commit message from a single line.
+// Handles both JSON stream format and plain text format.
+func extractCommitMessageFromLine(line string) string {
+	// First, check for plain text format (demo mode, legacy)
+	if strings.HasPrefix(line, commitMessagePrefix) {
+		return strings.TrimSpace(strings.TrimPrefix(line, commitMessagePrefix))
+	}
+
+	// Try to parse as JSON (Claude CLI stream-json format)
+	var event streamEvent
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		return ""
+	}
+
+	// Check stream_event with text_delta
+	if event.Type == "stream_event" && event.Event != nil {
+		if event.Event.Type == "content_block_delta" && event.Event.Delta != nil {
+			if event.Event.Delta.Type == "text_delta" {
+				text := event.Event.Delta.Text
+				if strings.Contains(text, commitMessagePrefix) {
+					// Extract the message from the delta text
+					idx := strings.Index(text, commitMessagePrefix)
+					msg := text[idx+len(commitMessagePrefix):]
+					// Handle case where message might span multiple deltas - just get this part
+					msg = strings.TrimSpace(msg)
+					// Remove trailing newline if present
+					msg = strings.TrimSuffix(msg, "\n")
+					return msg
+				}
+			}
+		}
+	}
+
+	// Check assistant message content
+	if event.Type == "assistant" && event.Message != nil {
+		for _, c := range event.Message.Content {
+			if c.Type == "text" && strings.Contains(c.Text, commitMessagePrefix) {
+				idx := strings.Index(c.Text, commitMessagePrefix)
+				msg := c.Text[idx+len(commitMessagePrefix):]
+				// Take up to the first newline
+				if nlIdx := strings.Index(msg, "\n"); nlIdx != -1 {
+					msg = msg[:nlIdx]
+				}
+				return strings.TrimSpace(msg)
+			}
 		}
 	}
 
