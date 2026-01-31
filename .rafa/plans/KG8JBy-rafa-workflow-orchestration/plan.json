@@ -1,0 +1,339 @@
+{
+  "id": "KG8JBy",
+  "name": "rafa-workflow-orchestration",
+  "description": "Add end-to-end workflow orchestration to Rafa, enabling PRD and design document creation through AI-guided conversations with session persistence and automatic reviews.",
+  "sourceFile": "docs/designs/rafa-workflow.md",
+  "createdAt": "2026-01-31T02:40:18.985307-06:00",
+  "status": "not_started",
+  "tasks": [
+    {
+      "id": "t01",
+      "title": "Implement session management package",
+      "description": "Create the internal/session package with Session struct, Storage type for file-based persistence, and all CRUD operations. Sessions track document creation conversations with fields: SessionID (Claude's ID for --resume), Phase (prd/design/plan-create), Name, DocumentPath, Status (in_progress/completed/cancelled), CreatedAt, UpdatedAt, and FromDocument. Storage saves sessions as JSON files with atomic writes (write to .tmp then rename) in .rafa/sessions/ directory. Implement Save, Load (by phase+name), LoadByPhase (most recent for a phase), List (all sessions), and Delete operations.",
+      "acceptanceCriteria": [
+        "Unit tests exist for session.Save() verifying atomic write creates valid JSON",
+        "Unit tests exist for session.Load() verifying correct struct returned",
+        "Unit tests exist for session.LoadByPhase() returning most recently updated session",
+        "Unit tests exist for session.List() returning all sessions",
+        "Unit tests exist for session.Delete() verifying file removal and idempotent behavior for missing files",
+        "Unit test verifies session filename pattern is \u003cphase\u003e-\u003cname\u003e.json",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t02",
+      "title": "Implement skills installer package",
+      "description": "Create internal/skills/installer.go that downloads skills from github.com/pablasso/skills (tarball from main branch) and installs to .claude/skills/. The installer must: download tarball via HTTP, extract only skill directories (prd, prd-review, technical-design, technical-design-review, code-review), verify each has a SKILL.md file, and clean up partial installations on failure. Implement NewInstaller(targetDir), Install(), IsInstalled(), Uninstall(), and verify() methods. GitHub tarballs have a root directory prefix that must be stripped during extraction.",
+      "acceptanceCriteria": [
+        "Unit tests exist for Install() with mock HTTP verifying correct files extracted",
+        "Unit tests exist verifying non-skill directories (.claude/, README.md) are not copied",
+        "Unit tests exist for verify() failing when SKILL.md is missing",
+        "Unit tests exist verifying partial extraction is cleaned up on error",
+        "Unit tests exist for IsInstalled() returning true only when all skills have SKILL.md",
+        "Unit tests exist for Uninstall() removing only skill directories",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t03",
+      "title": "Update rafa init to install skills and create sessions directory",
+      "description": "Modify internal/cli/init.go to: create .rafa/sessions/ directory alongside .rafa/plans/, download and install skills from github.com/pablasso/skills to .claude/skills/, add .rafa/sessions/ to .gitignore, and clean up all partial state (both .rafa/ and skills) if installation fails. Update next steps message to mention 'rafa prd' and 'rafa design'. Fail completely if skills repo is unavailable (do not partially initialize).",
+      "acceptanceCriteria": [
+        "Unit tests exist verifying .rafa/sessions/ directory is created",
+        "Unit tests exist verifying skills are installed to .claude/skills/",
+        "Unit tests exist verifying .rafa/sessions/ is added to .gitignore",
+        "Unit tests exist verifying complete cleanup on skills installation failure (no partial .rafa/ or skills)",
+        "Integration test verifies end-to-end init with skills installation",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t04",
+      "title": "Update rafa deinit to remove skills",
+      "description": "Modify internal/cli/deinit.go to uninstall skills from .claude/skills/ before removing .rafa/ directory. Use the skills.Installer.Uninstall() method. Log a warning if skills removal fails but continue with .rafa/ removal. Update confirmation message to mention skills removal.",
+      "acceptanceCriteria": [
+        "Unit tests exist verifying skills are removed during deinit",
+        "Unit tests exist verifying deinit completes even if skills removal fails (with warning)",
+        "Integration test verifies end-to-end deinit removes both .rafa/ and skills",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t05",
+      "title": "Implement streaming conversation handler",
+      "description": "Create internal/ai/conversation.go with ConversationConfig, StreamEvent, and Conversation types. StreamEvent supports types: init, text, tool_use, tool_result, error, done with fields for ToolName, ToolTarget, SessionID, InputTokens, OutputTokens, CostUSD. Conversation uses per-message invocation with --resume (not persistent subprocess). Implement StartConversation(), SendMessage(), invoke() (runs claude -p with --output-format stream-json --verbose --include-partial-messages --dangerously-skip-permissions), SessionID(), and Stop(). Parse stream-json events including: system init (session_id), stream_event content_block_delta (text), assistant message tool_use, and result event (usage, cost). Handle ErrSessionExpired detection from CLI output.",
+      "acceptanceCriteria": [
+        "Unit tests exist for parseStreamEvent() with init event returning SessionID",
+        "Unit tests exist for parseStreamEvent() with text_delta returning text content",
+        "Unit tests exist for parseStreamEvent() with tool_use returning ToolName and ToolTarget",
+        "Unit tests exist for parseStreamEvent() with Task tool extracting subagent description",
+        "Unit tests exist for parseStreamEvent() with tool_result event",
+        "Unit tests exist for parseStreamEvent() with result event extracting usage and cost",
+        "Unit tests exist for parseStreamEvent() with is_error:true result returning error type",
+        "Unit tests exist for parseStreamEvent() with malformed JSON returning empty StreamEvent (no panic)",
+        "Unit tests exist for parseStreamEvent() with unknown type returning empty StreamEvent",
+        "Unit tests exist for extractToolTarget() for Read/Write/Edit (file_path), Glob/Grep (pattern), Task (description)",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t06",
+      "title": "Implement TUI conversation view",
+      "description": "Create internal/tui/views/conversation.go with ConversationModel implementing the conversational document creation UI. Include ConversationState (StateConversing, StateReviewing, StateWaitingApproval, StateCompleted, StateCancelled), ActivityEntry for timeline display, and ConversationConfig. Layout: left pane (25% width) shows activity timeline with tree-style formatting and spinner for active items; right pane (75%) shows streamed Claude response; bottom has multi-line textarea input (max 5 lines, Ctrl+Enter to submit, disabled while Claude working); action bar shows Approve/Cancel options. Implement Init(), Update(), View(), handleStreamEvent(), sendMessage(), shouldAutoReview() (detects Write to docs/prds/ or docs/designs/), triggerAutoReview() returning tea.Cmd, handleApprove(), addActivity(), and SetSize(). Forward events properly with backpressure handling (block on critical events init/done).",
+      "acceptanceCriteria": [
+        "Unit tests exist for ConversationModel Init() creating session and starting conversation",
+        "Unit tests exist for handleStreamEvent() with text event appending to response view",
+        "Unit tests exist for handleStreamEvent() with tool_use event adding to activity timeline",
+        "Unit tests exist for handleStreamEvent() with done event transitioning state and triggering auto-review when needed",
+        "Unit tests exist for handleApprove() marking session complete",
+        "Unit tests exist for Cancel handling marking session cancelled and stopping conversation",
+        "Unit tests exist for sendMessage() invoking Claude with --resume",
+        "Unit tests exist for shouldAutoReview() detecting Write to docs/prds/ and docs/designs/",
+        "Unit tests exist verifying activity timeline tool use formatting with shortened paths (\u003e30 chars shows .../last/two.go)",
+        "Unit tests exist verifying Task tool shows subagent description in activity",
+        "Unit tests exist verifying rapid events don't corrupt state",
+        "Unit tests exist verifying last activity marked done on tool_result",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t07",
+      "title": "Implement file naming interaction component",
+      "description": "Create internal/tui/views/filenaming.go with FileNamingModel for confirming document save location. Display suggested filename with options: Enter to save, 'e' to edit name (shows text input pre-filled), 'c' to cancel. When file exists, show warning and require 'o' to overwrite or 'e' to edit. Extract filename suggestion from Claude's response (pattern: 'saving this as `\u003cfilename\u003e`' or 'filename: \u003cfilename\u003e').",
+      "acceptanceCriteria": [
+        "Unit tests exist for FileNaming Enter key saving file",
+        "Unit tests exist for FileNaming 'e' key enabling editing mode with pre-filled input",
+        "Unit tests exist for FileNaming 'o' key overwriting when file exists",
+        "Unit tests exist for FileNaming 'c' key returning without saving",
+        "Unit tests exist verifying file exists warning is shown",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t08",
+      "title": "Update home view with new menu structure",
+      "description": "Modify internal/tui/views/home.go to implement the new menu layout with two sections: 'Define' ([p] Create PRD, [d] Create Design Doc) and 'Execute' ([c] Create Plan, [r] Run Plan). Update key handlers: 'p' sends GoToConversationMsg{Phase: PhasePRD}, 'd' sends GoToConversationMsg{Phase: PhaseDesign}, 'c' sends GoToFilePickerMsg{ForPlanCreation: true}, 'r' sends GoToPlanListMsg. Add MenuItem Description field and render descriptions next to menu items.",
+      "acceptanceCriteria": [
+        "Unit tests exist verifying 'p' key sends GoToConversationMsg with PhasePRD",
+        "Unit tests exist verifying 'd' key sends GoToConversationMsg with PhaseDesign",
+        "Unit tests exist verifying 'c' key sends GoToFilePickerMsg with ForPlanCreation:true",
+        "Unit tests exist verifying 'r' key sends GoToPlanListMsg",
+        "Unit tests exist verifying menu renders with Define and Execute sections",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t09",
+      "title": "Update running view with activity timeline and usage tracking",
+      "description": "Modify internal/tui/views/run.go to add activity timeline and token/cost tracking to the left panel. Add activities []ActivityEntry, taskTokens, totalTokens int64, and estimatedCost float64 fields. Update handleStreamEvent to track tool_use/tool_result events in activity timeline and extract usage from result events. Update renderLeftPanel to show: Header (task N/M, attempt, elapsed), Activity timeline (scrolling with tree formatting and spinner), Usage section (task tokens, plan cumulative tokens, estimated cost), and compact task list with status indicators. Implement formatTokens() (e.g., '12.4k'), estimateCost().",
+      "acceptanceCriteria": [
+        "Unit tests exist verifying tool_use events add to activity timeline",
+        "Unit tests exist verifying tool_result events mark last activity as done",
+        "Unit tests exist verifying usage extraction from result events",
+        "Unit tests exist verifying formatTokens() returns '12.4k' format for large numbers",
+        "Unit tests exist verifying left panel renders activity, usage, and compact task list",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t10",
+      "title": "Add TUI app support for conversation view and new messages",
+      "description": "Modify internal/tui/app.go to: add ViewConversation to View enum, add conversation views.ConversationModel field, handle GoToConversationMsg (creates ConversationModel with phase, transitions to ViewConversation), handle GoToFilePickerMsg.ForPlanCreation (starts in docs/designs/ if true, shows error if no .md files exist), propagate window size to conversation view, delegate messages to conversation view. Add ConversationOpts struct and RunWithConversation() function for CLI commands to launch directly into conversation mode.",
+      "acceptanceCriteria": [
+        "Unit tests exist verifying GoToConversationMsg transitions to ViewConversation with correct phase",
+        "Unit tests exist verifying GoToFilePickerMsg with ForPlanCreation starts in docs/designs/",
+        "Unit tests exist verifying error shown when no design docs exist for plan creation",
+        "Unit tests exist verifying window size propagates to conversation view",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t11",
+      "title": "Add GoToConversationMsg and update existing messages",
+      "description": "Modify internal/tui/msgs/messages.go to add: GoToConversationMsg with Phase field (session.Phase type), update GoToFilePickerMsg to include ForPlanCreation bool field. Import session package for Phase type.",
+      "acceptanceCriteria": [
+        "GoToConversationMsg struct exists with Phase field of type session.Phase",
+        "GoToFilePickerMsg has ForPlanCreation bool field",
+        "Code compiles with make build"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t12",
+      "title": "Implement rafa prd CLI command",
+      "description": "Create internal/cli/prd.go with prdCmd (rafa prd), prdResumeCmd (rafa prd resume [name]). Add --name flag for specifying PRD name. Check IsInitialized() and skillsInstalled() before proceeding. Launch TUI with ConversationOpts{Phase: PhasePRD, Name: prdName}. For resume: load session from storage, handle ErrSessionExpired by informing user and offering fresh start, pass ResumeFrom in ConversationOpts. Add skillsInstalled() helper checking for prd and technical-design skills in .claude/skills/.",
+      "acceptanceCriteria": [
+        "rafa prd command exists and launches TUI in PRD mode",
+        "rafa prd --name flag sets PRD name",
+        "rafa prd resume loads and resumes existing session",
+        "rafa prd resume \u003cname\u003e resumes specific named session",
+        "Error shown if rafa not initialized",
+        "Error shown if skills not installed",
+        "Session expiration handled with fallback to fresh session",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t13",
+      "title": "Implement rafa design CLI command",
+      "description": "Create internal/cli/design.go with designCmd (rafa design), designResumeCmd (rafa design resume [name]). Add --name and --from flags. Validate --from path exists if provided. Launch TUI with ConversationOpts{Phase: PhaseDesign, Name: designName, FromDoc: designFrom}. For resume: load session from storage with session expiration handling.",
+      "acceptanceCriteria": [
+        "rafa design command exists and launches TUI in design mode",
+        "rafa design --name flag sets design name",
+        "rafa design --from flag sets source PRD path",
+        "Error shown if --from path doesn't exist",
+        "rafa design resume loads and resumes existing session",
+        "rafa design resume \u003cname\u003e resumes specific named session",
+        "Error shown if rafa not initialized",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t14",
+      "title": "Implement rafa sessions CLI command",
+      "description": "Create internal/cli/sessions.go with sessionsCmd (rafa sessions) that lists all active sessions. Use tabwriter for formatted output with columns: PHASE, NAME, STATUS, UPDATED. Implement formatAge() helper returning 'just now', 'Xm ago', 'Xh ago', 'Xd ago' format.",
+      "acceptanceCriteria": [
+        "rafa sessions command lists all sessions in tabular format",
+        "Output includes PHASE, NAME, STATUS, UPDATED columns",
+        "formatAge() returns correct relative time strings",
+        "Shows 'No active sessions.' when none exist",
+        "Error shown if rafa not initialized",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t15",
+      "title": "Register new CLI commands in root",
+      "description": "Modify internal/cli/root.go to register prdCmd, designCmd, and sessionsCmd with rootCmd.AddCommand().",
+      "acceptanceCriteria": [
+        "rafa prd command accessible from CLI",
+        "rafa design command accessible from CLI",
+        "rafa sessions command accessible from CLI",
+        "make build succeeds"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t16",
+      "title": "Implement session expiration detection and handling",
+      "description": "Add ErrSessionExpired error to internal/ai/conversation.go. Implement isSessionExpiredError() checking for 'session not found', 'session expired', 'invalid session' in Claude CLI output. Update StartConversation() to detect expiration from first event/error. Update CLI resume commands to catch ErrSessionExpired and offer fresh session start.",
+      "acceptanceCriteria": [
+        "ErrSessionExpired error type exists",
+        "isSessionExpiredError() detects expiration messages from CLI output",
+        "StartConversation() returns ErrSessionExpired when session invalid",
+        "Resume commands handle ErrSessionExpired by starting fresh session with user notification",
+        "Unit tests exist for session expiration detection",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t17",
+      "title": "Implement auto-review flow in conversation view",
+      "description": "Update ConversationModel to trigger automatic review after document drafting. When shouldAutoReview() returns true (detected Write to docs/prds/ or docs/designs/), call triggerAutoReview() which sends the appropriate review prompt ('/prd-review' for PRD phase, '/technical-design-review' for design phase). Transition to StateReviewing, show 'Running automatic review...' in activity, and handle review completion by transitioning to StateWaitingApproval.",
+      "acceptanceCriteria": [
+        "Auto-review triggers after Write to docs/prds/ for PRD phase",
+        "Auto-review triggers after Write to docs/designs/ for design phase",
+        "Correct review skill invoked based on phase",
+        "State transitions: Conversing -\u003e Reviewing -\u003e WaitingApproval",
+        "Activity shows 'Running automatic review...' during review",
+        "Unit tests exist for auto-review trigger and state transitions",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t18",
+      "title": "Implement phase completion flow",
+      "description": "When user approves in conversation view: save document using filename from Claude's suggestion (or default pattern \u003cphase\u003e-\u003ctimestamp\u003e.md), persist session with StatusCompleted, show completion message with checkmark ('PRD saved to docs/prds/user-auth.md'), show next steps (how to create design, return to menu), and offer 'm' key to return to menu. Never auto-progress to next phase.",
+      "acceptanceCriteria": [
+        "Approve saves document to correct location",
+        "Session persisted with completed status",
+        "Completion message shows document path",
+        "Next steps shown for continuing workflow",
+        "'m' key returns to home menu",
+        "No auto-progression to next phase",
+        "Unit tests exist for completion flow",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t19",
+      "title": "Implement conversational plan creation flow",
+      "description": "Update plan creation to be conversational: user selects design doc via file picker (starting in docs/designs/), optional text input for initial instructions/constraints, Claude extracts tasks conversationally with user able to refine ('split task 3', 'add migration task', 'remove testing task'), and approve saves plan using existing plan.SavePlan() infrastructure. No auto-review step for plan creation.",
+      "acceptanceCriteria": [
+        "File picker starts in docs/designs/ for plan creation",
+        "Error shown if no .md files in docs/designs/",
+        "Optional instructions input before task extraction",
+        "User can send messages to refine extracted tasks",
+        "Approve saves plan using existing infrastructure",
+        "No auto-review for plan creation",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t20",
+      "title": "Add error recovery and network handling",
+      "description": "Implement error recovery in conversation flow: context cancelled mid-stream persists session, Claude process exit non-zero surfaces error to user, invalid JSON in session file shows graceful error and offers fresh start, network timeout during skills fetch fails and cleans up, Ctrl+C during init leaves no partial state.",
+      "acceptanceCriteria": [
+        "Unit tests exist for network drop during conversation (context cancelled, session persisted)",
+        "Unit tests exist for Claude CLI crash (non-zero exit, error surfaced)",
+        "Unit tests exist for corrupt session JSON (graceful error, fresh start offered)",
+        "Unit tests exist for session resume with expired session (falls back to fresh)",
+        "Unit tests exist for partial skills extraction (cleanup on network failure)",
+        "Unit tests exist for init interrupted (no partial .rafa/ left)",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t21",
+      "title": "Integration tests for end-to-end flows",
+      "description": "Create integration tests verifying: skills installation from GitHub (real HTTP, verify all 5 skills), conversation resume with --resume flag passed to Claude CLI (mock CLI), init creates directories and installs skills, deinit removes skills and .rafa/.",
+      "acceptanceCriteria": [
+        "Integration test for skills installation from GitHub (can be skipped in CI without network)",
+        "Integration test for conversation resume passing --resume flag",
+        "Integration test for init end-to-end",
+        "Integration test for deinit end-to-end",
+        "make test passes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    }
+  ]
+}
