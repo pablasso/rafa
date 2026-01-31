@@ -32,6 +32,7 @@ type HomeModel struct {
 	rafaExists bool
 	width      int
 	height     int
+	errorMsg   string // Temporary error message to display
 }
 
 // NewHomeModel creates a new HomeModel, checking if rafaDir exists.
@@ -240,8 +241,11 @@ func (m HomeModel) renderNormalView() string {
 	// Calculate vertical centering
 	// Status bar takes 1 line at bottom
 	statusBarHeight := 1
-	// Count content lines: title + tagline + spacing + menu lines + spacing
+	// Count content lines: title + tagline + spacing + menu lines + spacing + error (if any)
 	contentHeight := 2 + 2 + len(menuLines)
+	if m.errorMsg != "" {
+		contentHeight += 2 // error line + spacing
+	}
 	availableHeight := m.height - statusBarHeight
 
 	topPadding := (availableHeight - contentHeight) / 2
@@ -259,6 +263,13 @@ func (m HomeModel) renderNormalView() string {
 	b.WriteString(taglineLine)
 	b.WriteString("\n\n")
 	b.WriteString(menuBlock)
+
+	// Show error message if present
+	if m.errorMsg != "" {
+		b.WriteString("\n\n")
+		errorLine := styles.ErrorStyle.Render(m.errorMsg)
+		b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, errorLine))
+	}
 
 	// Calculate remaining space for bottom padding (above status bar)
 	currentLines := topPadding + contentHeight
@@ -338,4 +349,14 @@ func (m HomeModel) RafaExists() bool {
 // Cursor returns the current cursor position.
 func (m HomeModel) Cursor() int {
 	return m.cursor
+}
+
+// SetError sets an error message to display temporarily.
+func (m *HomeModel) SetError(msg string) {
+	m.errorMsg = msg
+}
+
+// Error returns the current error message.
+func (m HomeModel) Error() string {
+	return m.errorMsg
 }

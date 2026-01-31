@@ -488,11 +488,12 @@ func TestKeyboardNavigation(t *testing.T) {
 	})
 
 	t.Run("FilePicker Escape goes back", func(t *testing.T) {
-		repoRoot, rafaDir := setupTestEnv(t)
+		// Need design docs for "c" key (Create Plan) to go to FilePicker
+		repoRoot, rafaDir, _ := setupTestEnvWithDesignDoc(t, "# Test Design\n")
 		m := createTestModel(t, repoRoot, rafaDir)
 		sendWindowSize(t, &m, 80, 24)
 
-		// Go to FilePicker
+		// Go to FilePicker (via Create Plan which requires design docs)
 		cmd := sendKey(t, &m, "c")
 		msg := processCmd(cmd)
 		newModel, _ := m.Update(msg)

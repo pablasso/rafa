@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/pablasso/rafa/internal/demo"
 	"github.com/pablasso/rafa/internal/plan"
+	"github.com/pablasso/rafa/internal/session"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 	"github.com/pablasso/rafa/internal/tui/views"
 )
@@ -34,6 +35,7 @@ const (
 	ViewCreating
 	ViewPlanList
 	ViewRunning
+	ViewConversation
 )
 
 // Model is the main Bubble Tea model that orchestrates all views.
@@ -43,11 +45,12 @@ type Model struct {
 	height      int
 
 	// Sub-models for each view
-	home       views.HomeModel
-	filePicker views.FilePickerModel
-	creating   views.CreatingModel
-	planList   views.PlanListModel
-	running    views.RunningModel
+	home         views.HomeModel
+	filePicker   views.FilePickerModel
+	creating     views.CreatingModel
+	planList     views.PlanListModel
+	running      views.RunningModel
+	conversation views.ConversationModel
 
 	// Shared state
 	repoRoot string
@@ -122,6 +125,19 @@ func findRepoRoot(dir string) string {
 	}
 }
 
+// hasMarkdownFiles checks if a directory exists and contains at least one .md file.
+func hasMarkdownFiles(dir string) bool {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return false
+	}
+	pattern := filepath.Join(dir, "*.md")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return false
+	}
+	return len(matches) > 0
+}
+
 // demoStartMsg is sent when we need to start demo mode after receiving window size.
 type demoStartMsg struct{}
 
@@ -171,11 +187,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.home.SetSize(m.width, m.height)
 		return m, m.home.Init()
 
+	case msgs.GoToConversationMsg:
+		m.currentView = ViewConversation
+		m.conversation = views.NewConversationModel(views.ConversationConfig{
+			Phase: msg.Phase,
+		})
+		m.conversation.SetSize(m.width, m.height)
+		return m, m.conversation.Init()
+
 	case msgs.GoToFilePickerMsg:
 		m.currentView = ViewFilePicker
 		startDir := m.repoRoot
 		if msg.CurrentDir != "" {
 			startDir = msg.CurrentDir
+		}
+		// For plan creation, start in docs/designs/ and check for .md files
+		if msg.ForPlanCreation {
+			designsDir := filepath.Join(m.repoRoot, "docs", "designs")
+			// Check if docs/designs/ exists and has .md files
+			if hasMarkdownFiles(designsDir) {
+				startDir = designsDir
+			} else {
+				// No design docs exist, show error and return to home
+				m.currentView = ViewHome
+				m.home = views.NewHomeModel(m.rafaDir)
+				m.home.SetSize(m.width, m.height)
+				m.home.SetError("No design documents found in docs/designs/. Create a design first.")
+				return m, m.home.Init()
+			}
 		}
 		m.filePicker = views.NewFilePickerModel(startDir)
 		m.filePicker.SetSize(m.width, m.height)
@@ -288,6 +327,11 @@ func (m Model) propagateWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.running, cmd = m.running.Update(msg)
 		return m, cmd
+	case ViewConversation:
+		m.conversation.SetSize(msg.Width, msg.Height)
+		var cmd tea.Cmd
+		m.conversation, cmd = m.conversation.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -315,6 +359,10 @@ func (m Model) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.running, cmd = m.running.Update(msg)
 		return m, cmd
+	case ViewConversation:
+		var cmd tea.Cmd
+		m.conversation, cmd = m.conversation.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -337,6 +385,8 @@ func (m Model) View() string {
 		return m.planList.View()
 	case ViewRunning:
 		return m.running.View()
+	case ViewConversation:
+		return m.conversation.View()
 	}
 	return "Unknown view"
 }
@@ -353,4 +403,28 @@ func (m Model) renderTerminalTooSmall() string {
 		lipgloss.Center, lipgloss.Center,
 		msg,
 	)
+}
+
+// ConversationOpts configures launching directly into conversation mode.
+type ConversationOpts struct {
+	Phase session.Phase
+	Name  string
+}
+
+// RunWithConversation starts the TUI directly in conversation mode for CLI commands.
+func RunWithConversation(opts ConversationOpts) error {
+	m := initialModel()
+	m.currentView = ViewConversation
+	m.conversation = views.NewConversationModel(views.ConversationConfig{
+		Phase: opts.Phase,
+		Name:  opts.Name,
+	})
+
+	Program = tea.NewProgram(
+		m,
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
+	_, err := Program.Run()
+	return err
 }
