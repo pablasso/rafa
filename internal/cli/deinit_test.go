@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,6 +141,51 @@ func TestRunDeinit(t *testing.T) {
 		}
 		if !strings.Contains(string(content), "other-entry") {
 			t.Errorf("expected gitignore to still have other-entry, got %q", string(content))
+		}
+	})
+
+	t.Run("deinit completes even when skills removal fails", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		originalWd, _ := os.Getwd()
+		os.Chdir(tmpDir)
+		defer os.Chdir(originalWd)
+
+		// Mock skills installer that fails on uninstall
+		skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+			return &mockSkillsInstaller{
+				targetDir:    targetDir,
+				uninstallErr: errors.New("failed to remove skills"),
+			}
+		}
+
+		// Create .rafa directory structure
+		rafaPath := filepath.Join(tmpDir, ".rafa")
+		plansPath := filepath.Join(rafaPath, "plans")
+		if err := os.MkdirAll(plansPath, 0755); err != nil {
+			t.Fatalf("failed to create .rafa/plans: %v", err)
+		}
+
+		// Create .gitignore with rafa entries
+		if err := os.WriteFile(".gitignore", []byte(".rafa/**/*.lock\n.rafa/sessions/\n"), 0644); err != nil {
+			t.Fatalf("failed to create .gitignore: %v", err)
+		}
+
+		// Set force flag
+		oldForce := deinitForce
+		deinitForce = true
+		defer func() { deinitForce = oldForce }()
+
+		// Run deinit command - should succeed despite skills removal failure
+		err := runDeinit(nil, nil)
+		if err != nil {
+			t.Fatalf("runDeinit should succeed even when skills removal fails: %v", err)
+		}
+
+		// Verify .rafa directory was removed
+		if _, err := os.Stat(".rafa"); err == nil {
+			t.Error("expected .rafa directory to be removed")
+		} else if !os.IsNotExist(err) {
+			t.Errorf("unexpected error checking .rafa: %v", err)
 		}
 	})
 }

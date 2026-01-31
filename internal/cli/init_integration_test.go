@@ -159,8 +159,9 @@ func TestInitIntegration(t *testing.T) {
 
 // integrationTestSkillsInstaller simulates the real installer for integration tests.
 type integrationTestSkillsInstaller struct {
-	targetDir  string
-	shouldFail bool
+	targetDir           string
+	shouldFail          bool
+	shouldFailUninstall bool
 }
 
 func (i *integrationTestSkillsInstaller) Install() error {
@@ -184,6 +185,9 @@ func (i *integrationTestSkillsInstaller) Install() error {
 }
 
 func (i *integrationTestSkillsInstaller) Uninstall() error {
+	if i.shouldFailUninstall {
+		return os.ErrPermission // Simulate permission error
+	}
 	// Remove all skills
 	for _, skill := range skills.RequiredSkills {
 		skillDir := filepath.Join(i.targetDir, skill)

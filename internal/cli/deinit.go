@@ -46,7 +46,7 @@ func runDeinit(cmd *cobra.Command, args []string) error {
 
 	// Show confirmation unless --force
 	if !deinitForce {
-		fmt.Printf("This will delete .rafa/ (%d plans, %s). Continue? [y/N] ", planCount, formatSize(totalSize))
+		fmt.Printf("This will delete .rafa/ (%d plans, %s) and remove skills from .claude/skills/. Continue? [y/N] ", planCount, formatSize(totalSize))
 
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
@@ -77,7 +77,7 @@ func runDeinit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to update .gitignore: %w", err)
 	}
 
-	fmt.Println("Rafa has been removed from this repository.")
+	fmt.Println("Rafa has been removed from this repository (skills uninstalled from .claude/skills/).")
 	return nil
 }
 

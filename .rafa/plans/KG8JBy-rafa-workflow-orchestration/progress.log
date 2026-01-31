@@ -6,3 +6,5 @@
 {"timestamp":"2026-01-31T12:31:16.714849-06:00","event":"plan_started","data":{"plan_id":"KG8JBy"}}
 {"timestamp":"2026-01-31T12:31:16.715677-06:00","event":"task_started","data":{"attempt":1,"task_id":"t03"}}
 {"timestamp":"2026-01-31T12:37:25.953859-06:00","event":"task_completed","data":{"task_id":"t03"}}
+{"timestamp":"2026-01-31T12:37:26.346071-06:00","event":"task_started","data":{"attempt":1,"task_id":"t04"}}
+{"timestamp":"2026-01-31T12:40:56.583961-06:00","event":"task_completed","data":{"task_id":"t04"}}
