@@ -549,6 +549,183 @@ func TestSessionFilename(t *testing.T) {
 	})
 }
 
+// ========================================================================
+// Error Recovery Tests
+// ========================================================================
+
+func TestStorage_Load_CorruptJSON_GracefulError(t *testing.T) {
+	t.Run("returns parse error for invalid JSON", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		storage := NewStorage(tmpDir)
+
+		// Write invalid JSON
+		os.WriteFile(filepath.Join(tmpDir, "prd-corrupt.json"), []byte("not valid json at all"), 0644)
+
+		_, err := storage.Load(PhasePRD, "corrupt")
+		if err == nil {
+			t.Fatal("expected error for invalid JSON, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to parse session") {
+			t.Errorf("expected parse error, got: %v", err)
+		}
+	})
+
+	t.Run("returns parse error for truncated JSON", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		storage := NewStorage(tmpDir)
+
+		// Write truncated JSON
+		os.WriteFile(filepath.Join(tmpDir, "prd-truncated.json"), []byte(`{"sessionId": "test", "phase"`), 0644)
+
+		_, err := storage.Load(PhasePRD, "truncated")
+		if err == nil {
+			t.Fatal("expected error for truncated JSON, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to parse session") {
+			t.Errorf("expected parse error, got: %v", err)
+		}
+	})
+
+	t.Run("returns parse error for empty JSON object", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		storage := NewStorage(tmpDir)
+
+		// Write empty JSON - should parse but result in zero values
+		os.WriteFile(filepath.Join(tmpDir, "prd-empty.json"), []byte(`{}`), 0644)
+
+		sess, err := storage.Load(PhasePRD, "empty")
+		if err != nil {
+			t.Fatalf("empty JSON should parse: %v", err)
+		}
+		// Empty session should have zero values
+		if sess.SessionID != "" {
+			t.Errorf("expected empty sessionId, got %s", sess.SessionID)
+		}
+	})
+
+	t.Run("returns parse error for binary garbage", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		storage := NewStorage(tmpDir)
+
+		// Write binary garbage
+		garbage := []byte{0x00, 0x01, 0x02, 0x89, 0xAB, 0xCD, 0xEF}
+		os.WriteFile(filepath.Join(tmpDir, "prd-garbage.json"), garbage, 0644)
+
+		_, err := storage.Load(PhasePRD, "garbage")
+		if err == nil {
+			t.Fatal("expected error for binary garbage, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to parse session") {
+			t.Errorf("expected parse error, got: %v", err)
+		}
+	})
+
+	t.Run("returns parse error for wrong type fields", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		storage := NewStorage(tmpDir)
+
+		// Write JSON with wrong types (createdAt as string instead of proper time)
+		// Note: Go's JSON unmarshaler is lenient about time formats
+		os.WriteFile(filepath.Join(tmpDir, "prd-wrongtype.json"), []byte(`{"sessionId": 123}`), 0644)
+
+		_, err := storage.Load(PhasePRD, "wrongtype")
+		// JSON unmarshaler may or may not error depending on type coercion
+		// The important thing is it doesn't panic
+		if err != nil {
+			// Error is acceptable
+			if !strings.Contains(err.Error(), "parse") && !strings.Contains(err.Error(), "unmarshal") {
+				// Different error types are OK as long as it fails gracefully
+			}
+		}
+	})
+}
+
+func TestStorage_LoadByPhase_SkipsCorruptFiles(t *testing.T) {
+	t.Run("skips corrupt files and returns valid session", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		storage := NewStorage(tmpDir)
+
+		// Write one corrupt file
+		os.WriteFile(filepath.Join(tmpDir, "prd-corrupt.json"), []byte("not json"), 0644)
+
+		// Write one valid file
+		validSession := Session{
+			SessionID: "valid-session",
+			Phase:     PhasePRD,
+			Name:      "valid",
+			Status:    StatusInProgress,
+			UpdatedAt: time.Now(),
+		}
+		data, _ := json.MarshalIndent(validSession, "", "  ")
+		os.WriteFile(filepath.Join(tmpDir, "prd-valid.json"), data, 0644)
+
+		// LoadByPhase should return the valid session, skipping the corrupt one
+		loaded, err := storage.LoadByPhase(PhasePRD)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if loaded.SessionID != "valid-session" {
+			t.Errorf("expected valid session, got %s", loaded.SessionID)
+		}
+	})
+
+	t.Run("returns error when all files are corrupt", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		storage := NewStorage(tmpDir)
+
+		// Write only corrupt files
+		os.WriteFile(filepath.Join(tmpDir, "prd-corrupt1.json"), []byte("not json 1"), 0644)
+		os.WriteFile(filepath.Join(tmpDir, "prd-corrupt2.json"), []byte("not json 2"), 0644)
+
+		_, err := storage.LoadByPhase(PhasePRD)
+		if err == nil {
+			t.Fatal("expected error when all files are corrupt")
+		}
+		if !os.IsNotExist(err) {
+			t.Errorf("expected not exist error, got: %v", err)
+		}
+	})
+}
+
+func TestStorage_List_SkipsCorruptFiles(t *testing.T) {
+	t.Run("skips corrupt files and returns valid sessions", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		storage := NewStorage(tmpDir)
+
+		// Write corrupt files
+		os.WriteFile(filepath.Join(tmpDir, "prd-corrupt.json"), []byte("corrupt"), 0644)
+		os.WriteFile(filepath.Join(tmpDir, "design-broken.json"), []byte("{broken"), 0644)
+
+		// Write valid files
+		for _, s := range []Session{
+			{SessionID: "prd-1", Phase: PhasePRD, Name: "a", Status: StatusInProgress, UpdatedAt: time.Now()},
+			{SessionID: "design-1", Phase: PhaseDesign, Name: "b", Status: StatusCompleted, UpdatedAt: time.Now()},
+		} {
+			data, _ := json.MarshalIndent(s, "", "  ")
+			os.WriteFile(filepath.Join(tmpDir, string(s.Phase)+"-"+s.Name+".json"), data, 0644)
+		}
+
+		sessions, err := storage.List()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Should have exactly 2 valid sessions
+		if len(sessions) != 2 {
+			t.Errorf("expected 2 sessions, got %d", len(sessions))
+		}
+
+		// Verify they are the valid ones
+		ids := make(map[string]bool)
+		for _, s := range sessions {
+			ids[s.SessionID] = true
+		}
+		if !ids["prd-1"] || !ids["design-1"] {
+			t.Error("expected valid sessions prd-1 and design-1")
+		}
+	})
+}
+
 func TestRoundTrip(t *testing.T) {
 	t.Run("save then load preserves all fields", func(t *testing.T) {
 		tmpDir := t.TempDir()

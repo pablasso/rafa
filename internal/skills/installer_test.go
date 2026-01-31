@@ -811,6 +811,166 @@ func TestRequiredSkills(t *testing.T) {
 	})
 }
 
+// ========================================================================
+// Error Recovery Tests - Network Failure Cleanup
+// ========================================================================
+
+func TestInstaller_Install_NetworkFailure_CleansUp(t *testing.T) {
+	t.Run("cleans up partial extraction on network timeout", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Simulate a network error (connection timeout, etc.)
+		client := &mockHTTPClient{
+			err: errors.New("connection timeout: dial tcp i/o timeout"),
+		}
+
+		installer := NewInstaller(tmpDir)
+		installer.SetHTTPClient(client)
+
+		err := installer.Install()
+		if err == nil {
+			t.Fatal("expected error on network failure")
+		}
+
+		// Verify no partial directories left behind
+		for _, skill := range RequiredSkills {
+			skillDir := filepath.Join(tmpDir, skill)
+			if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+				t.Errorf("skill directory %q should not exist after network failure", skill)
+			}
+		}
+	})
+
+	t.Run("cleans up partial extraction on connection reset", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Simulate connection reset
+		client := &mockHTTPClient{
+			err: errors.New("read: connection reset by peer"),
+		}
+
+		installer := NewInstaller(tmpDir)
+		installer.SetHTTPClient(client)
+
+		err := installer.Install()
+		if err == nil {
+			t.Fatal("expected error on connection reset")
+		}
+
+		// Should leave no partial state
+		entries, _ := os.ReadDir(tmpDir)
+		if len(entries) > 0 {
+			t.Errorf("expected empty directory after failure, found %d entries", len(entries))
+		}
+	})
+
+	t.Run("cleans up on HTTP error mid-download", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Create a response that returns error partway through
+		// Simulate by returning a reader that errors
+		client := &mockHTTPClient{
+			response: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(&errorReader{err: errors.New("network dropped")}),
+			},
+		}
+
+		installer := NewInstaller(tmpDir)
+		installer.SetHTTPClient(client)
+
+		err := installer.Install()
+		if err == nil {
+			t.Fatal("expected error on mid-download failure")
+		}
+
+		// Should clean up any partial extraction
+		for _, skill := range RequiredSkills {
+			skillDir := filepath.Join(tmpDir, skill)
+			if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+				t.Errorf("skill directory %q should be cleaned up after download failure", skill)
+			}
+		}
+	})
+
+	t.Run("cleans up when server returns 5xx error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		client := &mockHTTPClient{
+			response: &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       io.NopCloser(strings.NewReader("Service Unavailable")),
+			},
+		}
+
+		installer := NewInstaller(tmpDir)
+		installer.SetHTTPClient(client)
+
+		err := installer.Install()
+		if err == nil {
+			t.Fatal("expected error on 503")
+		}
+		if !strings.Contains(err.Error(), "HTTP 503") {
+			t.Errorf("expected HTTP 503 error, got: %v", err)
+		}
+
+		// No partial state
+		entries, _ := os.ReadDir(tmpDir)
+		skillDirs := 0
+		for _, e := range entries {
+			if e.IsDir() {
+				for _, skill := range RequiredSkills {
+					if e.Name() == skill {
+						skillDirs++
+					}
+				}
+			}
+		}
+		if skillDirs > 0 {
+			t.Errorf("expected no skill directories after HTTP error, found %d", skillDirs)
+		}
+	})
+
+	t.Run("cleans up on gzip decompression error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Send data that starts like gzip but is corrupted
+		corruptGzip := []byte{0x1f, 0x8b, 0x08, 0x00, 0xFF, 0xFF, 0xFF, 0xFF}
+
+		client := &mockHTTPClient{
+			response: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewReader(corruptGzip)),
+			},
+		}
+
+		installer := NewInstaller(tmpDir)
+		installer.SetHTTPClient(client)
+
+		err := installer.Install()
+		if err == nil {
+			t.Fatal("expected error on corrupt gzip")
+		}
+
+		// Should clean up
+		for _, skill := range RequiredSkills {
+			skillDir := filepath.Join(tmpDir, skill)
+			if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+				t.Errorf("skill directory %q should be cleaned up after gzip error", skill)
+			}
+		}
+	})
+}
+
+// errorReader is a reader that returns an error after some data.
+type errorReader struct {
+	err error
+}
+
+func (e *errorReader) Read(p []byte) (int, error) {
+	return 0, e.err
+}
+
 func TestInstaller_ExtractTarball_Security(t *testing.T) {
 	t.Run("rejects paths with parent directory traversal", func(t *testing.T) {
 		tmpDir := t.TempDir()

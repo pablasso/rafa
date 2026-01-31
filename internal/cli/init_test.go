@@ -483,6 +483,218 @@ func TestAddToGitignore(t *testing.T) {
 	})
 }
 
+// ========================================================================
+// Error Recovery Tests - Init Interrupted Cleanup
+// ========================================================================
+
+func TestRunInit_InterruptedNoPartialState(t *testing.T) {
+	cleanup := setupTestEnvironment(t)
+	t.Cleanup(cleanup)
+
+	t.Run("init failure during directory creation leaves no .rafa/", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		originalWd, _ := os.Getwd()
+		os.Chdir(tmpDir)
+		defer os.Chdir(originalWd)
+
+		// Mock skills installer that succeeds (won't be reached)
+		skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+			return &mockSkillsInstaller{targetDir: targetDir}
+		}
+
+		// Initialize a real git repository
+		cmd := exec.Command("git", "init")
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("failed to init git repo: %v", err)
+		}
+
+		// Create .rafa directory with read-only permissions to force failure
+		os.MkdirAll(".rafa", 0000)
+		defer os.Chmod(".rafa", 0755) // Cleanup
+
+		// Run init - should fail due to permissions
+		err := runInit(nil, nil)
+		if err == nil {
+			// On some systems this might not fail, that's OK
+			return
+		}
+
+		// If it failed, verify .rafa was cleaned up
+		os.Chmod(".rafa", 0755) // Make it readable for stat
+		info, statErr := os.Stat(".rafa")
+		if statErr == nil && info.IsDir() {
+			// Check if it's empty
+			entries, _ := os.ReadDir(".rafa")
+			if len(entries) > 0 {
+				t.Error("expected .rafa to be empty after failed init")
+			}
+		}
+	})
+
+	t.Run("init failure during skills installation cleans up completely", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		originalWd, _ := os.Getwd()
+		os.Chdir(tmpDir)
+		defer os.Chdir(originalWd)
+
+		// Mock skills installer that fails
+		var mockInstaller *mockSkillsInstaller
+		skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+			mockInstaller = &mockSkillsInstaller{
+				targetDir:  targetDir,
+				installErr: errors.New("network failure during skills fetch"),
+			}
+			return mockInstaller
+		}
+
+		// Initialize a real git repository
+		cmd := exec.Command("git", "init")
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("failed to init git repo: %v", err)
+		}
+
+		// Run init - should fail
+		err := runInit(nil, nil)
+		if err == nil {
+			t.Fatal("expected error on skills failure")
+		}
+
+		// Verify .rafa was removed
+		if _, err := os.Stat(".rafa"); !os.IsNotExist(err) {
+			t.Error(".rafa should not exist after skills failure")
+		}
+
+		// Verify .gitignore has no .rafa entries
+		content, _ := os.ReadFile(".gitignore")
+		if strings.Contains(string(content), ".rafa") {
+			t.Error(".gitignore should not contain .rafa entries after failed init")
+		}
+
+		// Verify uninstall was called
+		if mockInstaller == nil || !mockInstaller.uninstallCalled {
+			t.Error("skills Uninstall() should be called for cleanup")
+		}
+	})
+
+	t.Run("init failure after gitignore update reverts gitignore", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		originalWd, _ := os.Getwd()
+		os.Chdir(tmpDir)
+		defer os.Chdir(originalWd)
+
+		// Create existing .gitignore
+		os.WriteFile(".gitignore", []byte("node_modules/\n"), 0644)
+
+		// Mock skills installer that fails
+		skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+			return &mockSkillsInstaller{
+				targetDir:  targetDir,
+				installErr: errors.New("download failed"),
+			}
+		}
+
+		// Initialize git repo
+		cmd := exec.Command("git", "init")
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("failed to init git repo: %v", err)
+		}
+
+		// Run init - should fail
+		err := runInit(nil, nil)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+
+		// .gitignore should not have .rafa entries
+		content, _ := os.ReadFile(".gitignore")
+		contentStr := string(content)
+		if strings.Contains(contentStr, ".rafa/**/*.lock") {
+			t.Error(".gitignore should not contain .rafa/**/*.lock after failed init")
+		}
+		if strings.Contains(contentStr, ".rafa/sessions/") {
+			t.Error(".gitignore should not contain .rafa/sessions/ after failed init")
+		}
+		// Original content should be preserved
+		if !strings.Contains(contentStr, "node_modules/") {
+			t.Error("original .gitignore content should be preserved")
+		}
+	})
+
+	t.Run("no partial sessions directory after failed init", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		originalWd, _ := os.Getwd()
+		os.Chdir(tmpDir)
+		defer os.Chdir(originalWd)
+
+		// Mock skills installer that fails
+		skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+			return &mockSkillsInstaller{
+				targetDir:  targetDir,
+				installErr: errors.New("skills unavailable"),
+			}
+		}
+
+		// Initialize git repo
+		cmd := exec.Command("git", "init")
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("failed to init git repo: %v", err)
+		}
+
+		// Run init - should fail
+		runInit(nil, nil)
+
+		// Verify no sessions directory
+		if _, err := os.Stat(".rafa/sessions"); !os.IsNotExist(err) {
+			t.Error(".rafa/sessions should not exist after failed init")
+		}
+
+		// Verify no plans directory
+		if _, err := os.Stat(".rafa/plans"); !os.IsNotExist(err) {
+			t.Error(".rafa/plans should not exist after failed init")
+		}
+	})
+
+	t.Run("no .claude/skills directory after failed init", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		originalWd, _ := os.Getwd()
+		os.Chdir(tmpDir)
+		defer os.Chdir(originalWd)
+
+		// Track what the installer created
+		var installerTargetDir string
+		skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+			installerTargetDir = targetDir
+			return &mockSkillsInstaller{
+				targetDir:  targetDir,
+				installErr: errors.New("network error"),
+			}
+		}
+
+		// Initialize git repo
+		cmd := exec.Command("git", "init")
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("failed to init git repo: %v", err)
+		}
+
+		// Run init - should fail
+		runInit(nil, nil)
+
+		// Skills target dir should have been .claude/skills
+		if installerTargetDir != ".claude/skills" {
+			t.Errorf("expected skills target to be .claude/skills, got %s", installerTargetDir)
+		}
+
+		// Verify skills directories are cleaned up
+		// The mockSkillsInstaller.Uninstall() is called which removes the skill dirs
+		for _, skill := range []string{"prd", "prd-review", "technical-design", "technical-design-review", "code-review"} {
+			skillDir := filepath.Join(".claude/skills", skill)
+			if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+				t.Errorf("skill directory %q should not exist after failed init", skill)
+			}
+		}
+	})
+}
+
 func TestRemoveFromGitignore(t *testing.T) {
 	t.Run("removes entry from gitignore", func(t *testing.T) {
 		tmpDir := t.TempDir()

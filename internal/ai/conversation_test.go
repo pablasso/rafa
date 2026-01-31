@@ -503,3 +503,164 @@ func TestParseStreamEvent_LargeTokenCounts(t *testing.T) {
 		t.Errorf("expected CostUSD=150.25, got %f", event.CostUSD)
 	}
 }
+
+// ========================================================================
+// Error Recovery Tests - Session Expiration Detection
+// ========================================================================
+
+func TestIsSessionExpiredError_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		// Case insensitive matching
+		{"lowercase session expired", `session expired`, true},
+		{"uppercase SESSION EXPIRED", `SESSION EXPIRED`, true},
+		{"mixed case Session Expired", `Session Expired`, true},
+		{"session not found lowercase", `session not found`, true},
+		{"Session Not Found title case", `Session Not Found`, true},
+		{"invalid session lowercase", `invalid session`, true},
+		{"Invalid Session title case", `Invalid Session`, true},
+
+		// Partial matches in longer strings
+		{"session expired in sentence", `The session expired while waiting`, true},
+		{"session not found with prefix", `Error: session not found`, true},
+		{"invalid session with suffix", `invalid session - please restart`, true},
+
+		// Non-matching cases
+		{"unrelated error", `connection timeout`, false},
+		{"empty string", ``, false},
+		{"contains session but not error", `session started`, false},
+		{"contains expired but not session", `token expired`, false},
+		{"similar but different", `session_not_found`, false}, // underscore
+		{"JSON error response", `{"error": "rate limit exceeded"}`, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isSessionExpiredError(tt.input)
+			if result != tt.expected {
+				t.Errorf("isSessionExpiredError(%q) = %v, want %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsSessionExpiredEvent_AllErrorTypes(t *testing.T) {
+	tests := []struct {
+		name     string
+		event    StreamEvent
+		expected bool
+	}{
+		{
+			name:     "explicit SessionExpired flag",
+			event:    StreamEvent{Type: "error", SessionExpired: true},
+			expected: true,
+		},
+		{
+			name:     "error type with session expired text",
+			event:    StreamEvent{Type: "error", Text: "session expired"},
+			expected: true,
+		},
+		{
+			name:     "error type with session not found text",
+			event:    StreamEvent{Type: "error", Text: "session not found"},
+			expected: true,
+		},
+		{
+			name:     "error type with invalid session text",
+			event:    StreamEvent{Type: "error", Text: "invalid session"},
+			expected: true,
+		},
+		{
+			name:     "non-error type with session expired text",
+			event:    StreamEvent{Type: "text", Text: "session expired"},
+			expected: false,
+		},
+		{
+			name:     "error type with unrelated text",
+			event:    StreamEvent{Type: "error", Text: "network timeout"},
+			expected: false,
+		},
+		{
+			name:     "done event",
+			event:    StreamEvent{Type: "done"},
+			expected: false,
+		},
+		{
+			name:     "init event",
+			event:    StreamEvent{Type: "init"},
+			expected: false,
+		},
+		{
+			name:     "tool_use event",
+			event:    StreamEvent{Type: "tool_use"},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsSessionExpiredEvent(tt.event)
+			if result != tt.expected {
+				t.Errorf("IsSessionExpiredEvent(%+v) = %v, want %v", tt.event, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseStreamEvent_ErrorResultEvent(t *testing.T) {
+	t.Run("result with is_error true returns error type", func(t *testing.T) {
+		input := `{"type":"result","is_error":true,"error":"command failed with exit code 1"}`
+		event := parseStreamEvent(input)
+
+		if event.Type != "error" {
+			t.Errorf("expected Type='error', got %q", event.Type)
+		}
+	})
+
+	t.Run("result with is_error false returns done type", func(t *testing.T) {
+		input := `{"type":"result","is_error":false,"session_id":"test"}`
+		event := parseStreamEvent(input)
+
+		if event.Type != "done" {
+			t.Errorf("expected Type='done', got %q", event.Type)
+		}
+	})
+
+	t.Run("result without is_error field returns done type", func(t *testing.T) {
+		input := `{"type":"result","session_id":"test"}`
+		event := parseStreamEvent(input)
+
+		if event.Type != "done" {
+			t.Errorf("expected Type='done', got %q", event.Type)
+		}
+	})
+}
+
+func TestParseStreamEvent_StreamReadError(t *testing.T) {
+	// Test that malformed JSON in stream doesn't crash
+	malformedInputs := []string{
+		`{"type":"stream_event","event":null}`,
+		`{"type":"assistant","message":null}`,
+		`{"type":"user","message":null}`,
+		`{"type":"result","usage":null}`,
+		`{"type":"system","subtype":null}`,
+		`{"type":null}`,
+		`null`,
+		`[]`,
+		`""`,
+		`123`,
+	}
+
+	for _, input := range malformedInputs {
+		t.Run("malformed: "+input, func(t *testing.T) {
+			// Should not panic
+			event := parseStreamEvent(input)
+			// Type should be empty for unrecognized input
+			// (or possibly the event type if the JSON is partially valid)
+			_ = event // Just verify no panic
+		})
+	}
+}

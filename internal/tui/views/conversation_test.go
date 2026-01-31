@@ -2237,3 +2237,394 @@ func TestConversationModel_ReturnToHomeCmd(t *testing.T) {
 		t.Errorf("expected GoToHomeMsg, got %T", msg)
 	}
 }
+
+// ========================================================================
+// Error Recovery Tests
+// ========================================================================
+
+// Tests for network drop during conversation (context cancelled, session persisted)
+func TestConversationModel_ContextCancelled_SessionPersisted(t *testing.T) {
+	t.Run("session is persisted when context is cancelled mid-stream", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		// Set up storage to track saves
+		storage := &mockSessionStorage{}
+		m.SetStorage(storage)
+
+		// Simulate receiving an init event with session ID
+		initEvent := ai.StreamEvent{Type: "init", SessionID: "test-session-123"}
+		m.handleStreamEvent(initEvent)
+
+		// Verify session ID was captured
+		if m.Session().SessionID != "test-session-123" {
+			t.Errorf("expected session ID to be test-session-123, got %s", m.Session().SessionID)
+		}
+
+		// Simulate cancellation (Ctrl+C)
+		m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+		// Session should be cancelled
+		if m.Session().Status != session.StatusCancelled {
+			t.Errorf("expected session status to be cancelled, got %v", m.Session().Status)
+		}
+
+		// Session ID should still be present (for potential resume)
+		if m.Session().SessionID != "test-session-123" {
+			t.Error("session ID should be preserved after cancellation")
+		}
+	})
+
+	t.Run("session ID is captured before context cancellation", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		// Initially no session ID
+		if m.Session().SessionID != "" {
+			t.Error("session ID should be empty initially")
+		}
+
+		// Receive init event with session ID
+		m.handleStreamEvent(ai.StreamEvent{Type: "init", SessionID: "captured-id"})
+
+		// Verify ID was captured
+		if m.Session().SessionID != "captured-id" {
+			t.Errorf("expected session ID to be captured-id, got %s", m.Session().SessionID)
+		}
+
+		// Cancel context
+		m.cancel()
+
+		// Session ID should still be available
+		if m.Session().SessionID != "captured-id" {
+			t.Error("session ID should persist after context cancellation")
+		}
+	})
+}
+
+// Tests for Claude CLI crash (non-zero exit, error surfaced)
+func TestConversationModel_ClaudeCLICrash_ErrorSurfaced(t *testing.T) {
+	t.Run("error is surfaced to user when Claude returns error event", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+		m.isThinking = true
+
+		// Simulate error event from Claude CLI crash
+		errorEvent := ai.StreamEvent{Type: "error", Text: "process exited with non-zero status"}
+		m.handleStreamEvent(errorEvent)
+
+		// Thinking should stop
+		if m.isThinking {
+			t.Error("expected isThinking to be false after error")
+		}
+
+		// Error should be in activities
+		activities := m.Activities()
+		found := false
+		for _, a := range activities {
+			if strings.Contains(a.Text, "Error:") && strings.Contains(a.Text, "non-zero") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("expected error message to appear in activities")
+		}
+	})
+
+	t.Run("ConversationErrorMsg surfaces errors to user", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		// Simulate receiving a conversation error
+		errMsg := ConversationErrorMsg{Err: fmt.Errorf("Claude CLI exited with code 1")}
+		newM, _ := m.Update(errMsg)
+
+		// State should be cancelled
+		if newM.State() != StateCancelled {
+			t.Errorf("expected state to be StateCancelled, got %d", newM.State())
+		}
+
+		// Error should appear in activities
+		activities := newM.Activities()
+		found := false
+		for _, a := range activities {
+			if strings.Contains(a.Text, "Claude CLI exited") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("expected error message in activities")
+		}
+	})
+
+	t.Run("multiple errors are accumulated in activities", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		// Send multiple error events
+		m.handleStreamEvent(ai.StreamEvent{Type: "error", Text: "first error"})
+		m.handleStreamEvent(ai.StreamEvent{Type: "error", Text: "second error"})
+
+		activities := m.Activities()
+		errorCount := 0
+		for _, a := range activities {
+			if strings.Contains(a.Text, "Error:") {
+				errorCount++
+			}
+		}
+		if errorCount < 2 {
+			t.Errorf("expected at least 2 error activities, got %d", errorCount)
+		}
+	})
+}
+
+// Tests for corrupt session JSON (graceful error, fresh start offered)
+func TestConversationModel_CorruptSessionJSON_GracefulError(t *testing.T) {
+	t.Run("ConversationErrorMsg from corrupt session triggers cancelled state", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		// Simulate error from loading corrupt session
+		errMsg := ConversationErrorMsg{Err: fmt.Errorf("failed to parse session: invalid JSON")}
+		newM, _ := m.Update(errMsg)
+
+		// Should transition to cancelled state
+		if newM.State() != StateCancelled {
+			t.Errorf("expected state to be StateCancelled, got %d", newM.State())
+		}
+
+		// Error should be visible
+		activities := newM.Activities()
+		found := false
+		for _, a := range activities {
+			if strings.Contains(a.Text, "invalid JSON") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("expected error about invalid JSON in activities")
+		}
+	})
+}
+
+// Tests for session resume with expired session (falls back to fresh)
+func TestConversationModel_ExpiredSessionResume_FallbackToFresh(t *testing.T) {
+	t.Run("expired session detection transitions to StateSessionExpired", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		// Simulate session expired error
+		expiredEvent := ai.StreamEvent{Type: "error", Text: "session expired", SessionExpired: true}
+		m.handleStreamEvent(expiredEvent)
+
+		if m.State() != StateSessionExpired {
+			t.Errorf("expected StateSessionExpired, got %d", m.State())
+		}
+	})
+
+	t.Run("expired session allows starting fresh with 'n' key", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+		m.state = StateSessionExpired
+		m.session.SessionID = "old-expired-session"
+
+		// Press 'n' to start fresh
+		newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+
+		// Should transition back to conversing
+		if newM.State() != StateConversing {
+			t.Errorf("expected StateConversing after 'n', got %d", newM.State())
+		}
+
+		// Session ID should be cleared
+		if newM.Session().SessionID != "" {
+			t.Error("session ID should be cleared for fresh start")
+		}
+
+		// Should have a command to start new conversation
+		if cmd == nil {
+			t.Error("expected command to start new conversation")
+		}
+	})
+
+	t.Run("session not found error detected from text", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		// Simulate error with "session not found" text
+		errorEvent := ai.StreamEvent{Type: "error", Text: "session not found"}
+		m.handleStreamEvent(errorEvent)
+
+		if m.State() != StateSessionExpired {
+			t.Errorf("expected StateSessionExpired for 'session not found', got %d", m.State())
+		}
+	})
+
+	t.Run("invalid session error detected from text", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		// Simulate error with "invalid session" text
+		errorEvent := ai.StreamEvent{Type: "error", Text: "invalid session"}
+		m.handleStreamEvent(errorEvent)
+
+		if m.State() != StateSessionExpired {
+			t.Errorf("expected StateSessionExpired for 'invalid session', got %d", m.State())
+		}
+	})
+
+	t.Run("ErrSessionExpired from ConversationErrorMsg transitions to expired state", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		errMsg := ConversationErrorMsg{Err: ai.ErrSessionExpired}
+		newM, _ := m.Update(errMsg)
+
+		if newM.State() != StateSessionExpired {
+			t.Errorf("expected StateSessionExpired, got %d", newM.State())
+		}
+
+		// Session status should NOT be cancelled for expired (allows fresh start)
+		if newM.Session().Status == session.StatusCancelled {
+			t.Error("session should not be marked cancelled for expiration")
+		}
+	})
+}
+
+// Tests for fresh session start after error
+func TestConversationModel_StartFreshSession_ClearsState(t *testing.T) {
+	t.Run("fresh session clears all previous state", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+
+		// Add some state
+		m.session.SessionID = "old-session"
+		m.addActivity("old activity", 0)
+		m.responseText.WriteString("old response")
+		m.state = StateSessionExpired
+
+		// Start fresh
+		newM, _ := m.handleStartFreshSession()
+
+		// State should be reset
+		if newM.State() != StateConversing {
+			t.Errorf("expected StateConversing, got %d", newM.State())
+		}
+
+		// Session ID should be cleared
+		if newM.Session().SessionID != "" {
+			t.Error("session ID should be cleared")
+		}
+
+		// Activities should be cleared (only new "Starting fresh" activity)
+		activities := newM.Activities()
+		if len(activities) != 1 {
+			t.Errorf("expected 1 activity after fresh start, got %d", len(activities))
+		}
+		if !strings.Contains(activities[0].Text, "Starting fresh") {
+			t.Errorf("expected 'Starting fresh' activity, got %s", activities[0].Text)
+		}
+
+		// Session status should be in_progress
+		if newM.Session().Status != session.StatusInProgress {
+			t.Errorf("expected StatusInProgress, got %v", newM.Session().Status)
+		}
+	})
+
+	t.Run("fresh session preserves phase and name", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhaseDesign,
+			Name:  "my-design",
+		}
+
+		m := NewConversationModel(config)
+		m.state = StateSessionExpired
+
+		newM, _ := m.handleStartFreshSession()
+
+		if newM.Session().Phase != session.PhaseDesign {
+			t.Errorf("expected phase to be preserved, got %v", newM.Session().Phase)
+		}
+		if newM.Session().Name != "my-design" {
+			t.Errorf("expected name to be preserved, got %s", newM.Session().Name)
+		}
+	})
+}
+
+// Tests for session persistence on done event
+func TestConversationModel_DoneEvent_SessionIDPersisted(t *testing.T) {
+	t.Run("done event captures and persists session ID", func(t *testing.T) {
+		config := ConversationConfig{
+			Phase: session.PhasePRD,
+			Name:  "test-prd",
+		}
+
+		m := NewConversationModel(config)
+		m.isThinking = true
+
+		// Receive done event with session ID
+		doneEvent := ai.StreamEvent{Type: "done", SessionID: "final-session-id"}
+		m.handleStreamEvent(doneEvent)
+
+		// Session ID should be captured
+		if m.Session().SessionID != "final-session-id" {
+			t.Errorf("expected session ID final-session-id, got %s", m.Session().SessionID)
+		}
+
+		// Thinking should stop
+		if m.isThinking {
+			t.Error("expected isThinking to be false after done")
+		}
+	})
+}
