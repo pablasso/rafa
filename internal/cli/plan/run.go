@@ -5,7 +5,10 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/pablasso/rafa/internal/ai"
 	"github.com/pablasso/rafa/internal/analysis"
@@ -42,6 +45,14 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Add panic recovery for crash diagnostics
+	defer func() {
+		if r := recover(); r != nil {
+			writeCrashLog(planDir, r)
+			panic(r) // Re-panic to show normal crash output
+		}
+	}()
 
 	// 3. Load plan from JSON
 	p, err := plan.LoadPlan(planDir)
@@ -99,4 +110,18 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// writeCrashLog writes panic information to a crash.log file in the plan directory.
+func writeCrashLog(planDir string, r interface{}) {
+	crashLog := filepath.Join(planDir, "crash.log")
+	f, err := os.OpenFile(crashLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	fmt.Fprintf(f, "=== Crash at: %s ===\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(f, "Panic: %v\n\n", r)
+	fmt.Fprintf(f, "Stack trace:\n%s\n\n", debug.Stack())
 }

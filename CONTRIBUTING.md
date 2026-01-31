@@ -105,6 +105,66 @@ Demo mode is useful for:
 - Demonstrating Rafa to others
 - Long-running demos for presentations or displays
 
+## Debugging Crashes
+
+Rafa has crash diagnostics to help debug unexpected crashes.
+
+### Crash Log Locations
+
+| Crash Type | Log Location |
+|------------|--------------|
+| Panic during plan execution | `.rafa/plans/<plan-id>/crash.log` |
+| Signal crash (SIGSEGV, SIGBUS, SIGABRT) | `~/.rafa/crash.log` |
+
+### Diagnosing a Crashed Plan
+
+If a plan crashes mid-execution:
+
+1. **Check for a crash.log in the plan directory:**
+   ```bash
+   cat .rafa/plans/*<plan-name>/crash.log
+   ```
+
+2. **Check the global crash log:**
+   ```bash
+   cat ~/.rafa/crash.log
+   ```
+
+3. **Check for stale lock files** (indicates unclean exit):
+   ```bash
+   ls .rafa/plans/*<plan-name>/run.lock
+   ```
+
+4. **Review the output log** for the last successful operation:
+   ```bash
+   tail -100 .rafa/plans/*<plan-name>/output.log
+   ```
+
+### What the Crash Logs Contain
+
+- **Timestamp**: When the crash occurred
+- **Panic/Signal**: What triggered the crash
+- **Stack trace**: Full Go stack trace for debugging
+
+### Common Crash Scenarios
+
+| Symptom | Likely Cause | Debug Steps |
+|---------|--------------|-------------|
+| `run.lock` exists, no crash.log | Process killed externally (OOM, sleep, etc.) | Check system logs: `log show --predicate 'eventMessage contains "rafa"' --last 1h` |
+| crash.log with panic | Bug in rafa code | File an issue with the stack trace |
+| crash.log with SIGSEGV | Memory corruption or CGO issue | Check for race conditions with `go test -race ./...` |
+
+### Recovering from a Crash
+
+Remove the lock file and resume the plan:
+
+```bash
+rm .rafa/plans/*<plan-name>/run.lock
+rafa plan run <plan-name>
+```
+
+The plan will resume from the first pending task.
+
 ## Testing
 
 Run the test suite:
