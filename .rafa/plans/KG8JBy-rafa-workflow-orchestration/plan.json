@@ -176,8 +176,8 @@
         "GoToFilePickerMsg has ForPlanCreation bool field",
         "Code compiles with make build"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t12",
