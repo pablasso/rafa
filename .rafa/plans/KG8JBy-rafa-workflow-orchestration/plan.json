@@ -35,8 +35,8 @@
         "Unit tests exist for Uninstall() removing only skill directories",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t03",
