@@ -415,34 +415,52 @@ func TestKeyboardNavigation(t *testing.T) {
 			t.Fatalf("expected cursor at 0, got %d", m.home.Cursor())
 		}
 
-		// Navigate down
+		// Navigate down through all 5 items (Define: p, d; Execute: c, r; Quit: q)
 		sendKey(t, &m, "down")
 		if m.home.Cursor() != 1 {
 			t.Errorf("expected cursor at 1 after down, got %d", m.home.Cursor())
 		}
 
-		// Navigate down again
 		sendKey(t, &m, "down")
 		if m.home.Cursor() != 2 {
 			t.Errorf("expected cursor at 2 after second down, got %d", m.home.Cursor())
 		}
 
-		// Navigate past end (should stay)
 		sendKey(t, &m, "down")
-		if m.home.Cursor() != 2 {
-			t.Errorf("expected cursor to stay at 2, got %d", m.home.Cursor())
+		if m.home.Cursor() != 3 {
+			t.Errorf("expected cursor at 3 after third down, got %d", m.home.Cursor())
 		}
 
-		// Navigate up
+		sendKey(t, &m, "down")
+		if m.home.Cursor() != 4 {
+			t.Errorf("expected cursor at 4 after fourth down, got %d", m.home.Cursor())
+		}
+
+		// Navigate past end (should stay at 4 - Quit)
+		sendKey(t, &m, "down")
+		if m.home.Cursor() != 4 {
+			t.Errorf("expected cursor to stay at 4, got %d", m.home.Cursor())
+		}
+
+		// Navigate up through all items
+		sendKey(t, &m, "up")
+		if m.home.Cursor() != 3 {
+			t.Errorf("expected cursor at 3 after up, got %d", m.home.Cursor())
+		}
+
+		sendKey(t, &m, "up")
+		if m.home.Cursor() != 2 {
+			t.Errorf("expected cursor at 2 after second up, got %d", m.home.Cursor())
+		}
+
 		sendKey(t, &m, "up")
 		if m.home.Cursor() != 1 {
-			t.Errorf("expected cursor at 1 after up, got %d", m.home.Cursor())
+			t.Errorf("expected cursor at 1 after third up, got %d", m.home.Cursor())
 		}
 
-		// Navigate up to top
 		sendKey(t, &m, "up")
 		if m.home.Cursor() != 0 {
-			t.Errorf("expected cursor at 0 after second up, got %d", m.home.Cursor())
+			t.Errorf("expected cursor at 0 after fourth up, got %d", m.home.Cursor())
 		}
 
 		// Navigate past beginning (should stay)
@@ -457,15 +475,15 @@ func TestKeyboardNavigation(t *testing.T) {
 		m := createTestModel(t, repoRoot, rafaDir)
 		sendWindowSize(t, &m, 80, 24)
 
-		// Press Enter on first item (Create new plan)
+		// Press Enter on first item (Create PRD) - sends GoToConversationMsg
 		cmd := sendKey(t, &m, "enter")
 		if cmd == nil {
 			t.Fatal("expected command from Enter")
 		}
 
 		msg := processCmd(cmd)
-		if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
-			t.Errorf("expected GoToFilePickerMsg, got %T", msg)
+		if _, ok := msg.(msgs.GoToConversationMsg); !ok {
+			t.Errorf("expected GoToConversationMsg, got %T", msg)
 		}
 	})
 

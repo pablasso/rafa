@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/pablasso/rafa/internal/session"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
@@ -26,8 +27,10 @@ func TestNewHomeModel_WithExistingRafaDir(t *testing.T) {
 	if m.Cursor() != 0 {
 		t.Errorf("expected cursor to be 0, got %d", m.Cursor())
 	}
-	if len(m.menuItems) != 3 {
-		t.Errorf("expected 3 menu items, got %d", len(m.menuItems))
+	// 3 sections with Define(2), Execute(2), and Quit(1) = 5 total items
+	totalItems := m.totalMenuItems()
+	if totalItems != 5 {
+		t.Errorf("expected 5 menu items, got %d", totalItems)
 	}
 }
 
@@ -81,22 +84,31 @@ func TestHomeModel_Update_NavigateDown(t *testing.T) {
 	}
 	m := NewHomeModel(rafaDir)
 
-	// Navigate down
+	// Navigate down through all 5 items
 	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if newM.cursor != 1 {
 		t.Errorf("expected cursor to be 1 after down, got %d", newM.cursor)
 	}
 
-	// Navigate down again
 	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if newM.cursor != 2 {
 		t.Errorf("expected cursor to be 2 after second down, got %d", newM.cursor)
 	}
 
-	// Try to navigate past the end
 	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if newM.cursor != 2 {
-		t.Errorf("expected cursor to stay at 2, got %d", newM.cursor)
+	if newM.cursor != 3 {
+		t.Errorf("expected cursor to be 3 after third down, got %d", newM.cursor)
+	}
+
+	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if newM.cursor != 4 {
+		t.Errorf("expected cursor to be 4 after fourth down, got %d", newM.cursor)
+	}
+
+	// Try to navigate past the end (5 items, cursor 4 is last)
+	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if newM.cursor != 4 {
+		t.Errorf("expected cursor to stay at 4, got %d", newM.cursor)
 	}
 }
 
@@ -108,19 +120,30 @@ func TestHomeModel_Update_NavigateUp(t *testing.T) {
 	}
 	m := NewHomeModel(rafaDir)
 
-	// Move cursor down first
-	m.cursor = 2
+	// Move cursor to the end (5 items, so cursor 4)
+	m.cursor = 4
 
 	// Navigate up
 	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if newM.cursor != 1 {
-		t.Errorf("expected cursor to be 1 after up, got %d", newM.cursor)
+	if newM.cursor != 3 {
+		t.Errorf("expected cursor to be 3 after up, got %d", newM.cursor)
 	}
 
 	// Navigate up again
 	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if newM.cursor != 2 {
+		t.Errorf("expected cursor to be 2 after second up, got %d", newM.cursor)
+	}
+
+	// Continue navigating up
+	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if newM.cursor != 1 {
+		t.Errorf("expected cursor to be 1 after third up, got %d", newM.cursor)
+	}
+
+	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if newM.cursor != 0 {
-		t.Errorf("expected cursor to be 0 after second up, got %d", newM.cursor)
+		t.Errorf("expected cursor to be 0 after fourth up, got %d", newM.cursor)
 	}
 
 	// Try to navigate past the beginning
@@ -151,6 +174,54 @@ func TestHomeModel_Update_VimNavigation(t *testing.T) {
 	}
 }
 
+func TestHomeModel_Update_ShortcutP(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	if err := os.Mkdir(rafaDir, 0755); err != nil {
+		t.Fatalf("failed to create test .rafa dir: %v", err)
+	}
+	m := NewHomeModel(rafaDir)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+
+	if cmd == nil {
+		t.Fatal("expected command from 'p' shortcut")
+	}
+
+	msg := cmd()
+	convMsg, ok := msg.(msgs.GoToConversationMsg)
+	if !ok {
+		t.Fatalf("expected msgs.GoToConversationMsg, got %T", msg)
+	}
+	if convMsg.Phase != session.PhasePRD {
+		t.Errorf("expected Phase to be PhasePRD, got %v", convMsg.Phase)
+	}
+}
+
+func TestHomeModel_Update_ShortcutD(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	if err := os.Mkdir(rafaDir, 0755); err != nil {
+		t.Fatalf("failed to create test .rafa dir: %v", err)
+	}
+	m := NewHomeModel(rafaDir)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+	if cmd == nil {
+		t.Fatal("expected command from 'd' shortcut")
+	}
+
+	msg := cmd()
+	convMsg, ok := msg.(msgs.GoToConversationMsg)
+	if !ok {
+		t.Fatalf("expected msgs.GoToConversationMsg, got %T", msg)
+	}
+	if convMsg.Phase != session.PhaseDesign {
+		t.Errorf("expected Phase to be PhaseDesign, got %v", convMsg.Phase)
+	}
+}
+
 func TestHomeModel_Update_ShortcutC(t *testing.T) {
 	tmpDir := t.TempDir()
 	rafaDir := filepath.Join(tmpDir, ".rafa")
@@ -166,8 +237,12 @@ func TestHomeModel_Update_ShortcutC(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
-		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
+	fpMsg, ok := msg.(msgs.GoToFilePickerMsg)
+	if !ok {
+		t.Fatalf("expected msgs.GoToFilePickerMsg, got %T", msg)
+	}
+	if !fpMsg.ForPlanCreation {
+		t.Error("expected ForPlanCreation to be true")
 	}
 }
 
@@ -232,24 +307,78 @@ func TestHomeModel_Update_CtrlC(t *testing.T) {
 	}
 }
 
-func TestHomeModel_Update_EnterOnCreate(t *testing.T) {
+func TestHomeModel_Update_EnterOnCreatePRD(t *testing.T) {
 	tmpDir := t.TempDir()
 	rafaDir := filepath.Join(tmpDir, ".rafa")
 	if err := os.Mkdir(rafaDir, 0755); err != nil {
 		t.Fatalf("failed to create test .rafa dir: %v", err)
 	}
 	m := NewHomeModel(rafaDir)
-	m.cursor = 0 // Create new plan
+	m.cursor = 0 // Create PRD
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	if cmd == nil {
-		t.Fatal("expected command from Enter on Create")
+		t.Fatal("expected command from Enter on Create PRD")
 	}
 
 	msg := cmd()
-	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
-		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
+	convMsg, ok := msg.(msgs.GoToConversationMsg)
+	if !ok {
+		t.Fatalf("expected msgs.GoToConversationMsg, got %T", msg)
+	}
+	if convMsg.Phase != session.PhasePRD {
+		t.Errorf("expected Phase to be PhasePRD, got %v", convMsg.Phase)
+	}
+}
+
+func TestHomeModel_Update_EnterOnCreateDesign(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	if err := os.Mkdir(rafaDir, 0755); err != nil {
+		t.Fatalf("failed to create test .rafa dir: %v", err)
+	}
+	m := NewHomeModel(rafaDir)
+	m.cursor = 1 // Create Design Doc
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if cmd == nil {
+		t.Fatal("expected command from Enter on Create Design")
+	}
+
+	msg := cmd()
+	convMsg, ok := msg.(msgs.GoToConversationMsg)
+	if !ok {
+		t.Fatalf("expected msgs.GoToConversationMsg, got %T", msg)
+	}
+	if convMsg.Phase != session.PhaseDesign {
+		t.Errorf("expected Phase to be PhaseDesign, got %v", convMsg.Phase)
+	}
+}
+
+func TestHomeModel_Update_EnterOnCreatePlan(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	if err := os.Mkdir(rafaDir, 0755); err != nil {
+		t.Fatalf("failed to create test .rafa dir: %v", err)
+	}
+	m := NewHomeModel(rafaDir)
+	m.cursor = 2 // Create Plan
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if cmd == nil {
+		t.Fatal("expected command from Enter on Create Plan")
+	}
+
+	msg := cmd()
+	fpMsg, ok := msg.(msgs.GoToFilePickerMsg)
+	if !ok {
+		t.Fatalf("expected msgs.GoToFilePickerMsg, got %T", msg)
+	}
+	if !fpMsg.ForPlanCreation {
+		t.Error("expected ForPlanCreation to be true")
 	}
 }
 
@@ -260,7 +389,7 @@ func TestHomeModel_Update_EnterOnRun(t *testing.T) {
 		t.Fatalf("failed to create test .rafa dir: %v", err)
 	}
 	m := NewHomeModel(rafaDir)
-	m.cursor = 1 // Run existing plan
+	m.cursor = 3 // Run Plan
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -281,7 +410,7 @@ func TestHomeModel_Update_EnterOnQuit(t *testing.T) {
 		t.Fatalf("failed to create test .rafa dir: %v", err)
 	}
 	m := NewHomeModel(rafaDir)
-	m.cursor = 2 // Quit
+	m.cursor = 4 // Quit
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -340,7 +469,7 @@ func TestHomeModel_View_Normal(t *testing.T) {
 		t.Fatalf("failed to create test .rafa dir: %v", err)
 	}
 	m := NewHomeModel(rafaDir)
-	m.SetSize(80, 24)
+	m.SetSize(120, 30)
 
 	view := m.View()
 
@@ -354,7 +483,21 @@ func TestHomeModel_View_Normal(t *testing.T) {
 		t.Error("expected view to contain 'Task Loop Runner for AI'")
 	}
 
-	// Check for menu items
+	// Check for section headers
+	if !strings.Contains(view, "Define") {
+		t.Error("expected view to contain 'Define' section header")
+	}
+	if !strings.Contains(view, "Execute") {
+		t.Error("expected view to contain 'Execute' section header")
+	}
+
+	// Check for menu items with new structure
+	if !strings.Contains(view, "[p]") {
+		t.Error("expected view to contain '[p]' shortcut")
+	}
+	if !strings.Contains(view, "[d]") {
+		t.Error("expected view to contain '[d]' shortcut")
+	}
 	if !strings.Contains(view, "[c]") {
 		t.Error("expected view to contain '[c]' shortcut")
 	}
@@ -364,11 +507,19 @@ func TestHomeModel_View_Normal(t *testing.T) {
 	if !strings.Contains(view, "[q]") {
 		t.Error("expected view to contain '[q]' shortcut")
 	}
-	if !strings.Contains(view, "Create new plan") {
-		t.Error("expected view to contain 'Create new plan'")
+
+	// Check for menu item labels
+	if !strings.Contains(view, "Create PRD") {
+		t.Error("expected view to contain 'Create PRD'")
 	}
-	if !strings.Contains(view, "Run existing plan") {
-		t.Error("expected view to contain 'Run existing plan'")
+	if !strings.Contains(view, "Create Design Doc") {
+		t.Error("expected view to contain 'Create Design Doc'")
+	}
+	if !strings.Contains(view, "Create Plan") {
+		t.Error("expected view to contain 'Create Plan'")
+	}
+	if !strings.Contains(view, "Run Plan") {
+		t.Error("expected view to contain 'Run Plan'")
 	}
 	if !strings.Contains(view, "Quit") {
 		t.Error("expected view to contain 'Quit'")
@@ -383,6 +534,32 @@ func TestHomeModel_View_Normal(t *testing.T) {
 	}
 	if !strings.Contains(view, "q Quit") {
 		t.Error("expected view to contain 'q Quit' in status bar")
+	}
+}
+
+func TestHomeModel_View_HasDescriptions(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	if err := os.Mkdir(rafaDir, 0755); err != nil {
+		t.Fatalf("failed to create test .rafa dir: %v", err)
+	}
+	m := NewHomeModel(rafaDir)
+	m.SetSize(120, 30)
+
+	view := m.View()
+
+	// Check for descriptions
+	if !strings.Contains(view, "Start a new product requirements document") {
+		t.Error("expected view to contain PRD description")
+	}
+	if !strings.Contains(view, "Create a technical design from PRD") {
+		t.Error("expected view to contain Design description")
+	}
+	if !strings.Contains(view, "Generate execution plan from design") {
+		t.Error("expected view to contain Plan description")
+	}
+	if !strings.Contains(view, "Execute an existing plan") {
+		t.Error("expected view to contain Run description")
 	}
 }
 
@@ -406,8 +583,11 @@ func TestHomeModel_View_NoRafa(t *testing.T) {
 	}
 
 	// Should NOT contain menu items
-	if strings.Contains(view, "Create new plan") {
-		t.Error("expected view NOT to contain 'Create new plan' when .rafa doesn't exist")
+	if strings.Contains(view, "Create PRD") {
+		t.Error("expected view NOT to contain 'Create PRD' when .rafa doesn't exist")
+	}
+	if strings.Contains(view, "Create Plan") {
+		t.Error("expected view NOT to contain 'Create Plan' when .rafa doesn't exist")
 	}
 
 	// Status bar should only show quit

@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/pablasso/rafa/internal/session"
 	"github.com/pablasso/rafa/internal/tui/components"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 	"github.com/pablasso/rafa/internal/tui/styles"
@@ -13,13 +14,20 @@ import (
 
 // MenuItem represents a menu option in the home view.
 type MenuItem struct {
-	Label    string
-	Shortcut string
+	Label       string
+	Shortcut    string
+	Description string
+}
+
+// MenuSection represents a group of related menu items.
+type MenuSection struct {
+	Title string
+	Items []MenuItem
 }
 
 // HomeModel is the model for the home view landing screen.
 type HomeModel struct {
-	menuItems  []MenuItem
+	sections   []MenuSection
 	cursor     int
 	rafaExists bool
 	width      int
@@ -36,10 +44,27 @@ func NewHomeModel(rafaDir string) HomeModel {
 	}
 
 	return HomeModel{
-		menuItems: []MenuItem{
-			{Label: "Create new plan", Shortcut: "c"},
-			{Label: "Run existing plan", Shortcut: "r"},
-			{Label: "Quit", Shortcut: "q"},
+		sections: []MenuSection{
+			{
+				Title: "Define",
+				Items: []MenuItem{
+					{Label: "Create PRD", Shortcut: "p", Description: "Start a new product requirements document"},
+					{Label: "Create Design Doc", Shortcut: "d", Description: "Create a technical design from PRD"},
+				},
+			},
+			{
+				Title: "Execute",
+				Items: []MenuItem{
+					{Label: "Create Plan", Shortcut: "c", Description: "Generate execution plan from design"},
+					{Label: "Run Plan", Shortcut: "r", Description: "Execute an existing plan"},
+				},
+			},
+			{
+				Title: "",
+				Items: []MenuItem{
+					{Label: "Quit", Shortcut: "q", Description: ""},
+				},
+			},
 		},
 		cursor:     0,
 		rafaExists: rafaExists,
@@ -71,8 +96,12 @@ func (m HomeModel) Update(msg tea.Msg) (HomeModel, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "p":
+			return m, func() tea.Msg { return msgs.GoToConversationMsg{Phase: session.PhasePRD} }
+		case "d":
+			return m, func() tea.Msg { return msgs.GoToConversationMsg{Phase: session.PhaseDesign} }
 		case "c":
-			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
+			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{ForPlanCreation: true} }
 		case "r":
 			return m, func() tea.Msg { return msgs.GoToPlanListMsg{} }
 		case "up", "k":
@@ -80,7 +109,8 @@ func (m HomeModel) Update(msg tea.Msg) (HomeModel, tea.Cmd) {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(m.menuItems)-1 {
+			totalItems := m.totalMenuItems()
+			if m.cursor < totalItems-1 {
 				m.cursor++
 			}
 		case "enter":
@@ -90,17 +120,46 @@ func (m HomeModel) Update(msg tea.Msg) (HomeModel, tea.Cmd) {
 	return m, nil
 }
 
+// totalMenuItems returns the total number of menu items across all sections.
+func (m HomeModel) totalMenuItems() int {
+	total := 0
+	for _, section := range m.sections {
+		total += len(section.Items)
+	}
+	return total
+}
+
 // selectCurrentItem returns the appropriate message based on the selected menu item.
 func (m HomeModel) selectCurrentItem() (HomeModel, tea.Cmd) {
-	switch m.cursor {
-	case 0: // Create new plan
-		return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
-	case 1: // Run existing plan
+	// Map cursor position to shortcut
+	shortcut := m.getShortcutAtCursor()
+	switch shortcut {
+	case "p":
+		return m, func() tea.Msg { return msgs.GoToConversationMsg{Phase: session.PhasePRD} }
+	case "d":
+		return m, func() tea.Msg { return msgs.GoToConversationMsg{Phase: session.PhaseDesign} }
+	case "c":
+		return m, func() tea.Msg { return msgs.GoToFilePickerMsg{ForPlanCreation: true} }
+	case "r":
 		return m, func() tea.Msg { return msgs.GoToPlanListMsg{} }
-	case 2: // Quit
+	case "q":
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// getShortcutAtCursor returns the shortcut key for the currently selected item.
+func (m HomeModel) getShortcutAtCursor() string {
+	idx := 0
+	for _, section := range m.sections {
+		for _, item := range section.Items {
+			if idx == m.cursor {
+				return item.Shortcut
+			}
+			idx++
+		}
+	}
+	return ""
 }
 
 // View implements tea.Model.
@@ -135,18 +194,45 @@ func (m HomeModel) renderNormalView() string {
 
 	titleLine, taglineLine := m.renderHeader()
 
-	// Menu items
+	// Build menu with sections
 	var menuLines []string
-	for i, item := range m.menuItems {
-		shortcut := "[" + item.Shortcut + "]"
-		line := shortcut + " " + item.Label
+	cursorIdx := 0
 
-		if i == m.cursor {
-			line = styles.SelectedStyle.Render(line)
-		} else {
-			line = styles.SubtleStyle.Render(line)
+	for sectionIdx, section := range m.sections {
+		// Add section header if it has a title
+		if section.Title != "" {
+			sectionHeader := styles.SectionStyle.Render(section.Title)
+			menuLines = append(menuLines, sectionHeader)
 		}
-		menuLines = append(menuLines, line)
+
+		// Render items in this section
+		for _, item := range section.Items {
+			shortcut := "[" + item.Shortcut + "]"
+			line := shortcut + " " + item.Label
+
+			// Add description if present
+			if item.Description != "" {
+				line += "  " + styles.SubtleStyle.Render(item.Description)
+			}
+
+			if cursorIdx == m.cursor {
+				// For selected items, style the main part but keep description subtle
+				mainPart := "[" + item.Shortcut + "] " + item.Label
+				line = styles.SelectedStyle.Render(mainPart)
+				if item.Description != "" {
+					line += "  " + styles.SubtleStyle.Render(item.Description)
+				}
+			} else {
+				line = styles.SubtleStyle.Render(line)
+			}
+			menuLines = append(menuLines, line)
+			cursorIdx++
+		}
+
+		// Add spacing between sections (except after the last one)
+		if sectionIdx < len(m.sections)-1 {
+			menuLines = append(menuLines, "")
+		}
 	}
 
 	menu := strings.Join(menuLines, "\n")
@@ -154,7 +240,8 @@ func (m HomeModel) renderNormalView() string {
 	// Calculate vertical centering
 	// Status bar takes 1 line at bottom
 	statusBarHeight := 1
-	contentHeight := 7 // title + tagline + spacing + 3 menu items + spacing
+	// Count content lines: title + tagline + spacing + menu lines + spacing
+	contentHeight := 2 + 2 + len(menuLines)
 	availableHeight := m.height - statusBarHeight
 
 	topPadding := (availableHeight - contentHeight) / 2

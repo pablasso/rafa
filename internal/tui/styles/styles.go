@@ -42,4 +42,10 @@ var (
 	// ErrorStyle for error messages
 	ErrorStyle = lipgloss.NewStyle().
 			Foreground(errorColor)
+
+	// SectionStyle for menu section headers
+	SectionStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(secondaryColor).
+			MarginTop(1)
 )
