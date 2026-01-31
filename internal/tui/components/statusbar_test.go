@@ -29,8 +29,8 @@ func TestStatusBar_Render_MultipleItems(t *testing.T) {
 	if !strings.Contains(result, "q Quit") {
 		t.Errorf("expected result to contain 'q Quit', got: %s", result)
 	}
-	if !strings.Contains(result, "•") {
-		t.Errorf("expected result to contain '•' separator, got: %s", result)
+	if !strings.Contains(result, "|") {
+		t.Errorf("expected result to contain '|' separator, got: %s", result)
 	}
 }
 
@@ -94,8 +94,8 @@ func TestStatusBar_Render_SeparatorFormat(t *testing.T) {
 	items := []string{"A", "B", "C"}
 	result := sb.Render(40, items)
 
-	// Check that items are joined with " • " separator
-	if !strings.Contains(result, "A • B • C") {
-		t.Errorf("expected items to be joined with ' • ', got: %s", result)
+	// Check that items are joined with "  |  " separator
+	if !strings.Contains(result, "A  |  B  |  C") {
+		t.Errorf("expected items to be joined with '  |  ', got: %s", result)
 	}
 }

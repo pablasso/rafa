@@ -765,9 +765,9 @@ func TestRunningModel_View_SplitLayout(t *testing.T) {
 		t.Error("expected view to contain Output panel")
 	}
 
-	// Check that rounded borders are used (lipgloss uses ╭ for top-left corner)
-	if !strings.Contains(view, "╭") {
-		t.Error("expected view to contain rounded border character")
+	// Check that normal borders are used (lipgloss uses ┌ for top-left corner)
+	if !strings.Contains(view, "┌") {
+		t.Error("expected view to contain normal border character")
 	}
 }
 

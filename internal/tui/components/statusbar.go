@@ -15,13 +15,13 @@ func NewStatusBar() StatusBar {
 }
 
 // Render returns the status bar string for the given width and items.
-// Items are joined with " • " separator and padded to fill the width.
-func (s StatusBar) Render(width int, items []string) string {
+// Items are joined with "  |  " separator.
+func (s StatusBar) Render(_ int, items []string) string {
 	if len(items) == 0 {
-		return styles.StatusBarStyle.Width(width).Render("")
+		return styles.StatusBarStyle.Render("")
 	}
 
-	content := strings.Join(items, " • ")
+	content := strings.Join(items, "  |  ")
 
-	return styles.StatusBarStyle.Width(width).Render(content)
+	return styles.StatusBarStyle.Render(content)
 }

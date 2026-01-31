@@ -32,6 +32,15 @@ func NewFilePickerModel(repoRoot string) FilePickerModel {
 	fp.DirAllowed = false // Don't allow selecting directories, only files
 	fp.FileAllowed = true // Allow selecting files
 
+	// Customize styles to match our teal color scheme
+	fp.Styles.Cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("#5FAFAF"))
+	fp.Styles.Directory = lipgloss.NewStyle().Foreground(lipgloss.Color("#5FAFAF"))
+	fp.Styles.File = lipgloss.NewStyle()
+	fp.Styles.Selected = lipgloss.NewStyle().Foreground(lipgloss.Color("#5FAFAF")).Bold(true)
+	fp.Styles.DisabledCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+	fp.Styles.DisabledFile = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+	fp.Styles.DisabledSelected = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+
 	return FilePickerModel{
 		picker:   fp,
 		repoRoot: repoRoot,
