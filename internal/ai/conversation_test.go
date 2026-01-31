@@ -337,6 +337,69 @@ func TestIsSessionExpiredError(t *testing.T) {
 	}
 }
 
+func TestIsSessionExpiredEvent(t *testing.T) {
+	tests := []struct {
+		name     string
+		event    StreamEvent
+		expected bool
+	}{
+		{
+			name:     "event with SessionExpired flag",
+			event:    StreamEvent{Type: "error", Text: "session expired", SessionExpired: true},
+			expected: true,
+		},
+		{
+			name:     "error event with session not found text",
+			event:    StreamEvent{Type: "error", Text: "session not found"},
+			expected: true,
+		},
+		{
+			name:     "error event with session expired text",
+			event:    StreamEvent{Type: "error", Text: "session expired"},
+			expected: true,
+		},
+		{
+			name:     "error event with invalid session text",
+			event:    StreamEvent{Type: "error", Text: "invalid session"},
+			expected: true,
+		},
+		{
+			name:     "error event with unrelated error",
+			event:    StreamEvent{Type: "error", Text: "connection failed"},
+			expected: false,
+		},
+		{
+			name:     "non-error event",
+			event:    StreamEvent{Type: "text", Text: "session expired"},
+			expected: false,
+		},
+		{
+			name:     "done event",
+			event:    StreamEvent{Type: "done", SessionID: "test-123"},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsSessionExpiredEvent(tt.event)
+			if result != tt.expected {
+				t.Errorf("IsSessionExpiredEvent(%+v) = %v, expected %v", tt.event, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestErrSessionExpired(t *testing.T) {
+	// Verify error exists and has expected message
+	if ErrSessionExpired == nil {
+		t.Error("ErrSessionExpired should not be nil")
+	}
+	if ErrSessionExpired.Error() != "session expired or not found" {
+		t.Errorf("ErrSessionExpired.Error() = %q, expected %q", ErrSessionExpired.Error(), "session expired or not found")
+	}
+}
+
 func TestParseStreamEvent_ResultWithZeroUsage(t *testing.T) {
 	// Test result event with zero or missing usage values
 	input := `{"type":"result","session_id":"test-123","total_cost_usd":0.0,"usage":{}}`

@@ -1321,3 +1321,158 @@ func TestConversationModel_Getters(t *testing.T) {
 		t.Error("expected Activities() to return at least one activity")
 	}
 }
+
+func TestConversationModel_HandleStreamEvent_SessionExpiredError(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.isThinking = true
+
+	// Send a session expired error event
+	event := ai.StreamEvent{Type: "error", Text: "session expired", SessionExpired: true}
+	m.handleStreamEvent(event)
+
+	if m.state != StateSessionExpired {
+		t.Errorf("expected state to be StateSessionExpired, got %d", m.state)
+	}
+	if m.isThinking {
+		t.Error("expected isThinking to be false after session expired error")
+	}
+
+	// Check activity was added
+	activities := m.Activities()
+	found := false
+	for _, a := range activities {
+		if strings.Contains(a.Text, "Session expired") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'Session expired' activity to be added")
+	}
+}
+
+func TestConversationModel_HandleStreamEvent_SessionExpiredFromText(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.isThinking = true
+
+	// Send an error event with session not found in text (without SessionExpired flag)
+	event := ai.StreamEvent{Type: "error", Text: "session not found"}
+	m.handleStreamEvent(event)
+
+	if m.state != StateSessionExpired {
+		t.Errorf("expected state to be StateSessionExpired, got %d", m.state)
+	}
+}
+
+func TestConversationModel_KeyPress_N_InSessionExpired(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateSessionExpired
+
+	// Press 'n' to start fresh session
+	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+
+	if newM.state != StateConversing {
+		t.Errorf("expected state to be StateConversing after 'n' press, got %d", newM.state)
+	}
+	if newM.Session().SessionID != "" {
+		t.Error("expected session ID to be cleared for fresh session")
+	}
+	if cmd == nil {
+		t.Error("expected command to start new conversation")
+	}
+
+	// Check activity was reset
+	activities := newM.Activities()
+	if len(activities) != 1 {
+		t.Errorf("expected 1 activity after fresh start, got %d", len(activities))
+	}
+	if !strings.Contains(activities[0].Text, "Starting fresh session") {
+		t.Errorf("expected 'Starting fresh session' activity, got %s", activities[0].Text)
+	}
+}
+
+func TestConversationModel_KeyPress_Q_InSessionExpired(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.state = StateSessionExpired
+
+	// Press 'q' to quit
+	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+
+	if newM.state != StateCancelled {
+		t.Errorf("expected state to be StateCancelled after 'q' press, got %d", newM.state)
+	}
+	if cmd == nil {
+		t.Error("expected quit command")
+	}
+}
+
+func TestConversationModel_View_SessionExpiredState(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+	m.SetSize(100, 40)
+	m.state = StateSessionExpired
+
+	view := m.View()
+
+	if !strings.Contains(view, "Session expired") {
+		t.Error("expected view to show 'Session expired' message")
+	}
+	if !strings.Contains(view, "[n] New Session") {
+		t.Error("expected view to show '[n] New Session' in action bar")
+	}
+	if !strings.Contains(view, "[q] Quit") {
+		t.Error("expected view to show '[q] Quit' in action bar")
+	}
+}
+
+func TestConversationModel_Update_ConversationErrorMsg_SessionExpired(t *testing.T) {
+	config := ConversationConfig{
+		Phase: session.PhasePRD,
+		Name:  "test-prd",
+	}
+
+	m := NewConversationModel(config)
+
+	// Send a ConversationErrorMsg with ErrSessionExpired
+	errMsg := ConversationErrorMsg{Err: ai.ErrSessionExpired}
+	newM, _ := m.Update(errMsg)
+
+	if newM.state != StateSessionExpired {
+		t.Errorf("expected state to be StateSessionExpired, got %d", newM.state)
+	}
+	// Session status should NOT be cancelled for session expired
+	if newM.Session().Status == session.StatusCancelled {
+		t.Error("expected session status to not be cancelled for session expired")
+	}
+}
+
+func TestStateSessionExpired_Value(t *testing.T) {
+	// Verify the new state constant has expected value
+	if StateSessionExpired != 5 {
+		t.Errorf("expected StateSessionExpired to be 5, got %d", StateSessionExpired)
+	}
+}
