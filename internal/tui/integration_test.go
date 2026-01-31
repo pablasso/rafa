@@ -275,29 +275,29 @@ This is a test design document.
 	newModel, _ = m.Update(fileMsg)
 	m = newModel.(Model)
 
-	// Verify now at Creating view
-	if m.currentView != ViewCreating {
-		t.Fatalf("expected ViewCreating, got %d", m.currentView)
+	// Verify now at PlanCreate view
+	if m.currentView != ViewPlanCreate {
+		t.Fatalf("expected ViewPlanCreate, got %d", m.currentView)
 	}
 	sendWindowSize(t, &m, 80, 24)
 
-	// Simulate successful plan creation
-	planCreatedMsg := msgs.PlanCreatedMsg{
+	// Simulate successful plan save (using the new message type)
+	planSavedMsg := views.PlanCreateSavedMsg{
 		PlanID: "abc123-test-feature",
 		Tasks:  []string{"First task", "Second task"},
 	}
-	newModel, _ = m.Update(planCreatedMsg)
+	newModel, _ = m.Update(planSavedMsg)
 	m = newModel.(Model)
 
-	// View should still be Creating but in success state
-	if m.currentView != ViewCreating {
-		t.Fatalf("expected ViewCreating after success, got %d", m.currentView)
+	// View should still be PlanCreate but in completed state
+	if m.currentView != ViewPlanCreate {
+		t.Fatalf("expected ViewPlanCreate after success, got %d", m.currentView)
 	}
 
 	// Verify success view renders correctly
 	view := m.View()
-	if !strings.Contains(view, "Plan Created") {
-		t.Error("expected view to contain 'Plan Created'")
+	if !strings.Contains(view, "Plan saved") {
+		t.Error("expected view to contain 'Plan saved'")
 	}
 
 	// Press 'r' to run the plan
@@ -798,18 +798,18 @@ func TestErrorStates(t *testing.T) {
 		m = newModel.(Model)
 		sendWindowSize(t, &m, 80, 24)
 
-		// Simulate extraction error
-		errMsg := views.PlanCreationErrorMsg{Err: os.ErrNotExist}
+		// Simulate extraction error (using the new PlanCreate model message)
+		errMsg := views.PlanCreateErrorMsg{Err: os.ErrNotExist}
 		newModel, _ = m.Update(errMsg)
 		m = newModel.(Model)
 
 		view := m.View()
 
-		if !strings.Contains(view, "Plan Creation Failed") && !strings.Contains(view, "Connection Timeout") {
+		if !strings.Contains(view, "Error") {
 			t.Error("expected view to contain error message")
 		}
-		if !strings.Contains(view, "Retry") {
-			t.Error("expected view to contain 'Retry' option")
+		if !strings.Contains(view, "Home") {
+			t.Error("expected view to contain 'Home' option")
 		}
 	})
 
@@ -862,44 +862,35 @@ func TestErrorStates(t *testing.T) {
 
 // TestCancellation tests Ctrl+C behavior in different views.
 func TestCancellation(t *testing.T) {
-	t.Run("Ctrl+C during Creating returns to FilePicker", func(t *testing.T) {
+	t.Run("Ctrl+C during PlanCreate sets cancelled state", func(t *testing.T) {
 		_, rafaDir, designPath := setupTestEnvWithDesignDoc(t, "# Test")
 
 		m := createTestModel(t, filepath.Dir(rafaDir), rafaDir)
 		sendWindowSize(t, &m, 80, 24)
 
-		// Navigate to Creating view
+		// Navigate to PlanCreate view
 		cmd := sendKey(t, &m, "c")
 		msg := processCmd(cmd)
 		newModel, _ := m.Update(msg)
 		m = newModel.(Model)
 		sendWindowSize(t, &m, 80, 24)
 
-		// Select file to go to Creating
+		// Select file to go to PlanCreate
 		fileMsg := msgs.FileSelectedMsg{Path: designPath}
 		newModel, _ = m.Update(fileMsg)
 		m = newModel.(Model)
 		sendWindowSize(t, &m, 80, 24)
 
-		if m.currentView != ViewCreating {
-			t.Fatalf("expected ViewCreating, got %d", m.currentView)
+		if m.currentView != ViewPlanCreate {
+			t.Fatalf("expected ViewPlanCreate, got %d", m.currentView)
 		}
 
-		// Press Ctrl+C
-		cmd = sendKey(t, &m, "ctrl+c")
-		if cmd == nil {
-			t.Fatal("expected command from Ctrl+C")
-		}
+		// Press Ctrl+C - in the new flow, this sets cancelled state (not return to FilePicker)
+		_ = sendKey(t, &m, "ctrl+c")
 
-		msg = processCmd(cmd)
-		fpMsg, ok := msg.(msgs.GoToFilePickerMsg)
-		if !ok {
-			t.Fatalf("expected GoToFilePickerMsg, got %T", msg)
-		}
-
-		// Should preserve directory
-		if fpMsg.CurrentDir == "" {
-			t.Error("expected CurrentDir to be preserved")
+		// Verify the model is in cancelled state
+		if m.planCreate.State() != views.PlanCreateStateCancelled {
+			t.Fatalf("expected PlanCreateStateCancelled, got %d", m.planCreate.State())
 		}
 	})
 

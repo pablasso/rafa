@@ -33,6 +33,7 @@ const (
 	ViewHome View = iota
 	ViewFilePicker
 	ViewCreating
+	ViewPlanCreate
 	ViewPlanList
 	ViewRunning
 	ViewConversation
@@ -48,6 +49,7 @@ type Model struct {
 	home         views.HomeModel
 	filePicker   views.FilePickerModel
 	creating     views.CreatingModel
+	planCreate   views.PlanCreateModel
 	planList     views.PlanListModel
 	running      views.RunningModel
 	conversation views.ConversationModel
@@ -221,10 +223,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.filePicker.Init()
 
 	case msgs.FileSelectedMsg:
-		m.currentView = ViewCreating
-		m.creating = views.NewCreatingModel(msg.Path)
-		m.creating.SetSize(m.width, m.height)
-		return m, m.creating.Init()
+		m.currentView = ViewPlanCreate
+		m.planCreate = views.NewPlanCreateModel(msg.Path)
+		m.planCreate.SetSize(m.width, m.height)
+		return m, m.planCreate.Init()
 
 	case msgs.GoToPlanListMsg:
 		m.currentView = ViewPlanList
@@ -317,6 +319,11 @@ func (m Model) propagateWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.creating, cmd = m.creating.Update(msg)
 		return m, cmd
+	case ViewPlanCreate:
+		m.planCreate.SetSize(msg.Width, msg.Height)
+		var cmd tea.Cmd
+		m.planCreate, cmd = m.planCreate.Update(msg)
+		return m, cmd
 	case ViewPlanList:
 		m.planList.SetSize(msg.Width, msg.Height)
 		var cmd tea.Cmd
@@ -351,6 +358,10 @@ func (m Model) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.creating, cmd = m.creating.Update(msg)
 		return m, cmd
+	case ViewPlanCreate:
+		var cmd tea.Cmd
+		m.planCreate, cmd = m.planCreate.Update(msg)
+		return m, cmd
 	case ViewPlanList:
 		var cmd tea.Cmd
 		m.planList, cmd = m.planList.Update(msg)
@@ -381,6 +392,8 @@ func (m Model) View() string {
 		return m.filePicker.View()
 	case ViewCreating:
 		return m.creating.View()
+	case ViewPlanCreate:
+		return m.planCreate.View()
 	case ViewPlanList:
 		return m.planList.View()
 	case ViewRunning:
