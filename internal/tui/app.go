@@ -409,6 +409,7 @@ func (m Model) renderTerminalTooSmall() string {
 type ConversationOpts struct {
 	Phase      session.Phase
 	Name       string
+	FromDoc    string           // For design docs created from PRD
 	ResumeFrom *session.Session // For resuming existing sessions
 }
 
@@ -419,6 +420,7 @@ func RunWithConversation(opts ConversationOpts) error {
 	m.conversation = views.NewConversationModel(views.ConversationConfig{
 		Phase:      opts.Phase,
 		Name:       opts.Name,
+		FromDoc:    opts.FromDoc,
 		ResumeFrom: opts.ResumeFrom,
 	})
 

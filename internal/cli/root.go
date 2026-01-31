@@ -20,6 +20,7 @@ func init() {
 	rootCmd.AddCommand(deinitCmd)
 	rootCmd.AddCommand(plan.PlanCmd)
 	rootCmd.AddCommand(prdCmd)
+	rootCmd.AddCommand(designCmd)
 	rootCmd.AddCommand(demoCmd)
 
 	rootCmd.SetVersionTemplate(fmt.Sprintf(
