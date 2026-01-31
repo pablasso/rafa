@@ -376,18 +376,22 @@ func TestRunningModel_View_Running(t *testing.T) {
 		t.Error("expected view to contain plan ID and name")
 	}
 
-	// Check for progress panel
-	if !strings.Contains(view, "Progress") {
-		t.Error("expected view to contain 'Progress' header")
-	}
+	// Check for left panel header with task info
 	if !strings.Contains(view, "Task 2/3") {
 		t.Error("expected view to contain 'Task 2/3'")
 	}
-	if !strings.Contains(view, "Attempt: 1/5") {
-		t.Error("expected view to contain 'Attempt: 1/5'")
+	if !strings.Contains(view, "Attempt 1/5") {
+		t.Error("expected view to contain 'Attempt 1/5'")
 	}
-	if !strings.Contains(view, "Elapsed:") {
-		t.Error("expected view to contain 'Elapsed:'")
+
+	// Check for Activity section
+	if !strings.Contains(view, "Activity") {
+		t.Error("expected view to contain 'Activity' header")
+	}
+
+	// Check for Usage section
+	if !strings.Contains(view, "Usage") {
+		t.Error("expected view to contain 'Usage' header")
 	}
 
 	// Check for output panel
@@ -395,18 +399,9 @@ func TestRunningModel_View_Running(t *testing.T) {
 		t.Error("expected view to contain 'Output' header")
 	}
 
-	// Check for task list
-	if !strings.Contains(view, "Tasks:") {
-		t.Error("expected view to contain 'Tasks:'")
-	}
-	if !strings.Contains(view, "Set up middleware") {
-		t.Error("expected view to contain first task title")
-	}
-	if !strings.Contains(view, "Implement login") {
-		t.Error("expected view to contain second task title")
-	}
-	if !strings.Contains(view, "Add session mgmt") {
-		t.Error("expected view to contain third task title")
+	// Check for compact task list
+	if !strings.Contains(view, "Tasks") {
+		t.Error("expected view to contain 'Tasks' header")
 	}
 
 	// Check for status bar
@@ -757,9 +752,9 @@ func TestRunningModel_View_SplitLayout(t *testing.T) {
 
 	view := m.View()
 
-	// View should contain both Progress and Output panels
-	if !strings.Contains(view, "Progress") {
-		t.Error("expected view to contain Progress panel")
+	// View should contain both Activity (left panel) and Output (right panel) sections
+	if !strings.Contains(view, "Activity") {
+		t.Error("expected view to contain Activity section")
 	}
 	if !strings.Contains(view, "Output") {
 		t.Error("expected view to contain Output panel")
@@ -1060,5 +1055,549 @@ func TestRunningModel_PlanDirAndPlanFieldsSet(t *testing.T) {
 	}
 	if m.plan != p {
 		t.Error("expected plan to be set")
+	}
+}
+
+// Activity Timeline Tests
+
+func TestRunningModel_Update_ToolUseMsg_AddsToActivityTimeline(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// Send ToolUseMsg
+	msg := ToolUseMsg{
+		ToolName:   "Read",
+		ToolTarget: "/path/to/file.go",
+	}
+
+	newM, cmd := m.Update(msg)
+
+	if cmd != nil {
+		t.Error("expected no command from ToolUseMsg")
+	}
+	if len(newM.activities) != 1 {
+		t.Fatalf("expected 1 activity, got %d", len(newM.activities))
+	}
+	if !strings.Contains(newM.activities[0].Text, "Read") {
+		t.Errorf("expected activity to contain tool name, got %s", newM.activities[0].Text)
+	}
+	if !strings.Contains(newM.activities[0].Text, "file.go") {
+		t.Errorf("expected activity to contain file name, got %s", newM.activities[0].Text)
+	}
+	if newM.activities[0].IsDone {
+		t.Error("expected activity to not be done initially")
+	}
+}
+
+func TestRunningModel_Update_ToolUseMsg_MultipleToolUses(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// Send multiple ToolUseMsgs
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file1.go"})
+	m, _ = m.Update(ToolUseMsg{ToolName: "Edit", ToolTarget: "/file2.go"})
+	m, _ = m.Update(ToolUseMsg{ToolName: "Bash", ToolTarget: "go test"})
+
+	if len(m.activities) != 3 {
+		t.Fatalf("expected 3 activities, got %d", len(m.activities))
+	}
+	if !strings.Contains(m.activities[0].Text, "Read") {
+		t.Errorf("expected first activity to be Read, got %s", m.activities[0].Text)
+	}
+	if !strings.Contains(m.activities[1].Text, "Edit") {
+		t.Errorf("expected second activity to be Edit, got %s", m.activities[1].Text)
+	}
+	if !strings.Contains(m.activities[2].Text, "Bash") {
+		t.Errorf("expected third activity to be Bash, got %s", m.activities[2].Text)
+	}
+}
+
+func TestRunningModel_Update_ToolResultMsg_MarksLastActivityDone(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// Add a tool use first
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+
+	// Now send tool result
+	newM, cmd := m.Update(ToolResultMsg{})
+
+	if cmd != nil {
+		t.Error("expected no command from ToolResultMsg")
+	}
+	if len(newM.activities) != 1 {
+		t.Fatalf("expected 1 activity, got %d", len(newM.activities))
+	}
+	if !newM.activities[0].IsDone {
+		t.Error("expected activity to be marked done")
+	}
+}
+
+func TestRunningModel_Update_ToolResultMsg_MarksOnlyLastActivityDone(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// Add multiple tool uses
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file1.go"})
+	m, _ = m.Update(ToolResultMsg{})
+	m, _ = m.Update(ToolUseMsg{ToolName: "Edit", ToolTarget: "/file2.go"})
+
+	// First activity should be done, second should not
+	if !m.activities[0].IsDone {
+		t.Error("expected first activity to be done")
+	}
+	if m.activities[1].IsDone {
+		t.Error("expected second activity to not be done yet")
+	}
+
+	// Mark second as done
+	m, _ = m.Update(ToolResultMsg{})
+	if !m.activities[1].IsDone {
+		t.Error("expected second activity to be done now")
+	}
+}
+
+func TestRunningModel_Update_ToolResultMsg_NoActivities(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// Send tool result without any activities (should not panic)
+	newM, _ := m.Update(ToolResultMsg{})
+
+	if len(newM.activities) != 0 {
+		t.Errorf("expected 0 activities, got %d", len(newM.activities))
+	}
+}
+
+// Usage Extraction Tests
+
+func TestRunningModel_Update_UsageMsg_ExtractsUsage(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	msg := UsageMsg{
+		InputTokens:  1000,
+		OutputTokens: 500,
+		CostUSD:      0.05,
+	}
+
+	newM, cmd := m.Update(msg)
+
+	if cmd != nil {
+		t.Error("expected no command from UsageMsg")
+	}
+	if newM.taskTokens != 1500 {
+		t.Errorf("expected taskTokens to be 1500, got %d", newM.taskTokens)
+	}
+	if newM.totalTokens != 1500 {
+		t.Errorf("expected totalTokens to be 1500, got %d", newM.totalTokens)
+	}
+	if newM.estimatedCost != 0.05 {
+		t.Errorf("expected estimatedCost to be 0.05, got %f", newM.estimatedCost)
+	}
+}
+
+func TestRunningModel_Update_UsageMsg_AccumulatesTotalTokens(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// First usage message
+	m, _ = m.Update(UsageMsg{InputTokens: 1000, OutputTokens: 500, CostUSD: 0.05})
+	// Second usage message
+	m, _ = m.Update(UsageMsg{InputTokens: 2000, OutputTokens: 1000, CostUSD: 0.10})
+
+	// taskTokens should be from the latest message
+	if m.taskTokens != 3000 {
+		t.Errorf("expected taskTokens to be 3000, got %d", m.taskTokens)
+	}
+	// totalTokens should accumulate
+	if m.totalTokens != 4500 {
+		t.Errorf("expected totalTokens to be 4500, got %d", m.totalTokens)
+	}
+	// cost should accumulate (use tolerance for floating point comparison)
+	expectedCost := 0.15
+	if m.estimatedCost < expectedCost-0.001 || m.estimatedCost > expectedCost+0.001 {
+		t.Errorf("expected estimatedCost to be approximately 0.15, got %f", m.estimatedCost)
+	}
+}
+
+func TestRunningModel_Update_UsageMsg_EstimatesCostWhenZero(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	msg := UsageMsg{
+		InputTokens:  1000,
+		OutputTokens: 500,
+		CostUSD:      0, // Zero cost should trigger estimation
+	}
+
+	newM, _ := m.Update(msg)
+
+	// Should have estimated cost based on tokens
+	expectedCost := estimateCost(1500)
+	if newM.estimatedCost != expectedCost {
+		t.Errorf("expected estimated cost %f, got %f", expectedCost, newM.estimatedCost)
+	}
+}
+
+// formatTokens Tests
+
+func TestFormatTokens_SmallNumbers(t *testing.T) {
+	tests := []struct {
+		tokens   int64
+		expected string
+	}{
+		{0, "0"},
+		{1, "1"},
+		{100, "100"},
+		{999, "999"},
+	}
+
+	for _, tt := range tests {
+		result := formatTokens(tt.tokens)
+		if result != tt.expected {
+			t.Errorf("formatTokens(%d) = %s, want %s", tt.tokens, result, tt.expected)
+		}
+	}
+}
+
+func TestFormatTokens_ThousandFormat(t *testing.T) {
+	tests := []struct {
+		tokens   int64
+		expected string
+	}{
+		{1000, "1.0k"},
+		{1500, "1.5k"},
+		{12400, "12.4k"},
+		{99999, "100.0k"},
+		{100000, "100.0k"},
+		{500000, "500.0k"},
+		{999999, "1000.0k"},
+	}
+
+	for _, tt := range tests {
+		result := formatTokens(tt.tokens)
+		if result != tt.expected {
+			t.Errorf("formatTokens(%d) = %s, want %s", tt.tokens, result, tt.expected)
+		}
+	}
+}
+
+func TestFormatTokens_MillionFormat(t *testing.T) {
+	tests := []struct {
+		tokens   int64
+		expected string
+	}{
+		{1000000, "1.0M"},
+		{1500000, "1.5M"},
+		{12400000, "12.4M"},
+	}
+
+	for _, tt := range tests {
+		result := formatTokens(tt.tokens)
+		if result != tt.expected {
+			t.Errorf("formatTokens(%d) = %s, want %s", tt.tokens, result, tt.expected)
+		}
+	}
+}
+
+// estimateCost Tests
+
+func TestEstimateCost(t *testing.T) {
+	// Test basic estimation
+	cost := estimateCost(1000)
+	if cost <= 0 {
+		t.Errorf("expected positive cost, got %f", cost)
+	}
+
+	// More tokens should cost more
+	cost1k := estimateCost(1000)
+	cost10k := estimateCost(10000)
+	if cost10k <= cost1k {
+		t.Errorf("expected cost10k (%f) > cost1k (%f)", cost10k, cost1k)
+	}
+
+	// Zero tokens should be zero cost
+	zeroCost := estimateCost(0)
+	if zeroCost != 0 {
+		t.Errorf("expected zero cost for zero tokens, got %f", zeroCost)
+	}
+}
+
+// Left Panel Rendering Tests
+
+func TestRunningModel_View_RendersActivityTimeline(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 30)
+	m.currentTask = 1
+	m.attempt = 1
+
+	// Add some activities
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+	m, _ = m.Update(ToolResultMsg{})
+	m, _ = m.Update(ToolUseMsg{ToolName: "Edit", ToolTarget: "/file.go"})
+
+	view := m.View()
+
+	// Should contain Activity header
+	if !strings.Contains(view, "Activity") {
+		t.Error("expected view to contain 'Activity' header")
+	}
+	// Should contain tool names
+	if !strings.Contains(view, "Read") {
+		t.Error("expected view to contain 'Read' activity")
+	}
+	if !strings.Contains(view, "Edit") {
+		t.Error("expected view to contain 'Edit' activity")
+	}
+}
+
+func TestRunningModel_View_RendersUsageSection(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 30)
+	m.currentTask = 1
+	m.attempt = 1
+
+	// Add some usage
+	m, _ = m.Update(UsageMsg{InputTokens: 5000, OutputTokens: 2000, CostUSD: 0.10})
+
+	view := m.View()
+
+	// Should contain Usage header
+	if !strings.Contains(view, "Usage") {
+		t.Error("expected view to contain 'Usage' header")
+	}
+	// Should contain Task and Plan labels
+	if !strings.Contains(view, "Task:") {
+		t.Error("expected view to contain 'Task:' label")
+	}
+	if !strings.Contains(view, "Plan:") {
+		t.Error("expected view to contain 'Plan:' label")
+	}
+	// Should contain Cost label
+	if !strings.Contains(view, "Cost:") {
+		t.Error("expected view to contain 'Cost:' label")
+	}
+	// Should contain formatted tokens
+	if !strings.Contains(view, "7.0k") {
+		t.Error("expected view to contain formatted token count '7.0k'")
+	}
+}
+
+func TestRunningModel_View_RendersCompactTaskList(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
+		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusInProgress},
+		{ID: "t03", Title: "Task Three", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 30)
+	m.currentTask = 2
+	m.attempt = 1
+
+	view := m.View()
+
+	// Should contain Tasks header
+	if !strings.Contains(view, "Tasks") {
+		t.Error("expected view to contain 'Tasks' header")
+	}
+	// Should contain check mark for completed
+	if !strings.Contains(view, "✓") {
+		t.Error("expected view to contain checkmark for completed task")
+	}
+	// Should contain play indicator for running
+	if !strings.Contains(view, "▶") {
+		t.Error("expected view to contain play indicator for running task")
+	}
+	// Should contain circle for pending
+	if !strings.Contains(view, "○") {
+		t.Error("expected view to contain circle for pending task")
+	}
+}
+
+func TestRunningModel_TaskStartedMsg_ClearsActivities(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
+		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// Add some activities from first task
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+	m, _ = m.Update(UsageMsg{InputTokens: 1000, OutputTokens: 500, CostUSD: 0.05})
+
+	if len(m.activities) != 1 {
+		t.Fatalf("expected 1 activity before TaskStartedMsg, got %d", len(m.activities))
+	}
+	if m.taskTokens != 1500 {
+		t.Errorf("expected taskTokens to be 1500 before clear, got %d", m.taskTokens)
+	}
+
+	// Start second task
+	m, _ = m.Update(TaskStartedMsg{TaskNum: 2, Total: 2, TaskID: "t02", Title: "Task Two", Attempt: 1})
+
+	// Activities should be cleared
+	if len(m.activities) != 0 {
+		t.Errorf("expected activities to be cleared, got %d", len(m.activities))
+	}
+	// taskTokens should be reset
+	if m.taskTokens != 0 {
+		t.Errorf("expected taskTokens to be 0 after clear, got %d", m.taskTokens)
+	}
+	// totalTokens should NOT be reset
+	if m.totalTokens != 1500 {
+		t.Errorf("expected totalTokens to remain 1500, got %d", m.totalTokens)
+	}
+}
+
+// Activity Entry Type Tests
+
+func TestRunActivityEntry_Structure(t *testing.T) {
+	now := time.Now()
+	entry := RunActivityEntry{
+		Text:      "Read: file.go",
+		Timestamp: now,
+		IsDone:    true,
+	}
+
+	if entry.Text != "Read: file.go" {
+		t.Errorf("expected Text to be 'Read: file.go', got %s", entry.Text)
+	}
+	if entry.Timestamp != now {
+		t.Errorf("expected Timestamp to be %v, got %v", now, entry.Timestamp)
+	}
+	if !entry.IsDone {
+		t.Error("expected IsDone to be true")
+	}
+}
+
+// formatToolUseEntry Tests
+
+func TestFormatToolUseEntry(t *testing.T) {
+	tests := []struct {
+		toolName string
+		target   string
+	}{
+		{"Read", "/path/to/file.go"},
+		{"Edit", "short.go"},
+		{"Bash", "go test ./..."},
+		{"Task", "Search codebase"},
+		{"Read", ""},
+	}
+
+	for _, tt := range tests {
+		result := formatToolUseEntry(tt.toolName, tt.target)
+		// Should always start with tool name
+		if !strings.HasPrefix(result, tt.toolName) {
+			t.Errorf("formatToolUseEntry(%q, %q) = %q, expected to start with %q", tt.toolName, tt.target, result, tt.toolName)
+		}
+		// If target is non-empty, should contain ":"
+		if tt.target != "" && !strings.Contains(result, ":") {
+			t.Errorf("formatToolUseEntry(%q, %q) = %q, expected to contain ':'", tt.toolName, tt.target, result)
+		}
+		// If target is empty, should just be tool name
+		if tt.target == "" && result != tt.toolName {
+			t.Errorf("formatToolUseEntry(%q, %q) = %q, expected %q", tt.toolName, tt.target, result, tt.toolName)
+		}
+	}
+}
+
+// shortenPathForActivity Tests
+
+func TestShortenPathForActivity(t *testing.T) {
+	tests := []struct {
+		path   string
+		maxLen int
+	}{
+		{"short.go", 20},
+		{"/very/long/path/to/file.go", 20},
+		{"/a/b/c.go", 25},
+		{"toolongtofitanywayatall", 10},
+	}
+
+	for _, tt := range tests {
+		result := shortenPathForActivity(tt.path, tt.maxLen)
+		// Result should not exceed maxLen
+		if len(result) > tt.maxLen {
+			t.Errorf("shortenPathForActivity(%q, %d) = %q (len=%d), exceeds maxLen", tt.path, tt.maxLen, result, len(result))
+		}
+		// If path is short enough, should be unchanged
+		if len(tt.path) <= tt.maxLen && result != tt.path {
+			t.Errorf("shortenPathForActivity(%q, %d) = %q, expected unchanged", tt.path, tt.maxLen, result)
+		}
+	}
+}
+
+// Message Type Tests
+
+func TestToolUseMsg_Structure(t *testing.T) {
+	msg := ToolUseMsg{
+		ToolName:   "Read",
+		ToolTarget: "/path/to/file.go",
+	}
+
+	if msg.ToolName != "Read" {
+		t.Errorf("expected ToolName to be 'Read', got %s", msg.ToolName)
+	}
+	if msg.ToolTarget != "/path/to/file.go" {
+		t.Errorf("expected ToolTarget to be '/path/to/file.go', got %s", msg.ToolTarget)
+	}
+}
+
+func TestToolResultMsg_Structure(t *testing.T) {
+	// ToolResultMsg is empty, just verify it can be created
+	msg := ToolResultMsg{}
+	_ = msg // Ensure it compiles
+}
+
+func TestUsageMsg_Structure(t *testing.T) {
+	msg := UsageMsg{
+		InputTokens:  1000,
+		OutputTokens: 500,
+		CostUSD:      0.05,
+	}
+
+	if msg.InputTokens != 1000 {
+		t.Errorf("expected InputTokens to be 1000, got %d", msg.InputTokens)
+	}
+	if msg.OutputTokens != 500 {
+		t.Errorf("expected OutputTokens to be 500, got %d", msg.OutputTokens)
+	}
+	if msg.CostUSD != 0.05 {
+		t.Errorf("expected CostUSD to be 0.05, got %f", msg.CostUSD)
+	}
+}
+
+// renderCompactTaskList Tests
+
+func TestRenderCompactTaskList(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
+		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusInProgress},
+		{ID: "t03", Title: "Task Three", Status: plan.TaskStatusFailed},
+		{ID: "t04", Title: "Task Four", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.currentTask = 2
+
+	result := m.renderCompactTaskList(50)
+
+	// Should contain checkmark for completed
+	if !strings.Contains(result, "✓") {
+		t.Error("expected compact list to contain checkmark")
+	}
+	// Should contain play indicator for current running task
+	if !strings.Contains(result, "▶") {
+		t.Error("expected compact list to contain play indicator")
+	}
+	// Should contain X for failed
+	if !strings.Contains(result, "✗") {
+		t.Error("expected compact list to contain X for failed")
+	}
+	// Should contain circle for pending
+	if !strings.Contains(result, "○") {
+		t.Error("expected compact list to contain circle for pending")
 	}
 }

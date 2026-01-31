@@ -32,6 +32,14 @@ type TaskDisplay struct {
 	Status string // "pending", "running", "completed", "failed"
 }
 
+// RunActivityEntry represents a single item in the activity timeline.
+// Similar to ActivityEntry in conversation.go but specific to plan execution.
+type RunActivityEntry struct {
+	Text      string
+	Timestamp time.Time
+	IsDone    bool // Whether this activity is complete
+}
+
 // RunningModel is the model for the execution monitor view.
 type RunningModel struct {
 	state       runState
@@ -62,6 +70,14 @@ type RunningModel struct {
 	// Final status
 	finalSuccess bool
 	finalMessage string
+
+	// Activity timeline for showing tool usage
+	activities []RunActivityEntry
+
+	// Token/cost tracking
+	taskTokens    int64   // Tokens used in current task
+	totalTokens   int64   // Cumulative tokens across all tasks in plan
+	estimatedCost float64 // Estimated cost in USD
 
 	width  int
 	height int
@@ -102,6 +118,22 @@ type PlanDoneMsg struct {
 	Succeeded int
 	Total     int
 	Duration  time.Duration
+}
+
+// ToolUseMsg indicates a tool is being used during task execution.
+type ToolUseMsg struct {
+	ToolName   string
+	ToolTarget string // File path, pattern, or description depending on tool
+}
+
+// ToolResultMsg indicates a tool has completed execution.
+type ToolResultMsg struct{}
+
+// UsageMsg contains token usage information from a result event.
+type UsageMsg struct {
+	InputTokens  int64
+	OutputTokens int64
+	CostUSD      float64
 }
 
 // tickMsg is used for elapsed time updates.
@@ -334,6 +366,8 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		if msg.TaskNum > 0 && msg.TaskNum <= len(m.tasks) {
 			m.tasks[msg.TaskNum-1].Status = "running"
 		}
+		// Clear activities and task tokens for new task
+		m.clearActivities()
 		return m, nil
 
 	case TaskCompletedMsg:
@@ -355,6 +389,29 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 					break
 				}
 			}
+		}
+		return m, nil
+
+	case ToolUseMsg:
+		// Add tool use to activity timeline
+		m.addActivity(msg.ToolName, msg.ToolTarget)
+		return m, nil
+
+	case ToolResultMsg:
+		// Mark last activity as done
+		m.markLastActivityDone()
+		return m, nil
+
+	case UsageMsg:
+		// Update token tracking from result event
+		taskTokens := msg.InputTokens + msg.OutputTokens
+		m.taskTokens = taskTokens
+		m.totalTokens += taskTokens
+		if msg.CostUSD > 0 {
+			m.estimatedCost += msg.CostUSD
+		} else {
+			// Estimate cost if not provided
+			m.estimatedCost = estimateCost(m.totalTokens)
 		}
 		return m, nil
 
@@ -510,61 +567,76 @@ func (m RunningModel) renderRunning() string {
 	return b.String()
 }
 
-// renderLeftPanel renders the progress panel.
+// renderLeftPanel renders the progress panel with activity timeline and usage tracking.
 func (m RunningModel) renderLeftPanel(width, height int) string {
 	var lines []string
 
-	// Header
-	lines = append(lines, styles.SubtleStyle.Render("Progress"))
-	lines = append(lines, "")
-
-	// Current task info
+	// Header: Task N/M, Attempt, Elapsed
 	if m.currentTask > 0 && m.currentTask <= len(m.tasks) {
-		taskInfo := fmt.Sprintf("Task %d/%d: %s", m.currentTask, m.totalTasks, m.tasks[m.currentTask-1].Title)
-		if len(taskInfo) > width {
-			taskInfo = taskInfo[:width-3] + "..."
-		}
-		lines = append(lines, taskInfo)
+		lines = append(lines, fmt.Sprintf("Task %d/%d", m.currentTask, m.totalTasks))
 	} else {
-		lines = append(lines, fmt.Sprintf("Task 0/%d: Starting...", m.totalTasks))
+		lines = append(lines, fmt.Sprintf("Task 0/%d", m.totalTasks))
 	}
 
-	// Attempt info
 	if m.attempt > 0 {
-		lines = append(lines, fmt.Sprintf("Attempt: %d/%d", m.attempt, m.maxAttempts))
+		lines = append(lines, fmt.Sprintf("Attempt %d/%d", m.attempt, m.maxAttempts))
 	}
 
-	// Elapsed time
 	elapsed := time.Since(m.startTime)
-	lines = append(lines, fmt.Sprintf("Elapsed: %s", m.formatDuration(elapsed)))
+	lines = append(lines, m.formatDuration(elapsed))
 	lines = append(lines, "")
 
-	// Progress bar
-	completed := m.countCompleted()
-	progressWidth := width - 6
-	if progressWidth < 5 {
-		progressWidth = 5
+	// Activity timeline section
+	lines = append(lines, styles.SubtleStyle.Render("Activity"))
+	lines = append(lines, "─────")
+
+	// Calculate how many activity lines we can show
+	// Reserve space for: header(4) + usage(5) + tasks(3) + padding
+	activityMaxLines := height - 15
+	if activityMaxLines < 3 {
+		activityMaxLines = 3
 	}
-	progress := components.NewProgress(completed, m.totalTasks, progressWidth)
-	lines = append(lines, progress.View())
+
+	// Show activity entries with scrolling (show most recent)
+	activityStartIdx := 0
+	if len(m.activities) > activityMaxLines {
+		activityStartIdx = len(m.activities) - activityMaxLines
+	}
+
+	for i := activityStartIdx; i < len(m.activities); i++ {
+		entry := m.activities[i]
+		indicator := "├─"
+		if entry.IsDone {
+			indicator = styles.SuccessStyle.Render("✓")
+		} else if i == len(m.activities)-1 && m.state == stateRunning {
+			indicator = m.spinner.View()
+		}
+
+		activityLine := fmt.Sprintf("%s %s", indicator, entry.Text)
+		if len(activityLine) > width {
+			activityLine = activityLine[:width-3] + "..."
+		}
+		lines = append(lines, activityLine)
+	}
+
+	// If no activities, show placeholder
+	if len(m.activities) == 0 {
+		lines = append(lines, styles.SubtleStyle.Render("  (waiting...)"))
+	}
 	lines = append(lines, "")
 
-	// Task list header
-	lines = append(lines, styles.SubtleStyle.Render("Tasks:"))
+	// Usage section
+	lines = append(lines, styles.SubtleStyle.Render("Usage"))
+	lines = append(lines, "─────")
+	lines = append(lines, fmt.Sprintf("Task:  %s", formatTokens(m.taskTokens)))
+	lines = append(lines, fmt.Sprintf("Plan:  %s", formatTokens(m.totalTokens)))
+	lines = append(lines, fmt.Sprintf("Cost:  $%.2f", m.estimatedCost))
+	lines = append(lines, "")
 
-	// Task list with status indicators
-	for i, task := range m.tasks {
-		indicator := m.getTaskIndicator(task.Status, i+1 == m.currentTask)
-		taskLine := fmt.Sprintf("%s %d. %s", indicator, i+1, task.Title)
-		if len(taskLine) > width {
-			taskLine = taskLine[:width-3] + "..."
-		}
-		// Add arrow for current task
-		if i+1 == m.currentTask && task.Status == "running" {
-			taskLine += " ←"
-		}
-		lines = append(lines, taskLine)
-	}
+	// Compact task list with status indicators
+	lines = append(lines, styles.SubtleStyle.Render("Tasks"))
+	lines = append(lines, "─────")
+	lines = append(lines, m.renderCompactTaskList(width))
 
 	// Join lines and pad to height
 	content := strings.Join(lines, "\n")
@@ -574,6 +646,35 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 	}
 
 	return content
+}
+
+// renderCompactTaskList shows tasks in a compact format with status indicators.
+func (m RunningModel) renderCompactTaskList(width int) string {
+	var parts []string
+	for i, task := range m.tasks {
+		var indicator string
+		switch task.Status {
+		case "completed":
+			indicator = styles.SuccessStyle.Render("✓")
+		case "running":
+			if i+1 == m.currentTask {
+				indicator = "▶"
+			} else {
+				indicator = "○"
+			}
+		case "failed":
+			indicator = styles.ErrorStyle.Render("✗")
+		default:
+			indicator = "○"
+		}
+		parts = append(parts, indicator)
+	}
+
+	result := strings.Join(parts, " ")
+	if len(result) > width {
+		result = result[:width-3] + "..."
+	}
+	return result
 }
 
 // renderRightPanel renders the output panel.
@@ -736,6 +837,55 @@ func (m RunningModel) countCompleted() int {
 	return count
 }
 
+// addActivity adds an entry to the activity timeline.
+func (m *RunningModel) addActivity(toolName, toolTarget string) {
+	entry := formatToolUseEntry(toolName, toolTarget)
+	m.activities = append(m.activities, RunActivityEntry{
+		Text:      entry,
+		Timestamp: time.Now(),
+		IsDone:    false,
+	})
+}
+
+// markLastActivityDone marks the last activity entry as done.
+func (m *RunningModel) markLastActivityDone() {
+	if len(m.activities) > 0 {
+		m.activities[len(m.activities)-1].IsDone = true
+	}
+}
+
+// clearActivities clears the activity timeline (e.g., when starting a new task).
+func (m *RunningModel) clearActivities() {
+	m.activities = nil
+	m.taskTokens = 0
+}
+
+// formatToolUseEntry formats a tool use entry for the activity timeline.
+func formatToolUseEntry(toolName, target string) string {
+	entry := toolName
+	if target != "" {
+		shortened := shortenPathForActivity(target, 25)
+		entry += ": " + shortened
+	}
+	return entry
+}
+
+// shortenPathForActivity truncates a path/target to fit in the activity timeline.
+func shortenPathForActivity(path string, maxLen int) string {
+	if len(path) <= maxLen {
+		return path
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) >= 2 {
+		lastTwo := strings.Join(parts[len(parts)-2:], "/")
+		shortened := ".../" + lastTwo
+		if len(shortened) <= maxLen {
+			return shortened
+		}
+	}
+	return path[:maxLen-3] + "..."
+}
+
 // formatDuration formats a duration as MM:SS or HH:MM:SS.
 func (m RunningModel) formatDuration(d time.Duration) string {
 	d = d.Round(time.Second)
@@ -749,6 +899,25 @@ func (m RunningModel) formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%02d:%02d:%02d", h, mins, s)
 	}
 	return fmt.Sprintf("%02d:%02d", mins, s)
+}
+
+// formatTokens formats token counts in a human-readable format (e.g., "12.4k").
+func formatTokens(tokens int64) string {
+	if tokens >= 1000000 {
+		return fmt.Sprintf("%.1fM", float64(tokens)/1000000)
+	}
+	if tokens >= 1000 {
+		return fmt.Sprintf("%.1fk", float64(tokens)/1000)
+	}
+	return fmt.Sprintf("%d", tokens)
+}
+
+// estimateCost estimates the cost in USD based on token count.
+// Uses approximate Claude pricing: ~$0.003/1K input tokens, ~$0.015/1K output tokens.
+// Since we don't distinguish input/output here, uses a blended rate of ~$0.008/1K tokens.
+func estimateCost(tokens int64) float64 {
+	// Blended rate: approximately $0.008 per 1K tokens
+	return float64(tokens) * 0.000008
 }
 
 // SetSize updates the model dimensions.
