@@ -407,8 +407,9 @@ func (m Model) renderTerminalTooSmall() string {
 
 // ConversationOpts configures launching directly into conversation mode.
 type ConversationOpts struct {
-	Phase session.Phase
-	Name  string
+	Phase      session.Phase
+	Name       string
+	ResumeFrom *session.Session // For resuming existing sessions
 }
 
 // RunWithConversation starts the TUI directly in conversation mode for CLI commands.
@@ -416,8 +417,9 @@ func RunWithConversation(opts ConversationOpts) error {
 	m := initialModel()
 	m.currentView = ViewConversation
 	m.conversation = views.NewConversationModel(views.ConversationConfig{
-		Phase: opts.Phase,
-		Name:  opts.Name,
+		Phase:      opts.Phase,
+		Name:       opts.Name,
+		ResumeFrom: opts.ResumeFrom,
 	})
 
 	Program = tea.NewProgram(

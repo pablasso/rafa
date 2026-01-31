@@ -193,8 +193,8 @@
         "Session expiration handled with fallback to fresh session",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t13",
