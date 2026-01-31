@@ -173,3 +173,177 @@ func TestDeinitIntegration(t *testing.T) {
 		}
 	})
 }
+
+// TestDeinitIntegration_FailsWhenNotInitialized tests deinit fails when .rafa doesn't exist.
+func TestDeinitIntegration_FailsWhenNotInitialized(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(originalWd)
+
+	// Don't create .rafa directory - deinit should fail
+	err := runDeinit(nil, nil)
+	if err == nil {
+		t.Error("expected error when .rafa directory doesn't exist")
+	}
+}
+
+// TestDeinitIntegration_RemovesAllContent tests that deinit removes nested content.
+func TestDeinitIntegration_RemovesAllContent(t *testing.T) {
+	// Save originals
+	originalCommandFunc := commandFunc
+	originalLookPathFunc := lookPathFunc
+	originalSkillsFactory := skillsInstallerFactory
+
+	t.Cleanup(func() {
+		commandFunc = originalCommandFunc
+		lookPathFunc = originalLookPathFunc
+		skillsInstallerFactory = originalSkillsFactory
+	})
+
+	tmpDir := t.TempDir()
+	originalWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(originalWd)
+
+	// Mock commands
+	commandFunc = func(name string, args ...string) *exec.Cmd {
+		if name == "claude" {
+			return exec.Command("true")
+		}
+		return exec.Command(name, args...)
+	}
+	lookPathFunc = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	}
+	skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+		return &integrationTestSkillsInstaller{targetDir: targetDir}
+	}
+
+	// Initialize git
+	cmd := exec.Command("git", "init")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Run init
+	err := runInit(nil, nil)
+	if err != nil {
+		t.Fatalf("runInit failed: %v", err)
+	}
+
+	// Create additional nested content in .rafa
+	nestedDir := filepath.Join(".rafa", "plans", "test-plan")
+	if err := os.MkdirAll(nestedDir, 0755); err != nil {
+		t.Fatalf("failed to create nested dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nestedDir, "plan.json"), []byte(`{}`), 0644); err != nil {
+		t.Fatalf("failed to create plan.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nestedDir, "progress.log"), []byte("progress"), 0644); err != nil {
+		t.Fatalf("failed to create progress.log: %v", err)
+	}
+
+	// Create session files
+	if err := os.WriteFile(filepath.Join(".rafa", "sessions", "test-session.json"), []byte(`{}`), 0644); err != nil {
+		t.Fatalf("failed to create session file: %v", err)
+	}
+
+	// Set force flag for deinit
+	oldForce := deinitForce
+	deinitForce = true
+	defer func() { deinitForce = oldForce }()
+
+	// Run deinit
+	err = runDeinit(nil, nil)
+	if err != nil {
+		t.Fatalf("runDeinit failed: %v", err)
+	}
+
+	// Verify everything is gone
+	if _, err := os.Stat(".rafa"); !os.IsNotExist(err) {
+		t.Error(".rafa directory should be completely removed")
+	}
+	if _, err := os.Stat(nestedDir); !os.IsNotExist(err) {
+		t.Error("nested plan directory should be removed")
+	}
+}
+
+// TestDeinitIntegration_PreservesClaudeDirectory tests that deinit only removes skills, not .claude.
+func TestDeinitIntegration_PreservesClaudeDirectory(t *testing.T) {
+	// Save originals
+	originalCommandFunc := commandFunc
+	originalLookPathFunc := lookPathFunc
+	originalSkillsFactory := skillsInstallerFactory
+
+	t.Cleanup(func() {
+		commandFunc = originalCommandFunc
+		lookPathFunc = originalLookPathFunc
+		skillsInstallerFactory = originalSkillsFactory
+	})
+
+	tmpDir := t.TempDir()
+	originalWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(originalWd)
+
+	// Mock commands
+	commandFunc = func(name string, args ...string) *exec.Cmd {
+		if name == "claude" {
+			return exec.Command("true")
+		}
+		return exec.Command(name, args...)
+	}
+	lookPathFunc = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	}
+	skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+		return &integrationTestSkillsInstaller{targetDir: targetDir}
+	}
+
+	// Initialize git
+	cmd := exec.Command("git", "init")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Run init
+	err := runInit(nil, nil)
+	if err != nil {
+		t.Fatalf("runInit failed: %v", err)
+	}
+
+	// Create a non-skill file in .claude (e.g., settings.json)
+	if err := os.WriteFile(filepath.Join(".claude", "settings.json"), []byte(`{"test": true}`), 0644); err != nil {
+		t.Fatalf("failed to create settings.json: %v", err)
+	}
+
+	// Set force flag for deinit
+	oldForce := deinitForce
+	deinitForce = true
+	defer func() { deinitForce = oldForce }()
+
+	// Run deinit
+	err = runDeinit(nil, nil)
+	if err != nil {
+		t.Fatalf("runDeinit failed: %v", err)
+	}
+
+	// Verify .claude directory still exists
+	if _, err := os.Stat(".claude"); os.IsNotExist(err) {
+		t.Error(".claude directory should still exist (deinit only removes skills)")
+	}
+
+	// Verify settings.json still exists
+	if _, err := os.Stat(filepath.Join(".claude", "settings.json")); os.IsNotExist(err) {
+		t.Error(".claude/settings.json should be preserved")
+	}
+
+	// Verify skills are removed
+	for _, skill := range skills.RequiredSkills {
+		skillDir := filepath.Join(".claude", "skills", skill)
+		if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+			t.Errorf("skill %s should be removed", skill)
+		}
+	}
+}

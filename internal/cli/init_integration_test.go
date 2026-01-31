@@ -195,3 +195,140 @@ func (i *integrationTestSkillsInstaller) Uninstall() error {
 	}
 	return nil
 }
+
+// TestInitIntegration_PrerequisiteChecks tests init prerequisite validation.
+func TestInitIntegration_PrerequisiteChecks(t *testing.T) {
+	// Save originals
+	originalCommandFunc := commandFunc
+	originalLookPathFunc := lookPathFunc
+
+	t.Cleanup(func() {
+		commandFunc = originalCommandFunc
+		lookPathFunc = originalLookPathFunc
+	})
+
+	t.Run("fails when not in git repository", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		originalWd, _ := os.Getwd()
+		os.Chdir(tmpDir)
+		defer os.Chdir(originalWd)
+
+		// Mock lookPath to pretend commands exist
+		lookPathFunc = func(file string) (string, error) {
+			return "/usr/bin/" + file, nil
+		}
+		commandFunc = func(name string, args ...string) *exec.Cmd {
+			return exec.Command("true")
+		}
+
+		// Don't initialize git - this directory is NOT a git repo
+		err := runInit(nil, nil)
+		if err == nil {
+			t.Error("expected error when not in git repository")
+		}
+	})
+
+	t.Run("fails when already initialized", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		originalWd, _ := os.Getwd()
+		os.Chdir(tmpDir)
+		defer os.Chdir(originalWd)
+
+		// Create .rafa directory (simulating already initialized)
+		if err := os.MkdirAll(".rafa", 0755); err != nil {
+			t.Fatalf("failed to create .rafa: %v", err)
+		}
+
+		// Initialize git
+		cmd := exec.Command("git", "init")
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("failed to init git repo: %v", err)
+		}
+
+		// Mock commands
+		lookPathFunc = func(file string) (string, error) {
+			return "/usr/bin/" + file, nil
+		}
+		commandFunc = func(name string, args ...string) *exec.Cmd {
+			return exec.Command("true")
+		}
+
+		err := runInit(nil, nil)
+		if err == nil {
+			t.Error("expected error when already initialized")
+		}
+	})
+}
+
+// TestInitIntegration_CreatesAllDirectories tests that init creates all required directories.
+func TestInitIntegration_CreatesAllDirectories(t *testing.T) {
+	// Save originals
+	originalCommandFunc := commandFunc
+	originalLookPathFunc := lookPathFunc
+	originalSkillsFactory := skillsInstallerFactory
+
+	t.Cleanup(func() {
+		commandFunc = originalCommandFunc
+		lookPathFunc = originalLookPathFunc
+		skillsInstallerFactory = originalSkillsFactory
+	})
+
+	tmpDir := t.TempDir()
+	originalWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(originalWd)
+
+	// Mock commands
+	commandFunc = func(name string, args ...string) *exec.Cmd {
+		if name == "claude" {
+			return exec.Command("true")
+		}
+		return exec.Command(name, args...)
+	}
+	lookPathFunc = func(file string) (string, error) {
+		return "/usr/bin/" + file, nil
+	}
+	skillsInstallerFactory = func(targetDir string) SkillsInstaller {
+		return &integrationTestSkillsInstaller{targetDir: targetDir}
+	}
+
+	// Initialize git
+	cmd := exec.Command("git", "init")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Run init
+	err := runInit(nil, nil)
+	if err != nil {
+		t.Fatalf("runInit failed: %v", err)
+	}
+
+	// Verify all directories were created
+	requiredDirs := []string{
+		".rafa",
+		".rafa/plans",
+		".rafa/sessions",
+		".claude",
+		".claude/skills",
+	}
+
+	for _, dir := range requiredDirs {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Errorf("directory %s should exist: %v", dir, err)
+			continue
+		}
+		if !info.IsDir() {
+			t.Errorf("%s should be a directory", dir)
+		}
+	}
+
+	// Verify directory permissions
+	for _, dir := range requiredDirs {
+		info, _ := os.Stat(dir)
+		if info.Mode().Perm()&0700 != 0700 {
+			t.Errorf("%s should be owner-readable/writable/executable", dir)
+		}
+	}
+}

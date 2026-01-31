@@ -332,8 +332,8 @@
         "Integration test for deinit end-to-end",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     }
   ]
 }
