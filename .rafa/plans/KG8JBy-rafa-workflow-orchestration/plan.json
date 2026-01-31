@@ -238,8 +238,8 @@
         "rafa sessions command accessible from CLI",
         "make build succeeds"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t16",
