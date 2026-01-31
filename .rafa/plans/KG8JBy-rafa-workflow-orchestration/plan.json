@@ -105,8 +105,8 @@
         "Unit tests exist verifying last activity marked done on tool_result",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t07",
