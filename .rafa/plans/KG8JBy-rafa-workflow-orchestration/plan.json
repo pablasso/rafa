@@ -83,8 +83,8 @@
         "Unit tests exist for extractToolTarget() for Read/Write/Edit (file_path), Glob/Grep (pattern), Task (description)",
         "make test passes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t06",
