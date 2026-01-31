@@ -154,6 +154,40 @@ If a plan crashes mid-execution:
 | crash.log with panic | Bug in rafa code | File an issue with the stack trace |
 | crash.log with SIGSEGV | Memory corruption or CGO issue | Check for race conditions with `go test -race ./...` |
 
+### Debugging Silent Crashes
+
+If a crash leaves no crash.log (process killed externally or panic in unprotected goroutine), use Go's stack trace controls:
+
+**Capture panic traces from TUI mode:**
+```bash
+GOTRACEBACK=crash ./bin/rafa 2>/tmp/rafa-crash.log
+```
+
+Navigate the TUI normally. If it crashes, check `/tmp/rafa-crash.log` for the stack trace.
+
+**GOTRACEBACK values:**
+| Value | Behavior |
+|-------|----------|
+| `none` | No stack trace |
+| `single` | Current goroutine only (default) |
+| `all` | All goroutines |
+| `crash` | All goroutines + core dump |
+
+**If the log file is empty after crash:**
+The process was killed by an external signal, not a Go panic. Use system tools:
+```bash
+# macOS - trace system calls
+sudo dtruss -f ./bin/rafa 2>&1 | tee /tmp/rafa-dtruss.log
+
+# Check exit code
+./bin/rafa; echo "Exit code: $?"
+```
+
+**Dump goroutine stacks without crashing (send to running process):**
+```bash
+kill -SIGQUIT $(pgrep rafa)
+```
+
 ### Recovering from a Crash
 
 Remove the lock file and resume the plan:
