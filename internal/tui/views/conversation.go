@@ -64,7 +64,7 @@ type ConversationModel struct {
 	activitiesMu sync.Mutex
 
 	// Response content (main pane)
-	responseText strings.Builder
+	responseText *strings.Builder
 	responseView components.OutputViewport
 
 	// Track Write tool targets for auto-review detection
@@ -138,6 +138,7 @@ func NewConversationModel(config ConversationConfig) ConversationModel {
 		eventChan:           make(chan ai.StreamEvent, 100),
 		ctx:                 ctx,
 		cancel:              cancel,
+		responseText:        &strings.Builder{},
 		responseView:        components.NewOutputViewport(80, 20, 0),
 		conversationStarter: DefaultConversationStarter{},
 	}

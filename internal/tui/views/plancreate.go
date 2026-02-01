@@ -48,7 +48,7 @@ type PlanCreateModel struct {
 	activitiesMu sync.Mutex
 
 	// Response content (main pane)
-	responseText strings.Builder
+	responseText *strings.Builder
 	responseView components.OutputViewport
 
 	// Input field
@@ -103,6 +103,7 @@ func NewPlanCreateModel(sourceFile string) PlanCreateModel {
 		eventChan:           make(chan ai.StreamEvent, 100),
 		ctx:                 ctx,
 		cancel:              cancel,
+		responseText:        &strings.Builder{},
 		responseView:        components.NewOutputViewport(80, 20, 0),
 		conversationStarter: DefaultConversationStarter{},
 	}
