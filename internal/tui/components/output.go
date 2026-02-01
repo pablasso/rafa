@@ -124,3 +124,15 @@ func (o *OutputViewport) Clear() {
 	o.viewport.SetContent("")
 	o.autoScroll = true
 }
+
+// SetContent replaces the viewport content with the given text.
+// The underlying viewport handles word-wrapping at its configured width.
+// Use this for streaming text that should be displayed as continuous prose.
+func (o *OutputViewport) SetContent(content string) {
+	o.lines = []string{content} // Store as single block for line counting
+	o.viewport.SetContent(content)
+
+	if o.autoScroll {
+		o.viewport.GotoBottom()
+	}
+}

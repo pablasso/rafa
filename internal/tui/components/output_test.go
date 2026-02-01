@@ -1,6 +1,7 @@
 package components
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -129,4 +130,55 @@ func TestOutputViewport_View(t *testing.T) {
 	// View should not be empty after adding content
 	// Note: The exact format depends on viewport implementation
 	_ = view
+}
+
+func TestOutputViewport_SetContent_StreamingText(t *testing.T) {
+	ov := NewOutputViewport(80, 24, 100)
+
+	// Simulate streaming: accumulate text and set full content each time
+	accumulated := ""
+
+	accumulated += "Hello "
+	ov.SetContent(accumulated)
+
+	accumulated += "world! "
+	ov.SetContent(accumulated)
+
+	accumulated += "This is a test."
+	ov.SetContent(accumulated)
+
+	// Should have one logical block of content, not 3 lines
+	if ov.LineCount() != 1 {
+		t.Errorf("expected 1 logical content block, got %d", ov.LineCount())
+	}
+
+	// View should contain the full accumulated text
+	view := ov.View()
+	if !strings.Contains(view, "Hello world! This is a test.") {
+		t.Error("expected view to contain full accumulated text as continuous sentence")
+	}
+}
+
+func TestOutputViewport_SetContent_ReplacesExisting(t *testing.T) {
+	ov := NewOutputViewport(80, 24, 100)
+
+	// First set some content
+	ov.SetContent("initial content")
+	if ov.LineCount() != 1 {
+		t.Errorf("expected 1 line after first SetContent, got %d", ov.LineCount())
+	}
+
+	// Replace with new content
+	ov.SetContent("completely new content")
+	if ov.LineCount() != 1 {
+		t.Errorf("expected 1 line after second SetContent, got %d", ov.LineCount())
+	}
+
+	view := ov.View()
+	if !strings.Contains(view, "completely new content") {
+		t.Error("expected view to contain new content")
+	}
+	if strings.Contains(view, "initial") {
+		t.Error("expected old content to be replaced")
+	}
 }

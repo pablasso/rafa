@@ -337,7 +337,7 @@ func (m *ConversationModel) handleStreamEvent(event ai.StreamEvent) tea.Cmd {
 
 	case "text":
 		m.responseText.WriteString(event.Text)
-		m.responseView.AddLine(event.Text)
+		m.responseView.SetContent(m.responseText.String())
 
 	case "tool_use":
 		entry := m.formatToolUseEntry(event.ToolName, event.ToolTarget)

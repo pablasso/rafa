@@ -319,7 +319,7 @@ func (m *PlanCreateModel) handleStreamEvent(event ai.StreamEvent) tea.Cmd {
 
 	case "text":
 		m.responseText.WriteString(event.Text)
-		m.responseView.AddLine(event.Text)
+		m.responseView.SetContent(m.responseText.String())
 
 		// Check if Claude has sent the approved plan JSON
 		if strings.Contains(m.responseText.String(), "PLAN_APPROVED_JSON:") {
