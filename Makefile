@@ -63,17 +63,35 @@ watch:
 	done
 
 # macOS version (requires fswatch: brew install fswatch)
+# Skips killing rafa if a plan is executing (lock file exists)
 watch-mac:
-	@fswatch -o $$(find . -name '*.go' -not -path './vendor/*') | xargs -n1 sh -c '$(MAKE) build && killall rafa 2>/dev/null || true'
+	@fswatch -o $$(find . -name '*.go' -not -path './vendor/*') | xargs -n1 sh -c '\
+		$(MAKE) build && \
+		if ls .rafa/plans/*/run.lock 1>/dev/null 2>&1; then \
+			echo "[watch] Build complete. Skipping kill - plan execution in progress"; \
+		else \
+			killall rafa 2>/dev/null && echo "[watch] Restarted rafa" || true; \
+		fi'
 
-# Run TUI in a loop (restarts when killed by watch)
-# Close the terminal tab/pane to exit
+# Run TUI in a loop (restarts when killed by watch or on crash)
+# Press Ctrl+C during the restart delay to exit
 dev:
 	@$(MAKE) build
-	@while true; do ./bin/rafa || true; done
+	@trap 'echo " [dev] Stopping..."; exit 0' INT TERM; \
+	while true; do \
+		./bin/rafa; \
+		echo "[dev] Restarting in 1s (Ctrl+C to stop)..."; \
+		sleep 1; \
+	done
 
-# Run demo mode in a loop (restarts when killed by watch)
+# Run demo mode in a loop (restarts when killed by watch or on crash)
+# Press Ctrl+C during the restart delay to exit
 # Usage: make dev-demo DEMO_ARGS="--speed=marathon"
 dev-demo:
 	@$(MAKE) build
-	@while true; do ./bin/rafa demo $(DEMO_ARGS) || true; done
+	@trap 'echo " [dev-demo] Stopping..."; exit 0' INT TERM; \
+	while true; do \
+		./bin/rafa demo $(DEMO_ARGS); \
+		echo "[dev-demo] Restarting in 1s (Ctrl+C to stop)..."; \
+		sleep 1; \
+	done
