@@ -22,7 +22,20 @@ import type { RafaApp, RafaView } from "../app.js";
 import { ActivityLogComponent } from "../components/activity-log.js";
 import { OutputStreamComponent } from "../components/output-stream.js";
 import { MultilineEditorComponent } from "../components/multiline-editor.js";
-import type { ClaudeEvent } from "../../core/stream-parser.js";
+import {
+  runConversation,
+  createAbortController,
+  type ClaudeAbortController,
+  type ClaudeEvent,
+} from "../../core/claude-runner.js";
+import type { TextEventData, DoneEventData } from "../../core/stream-parser.js";
+import {
+  createSessionFile,
+  updateSessionMetadata,
+  appendUserMessage,
+} from "../../storage/sessions.js";
+import { createSession } from "../../core/session.js";
+import { generateId } from "../../utils/id.js";
 
 // Layout constants
 const LEFT_PANE_RATIO = 0.25; // Activity log is 25% of width
@@ -31,19 +44,38 @@ const MIN_RIGHT_PANE_WIDTH = 40;
 const BORDER_WIDTH = 1; // Vertical separator
 const EDITOR_HEIGHT = 5; // Height of input editor
 
+// Conversation phase states
+type ConversationPhase =
+  | "initial" // Just started, about to send /prd prompt
+  | "drafting" // Claude is working on the PRD
+  | "reviewing" // Auto-review triggered, Claude reviewing
+  | "awaiting_input" // Waiting for user to revise, approve, or cancel
+  | "saving"; // User approved, saving the PRD
+
 export interface ConversationContext {
   phase: "prd" | "design";
   sourceFile?: string;
+  name?: string;
 }
+
+// Export PrdContext as alias for use in CLI
+export type PrdContext = ConversationContext;
 
 export class ConversationView implements RafaView {
   private app: RafaApp;
   private phase: "prd" | "design" = "prd";
   private sourceFile?: string;
+  private documentName?: string;
 
-  // State
+  // Conversation state
+  private conversationPhase: ConversationPhase = "initial";
   private isClaudeResponding = false;
-  private editorFocused = true;
+  private claudeSessionId?: string;
+  private sessionPath?: string;
+  private abortController?: ClaudeAbortController;
+  private accumulatedText = "";
+  private hasDraftBeenGenerated = false;
+  private hasReviewBeenTriggered = false;
 
   // Sub-components
   private activityLog: ActivityLogComponent;
@@ -66,6 +98,7 @@ export class ConversationView implements RafaView {
       const ctx = context as ConversationContext;
       this.phase = ctx.phase || "prd";
       this.sourceFile = ctx.sourceFile;
+      this.documentName = ctx.name;
     }
 
     // Reset state for fresh conversation
@@ -73,17 +106,203 @@ export class ConversationView implements RafaView {
     this.outputPane.clear();
     this.inputEditor.clear();
     this.isClaudeResponding = false;
-    this.editorFocused = true;
+    this.claudeSessionId = undefined;
+    this.sessionPath = undefined;
+    this.abortController = undefined;
+    this.accumulatedText = "";
+    this.hasDraftBeenGenerated = false;
+    this.hasReviewBeenTriggered = false;
+    this.conversationPhase = "initial";
     this.inputEditor.setFocused(true);
     this.inputEditor.setDisabled(false);
+
+    // Start the conversation automatically
+    this.startConversation();
+  }
+
+  /**
+   * Start the PRD/Design conversation
+   */
+  private async startConversation(): Promise<void> {
+    // Generate a name if not provided
+    if (!this.documentName) {
+      this.documentName = `draft-${generateId()}`;
+    }
+
+    // Create session file
+    const session = createSession(this.phase, this.documentName);
+    this.sessionPath = await createSessionFile(session, this.documentName);
+
+    // Add activity event
+    this.activityLog.addCustomEvent("Session started");
+    this.conversationPhase = "drafting";
+    this.app.requestRender();
+
+    // Build initial prompt
+    const initialPrompt = this.buildInitialPrompt();
+
+    // Send to Claude
+    await this.sendToClaude(initialPrompt);
+  }
+
+  /**
+   * Build the initial prompt for PRD creation
+   */
+  private buildInitialPrompt(): string {
+    if (this.phase === "prd") {
+      return `Use the /prd skill to help me create a Product Requirements Document (PRD).
+
+Start by asking me about the problem I want to solve and the users who will benefit from the solution. Guide me through the PRD creation process step by step.`;
+    } else {
+      let prompt = `Use the /technical-design skill to help me create a Technical Design document.`;
+      if (this.sourceFile) {
+        prompt += `\n\nBase the design on this PRD: ${this.sourceFile}`;
+      } else {
+        prompt += `\n\nStart by asking me about the technical approach I want to take.`;
+      }
+      return prompt;
+    }
+  }
+
+  /**
+   * Build the review prompt
+   */
+  private buildReviewPrompt(): string {
+    if (this.phase === "prd") {
+      return `Now use the /prd-review skill to review the PRD you just created. Identify any issues that should be addressed and suggest improvements. After the review, decide which findings are worth addressing vs acceptable trade-offs, and make any necessary updates to the PRD.`;
+    } else {
+      return `Now use the /technical-design-review skill to review the technical design you just created. Identify any issues that should be addressed and suggest improvements. After the review, decide which findings are worth addressing vs acceptable trade-offs, and make any necessary updates to the design.`;
+    }
+  }
+
+  /**
+   * Send a message to Claude and stream the response
+   */
+  private async sendToClaude(prompt: string): Promise<void> {
+    this.isClaudeResponding = true;
+    this.inputEditor.setDisabled(true);
+    this.accumulatedText = "";
+    this.abortController = createAbortController();
+    this.app.requestRender();
+
+    try {
+      // Log the user message to session
+      if (this.sessionPath) {
+        await appendUserMessage(this.sessionPath, prompt);
+      }
+
+      const sessionId = await runConversation({
+        prompt,
+        sessionId: this.claudeSessionId,
+        onEvent: (event) => this.handleClaudeEvent(event),
+        abortController: this.abortController,
+      });
+
+      // Store session ID for resume
+      this.claudeSessionId = sessionId;
+      if (this.sessionPath) {
+        await updateSessionMetadata(this.sessionPath, {
+          claudeSessionId: sessionId,
+        });
+      }
+
+      // Check if we should trigger review
+      await this.checkAndTriggerReview();
+    } catch (error) {
+      if ((error as Error).name === "ClaudeAbortError") {
+        this.activityLog.addCustomEvent("Aborted by user");
+      } else {
+        this.activityLog.addCustomEvent(`Error: ${(error as Error).message}`);
+      }
+    } finally {
+      this.isClaudeResponding = false;
+      this.inputEditor.setDisabled(false);
+      this.abortController = undefined;
+      this.conversationPhase = "awaiting_input";
+      this.app.requestRender();
+    }
+  }
+
+  /**
+   * Handle a Claude event - updates activity log and output pane
+   */
+  private handleClaudeEvent(event: ClaudeEvent): void {
+    this.activityLog.processEvent(event);
+    this.outputPane.processEvent(event);
+
+    // Accumulate text for draft detection
+    if (event.type === "text") {
+      const textData = event.data as TextEventData;
+      this.accumulatedText += textData.text;
+    }
+
+    // Check for done event to detect draft completion
+    if (event.type === "done") {
+      const doneData = event.data as DoneEventData;
+      if (doneData.result && !this.hasDraftBeenGenerated) {
+        this.hasDraftBeenGenerated = true;
+      }
+    }
+
+    this.app.requestRender();
+  }
+
+  /**
+   * Check if we should trigger the review phase
+   */
+  private async checkAndTriggerReview(): Promise<void> {
+    // Only trigger review once, after initial drafting
+    if (this.hasReviewBeenTriggered) {
+      return;
+    }
+
+    // Check if a draft has been generated by looking for common PRD markers
+    const hasPrdContent = this.detectPrdDraft();
+
+    if (hasPrdContent && this.conversationPhase !== "reviewing") {
+      this.hasReviewBeenTriggered = true;
+      this.conversationPhase = "reviewing";
+      this.activityLog.addCustomEvent("Auto-triggering review...");
+      this.app.requestRender();
+
+      // Brief delay to let user see the draft before review
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Trigger review
+      await this.sendToClaude(this.buildReviewPrompt());
+    }
+  }
+
+  /**
+   * Detect if a PRD draft has been generated based on content markers
+   */
+  private detectPrdDraft(): boolean {
+    const text = this.accumulatedText.toLowerCase();
+
+    // Look for common PRD section headers
+    const prdMarkers = [
+      "## problem",
+      "## users",
+      "## requirements",
+      "## user journey",
+      "## success metrics",
+      "# prd:",
+      "# product requirements",
+    ];
+
+    // Check if at least 2 markers are present (indicating a draft structure)
+    const markerCount = prdMarkers.filter((marker) =>
+      text.includes(marker),
+    ).length;
+    return markerCount >= 2;
   }
 
   /**
    * Process a Claude event - updates activity log and output pane
+   * Public API for external control
    */
   processEvent(event: ClaudeEvent): void {
-    this.activityLog.processEvent(event);
-    this.outputPane.processEvent(event);
+    this.handleClaudeEvent(event);
   }
 
   /**
@@ -128,11 +347,11 @@ export class ConversationView implements RafaView {
     // Calculate pane dimensions
     const leftPaneWidth = Math.max(
       MIN_LEFT_PANE_WIDTH,
-      Math.floor(width * LEFT_PANE_RATIO)
+      Math.floor(width * LEFT_PANE_RATIO),
     );
     const rightPaneWidth = Math.max(
       MIN_RIGHT_PANE_WIDTH,
-      width - leftPaneWidth - BORDER_WIDTH
+      width - leftPaneWidth - BORDER_WIDTH,
     );
 
     // Header
@@ -148,7 +367,7 @@ export class ConversationView implements RafaView {
     const activityLines = this.activityLog.render(leftPaneWidth - 2);
     const outputLines = this.outputPane.renderWithHeight(
       rightPaneWidth - 2,
-      mainPaneHeight
+      mainPaneHeight,
     );
 
     // Pad activity lines to fill
@@ -163,7 +382,12 @@ export class ConversationView implements RafaView {
 
     // Render pane headers
     lines.push(
-      this.renderPaneHeader(leftPaneWidth, "Activity", rightPaneWidth, "Output")
+      this.renderPaneHeader(
+        leftPaneWidth,
+        "Activity",
+        rightPaneWidth,
+        "Output",
+      ),
     );
 
     // Render split panes
@@ -171,7 +395,12 @@ export class ConversationView implements RafaView {
       const leftContent = activityLines[i] || "";
       const rightContent = outputLines[i] || "";
       lines.push(
-        this.composeLine(leftContent, leftPaneWidth, rightContent, rightPaneWidth)
+        this.composeLine(
+          leftContent,
+          leftPaneWidth,
+          rightContent,
+          rightPaneWidth,
+        ),
       );
     }
 
@@ -193,14 +422,31 @@ export class ConversationView implements RafaView {
   private renderHeader(width: number): string {
     const title = this.phase === "prd" ? "PRD Creation" : "Technical Design";
     let subtitle = "";
-    if (this.sourceFile) {
-      subtitle = ` - ${this.sourceFile}`;
+    if (this.documentName) {
+      subtitle = ` - ${this.documentName}`;
     }
-    const status = this.isClaudeResponding ? "[Thinking...]" : "[Ready]";
+    const status = this.getStatusText();
     const titlePart = `  ${title}${subtitle}`;
     const padding = width - titlePart.length - status.length - 2;
     const padStr = padding > 0 ? " ".repeat(padding) : " ";
     return truncateToWidth(`${titlePart}${padStr}${status}`, width);
+  }
+
+  private getStatusText(): string {
+    switch (this.conversationPhase) {
+      case "initial":
+        return "[Starting...]";
+      case "drafting":
+        return "[Drafting...]";
+      case "reviewing":
+        return "[Reviewing...]";
+      case "awaiting_input":
+        return "[Ready]";
+      case "saving":
+        return "[Saving...]";
+      default:
+        return this.isClaudeResponding ? "[Thinking...]" : "[Ready]";
+    }
   }
 
   private renderSeparator(width: number, char: string): string {
@@ -211,13 +457,13 @@ export class ConversationView implements RafaView {
     leftWidth: number,
     leftTitle: string,
     rightWidth: number,
-    rightTitle: string
+    rightTitle: string,
   ): string {
     const leftHeader = ` ${leftTitle} `.padEnd(leftWidth - 1, "─");
     const rightHeader = `┬─ ${rightTitle} `.padEnd(rightWidth, "─");
     return truncateToWidth(
       leftHeader + rightHeader,
-      leftWidth + rightWidth + BORDER_WIDTH
+      leftWidth + rightWidth + BORDER_WIDTH,
     );
   }
 
@@ -225,10 +471,20 @@ export class ConversationView implements RafaView {
     leftContent: string,
     leftWidth: number,
     rightContent: string,
-    rightWidth: number
+    rightWidth: number,
   ): string {
-    const leftPadded = truncateToWidth(` ${leftContent}`, leftWidth - 1, "", true);
-    const rightPadded = truncateToWidth(` ${rightContent}`, rightWidth, "", true);
+    const leftPadded = truncateToWidth(
+      ` ${leftContent}`,
+      leftWidth - 1,
+      "",
+      true,
+    );
+    const rightPadded = truncateToWidth(
+      ` ${rightContent}`,
+      rightWidth,
+      "",
+      true,
+    );
     return `${leftPadded}│${rightPadded}`;
   }
 
@@ -243,8 +499,8 @@ export class ConversationView implements RafaView {
     let controls: string;
     if (this.isClaudeResponding) {
       controls = "[Ctrl+C] Stop  [Esc] Back";
-    } else if (this.editorFocused && !this.inputEditor.isEmpty()) {
-      controls = "[Enter] Send  [a] Approve  [c] Cancel  [Esc] Back";
+    } else if (!this.inputEditor.isEmpty()) {
+      controls = "[Alt+Enter] Send  [a] Approve  [c] Cancel  [Esc] Back";
     } else {
       controls = "[a] Approve  [c] Cancel  [Esc] Back";
     }
@@ -254,13 +510,20 @@ export class ConversationView implements RafaView {
   handleInput(data: string): void {
     // Always handle Escape - go back
     if (matchesKey(data, Key.escape)) {
+      if (this.abortController) {
+        this.abortController.abort();
+      }
       this.app.navigate("home");
       return;
     }
 
     // Ctrl+C during Claude response - abort
     if (matchesKey(data, Key.ctrl("c")) && this.isClaudeResponding) {
-      // TODO: Implement abort callback similar to RunView
+      if (this.abortController) {
+        this.abortController.abort();
+        this.activityLog.addCustomEvent("Aborting...");
+        this.app.requestRender();
+      }
       return;
     }
 
@@ -269,14 +532,14 @@ export class ConversationView implements RafaView {
       return;
     }
 
-    // Handle [a] Approve hotkey - only when editor not focused or empty
-    if (matchesKey(data, "a") && (!this.editorFocused || this.inputEditor.isEmpty())) {
+    // Handle [a] Approve hotkey - only when editor is empty
+    if (matchesKey(data, "a") && this.inputEditor.isEmpty()) {
       this.handleApprove();
       return;
     }
 
-    // Handle [c] Cancel hotkey - only when editor not focused or empty
-    if (matchesKey(data, "c") && (!this.editorFocused || this.inputEditor.isEmpty())) {
+    // Handle [c] Cancel hotkey - only when editor is empty
+    if (matchesKey(data, "c") && this.inputEditor.isEmpty()) {
       this.handleCancel();
       return;
     }
@@ -296,18 +559,95 @@ export class ConversationView implements RafaView {
   }
 
   /**
-   * Handle approve action
+   * Handle approve action - save the PRD and exit
    */
-  private handleApprove(): void {
-    // TODO: Implement approve logic
-    // This would finalize the PRD/Design and proceed
+  private async handleApprove(): Promise<void> {
+    this.conversationPhase = "saving";
+    this.app.requestRender();
+
+    try {
+      // Ask Claude to save the PRD
+      const savePath = await this.savePrdDocument();
+
+      if (savePath) {
+        this.activityLog.addCustomEvent(`Saved to ${savePath}`);
+        this.app.requestRender();
+
+        // Brief delay to show success message
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    } catch (error) {
+      this.activityLog.addCustomEvent(
+        `Error saving: ${(error as Error).message}`,
+      );
+      this.conversationPhase = "awaiting_input";
+      this.app.requestRender();
+      return;
+    }
+
+    // Go back to home
     this.app.navigate("home");
+  }
+
+  /**
+   * Save the PRD document to docs/prds/<name>.md
+   */
+  private async savePrdDocument(): Promise<string | null> {
+    // Ask Claude to save the document
+    const savePrompt = this.buildSavePrompt();
+
+    this.activityLog.addCustomEvent("Saving document...");
+    this.app.requestRender();
+
+    let savedPath: string | null = null;
+
+    try {
+      await runConversation({
+        prompt: savePrompt,
+        sessionId: this.claudeSessionId,
+        onEvent: (event) => {
+          this.handleClaudeEvent(event);
+
+          // Try to extract saved path from output
+          if (event.type === "text") {
+            const textData = event.data as TextEventData;
+            const match = textData.text.match(
+              /docs\/(prds|designs)\/[a-zA-Z0-9-_]+\.md/,
+            );
+            if (match) {
+              savedPath = match[0];
+            }
+          }
+        },
+      });
+
+      return savedPath;
+    } catch (error) {
+      throw new Error(`Failed to save document: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Build the prompt to save the document
+   */
+  private buildSavePrompt(): string {
+    const dir = this.phase === "prd" ? "docs/prds" : "docs/designs";
+    const suggestedName = this.documentName || "document";
+
+    return `Save the ${this.phase === "prd" ? "PRD" : "technical design"} document we just created to ${dir}/${suggestedName}.md.
+
+Create the directory if it doesn't exist. If a file with that name already exists, append a number to make it unique (e.g., ${suggestedName}-2.md).
+
+After saving, confirm the exact path where the document was saved.`;
   }
 
   /**
    * Handle cancel action
    */
   private handleCancel(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
     // Go back without saving
     this.app.navigate("home");
   }
@@ -315,18 +655,12 @@ export class ConversationView implements RafaView {
   /**
    * Handle sending a message to Claude
    */
-  private handleSendMessage(text: string): void {
-    // TODO: Implement message sending with Claude
-    // This would:
-    // 1. Add message to activity log
-    // 2. Set isClaudeResponding = true
-    // 3. Run claude with --resume
-    // 4. Stream response to outputPane
-    // 5. Set isClaudeResponding = false when done
-
-    // For now, just clear the editor
+  private async handleSendMessage(text: string): Promise<void> {
     this.inputEditor.clear();
     this.app.requestRender();
+
+    // Send the revision to Claude
+    await this.sendToClaude(text);
   }
 
   invalidate(): void {

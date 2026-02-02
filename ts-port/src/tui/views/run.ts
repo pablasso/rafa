@@ -193,11 +193,11 @@ export class RunView implements RafaView {
     // Calculate pane dimensions
     const leftPaneWidth = Math.max(
       MIN_LEFT_PANE_WIDTH,
-      Math.floor(width * LEFT_PANE_RATIO)
+      Math.floor(width * LEFT_PANE_RATIO),
     );
     const rightPaneWidth = Math.max(
       MIN_RIGHT_PANE_WIDTH,
-      width - leftPaneWidth - BORDER_WIDTH
+      width - leftPaneWidth - BORDER_WIDTH,
     );
 
     // Header
@@ -207,7 +207,10 @@ export class RunView implements RafaView {
     // Calculate content height (terminal typically has ~24 rows, header takes ~2)
     // We'll dynamically determine based on the available lines
     const contentHeight = 20; // Reasonable default for terminal height
-    const activityLogHeight = Math.max(4, Math.floor(contentHeight * ACTIVITY_LOG_RATIO));
+    const activityLogHeight = Math.max(
+      4,
+      Math.floor(contentHeight * ACTIVITY_LOG_RATIO),
+    );
     const taskProgressHeight = contentHeight - activityLogHeight;
 
     // Render sub-components to get their lines
@@ -215,7 +218,7 @@ export class RunView implements RafaView {
     const activityLines = this.activityLog.render(leftPaneWidth - 2);
     const outputLines = this.outputStream.renderWithHeight(
       rightPaneWidth - 2,
-      contentHeight
+      contentHeight,
     );
 
     // Pad task lines to fill task progress section
@@ -234,23 +237,41 @@ export class RunView implements RafaView {
     }
 
     // Render the task progress section (top-left)
-    lines.push(this.renderPaneHeader(leftPaneWidth, "Tasks", rightPaneWidth, "Output"));
+    lines.push(
+      this.renderPaneHeader(leftPaneWidth, "Tasks", rightPaneWidth, "Output"),
+    );
 
     for (let i = 0; i < taskProgressHeight; i++) {
       const leftContent = taskLines[i] || "";
       const rightContent = outputLines[i] || "";
-      lines.push(this.composeLine(leftContent, leftPaneWidth, rightContent, rightPaneWidth));
+      lines.push(
+        this.composeLine(
+          leftContent,
+          leftPaneWidth,
+          rightContent,
+          rightPaneWidth,
+        ),
+      );
     }
 
     // Render divider between task progress and activity log
-    lines.push(this.renderLeftDivider(leftPaneWidth, "Activity", rightPaneWidth));
+    lines.push(
+      this.renderLeftDivider(leftPaneWidth, "Activity", rightPaneWidth),
+    );
 
     // Render the activity log section (bottom-left) with output continuation
     for (let i = 0; i < activityLogHeight; i++) {
       const leftContent = activityLines[i] || "";
       const outputIndex = taskProgressHeight + 1 + i; // +1 for divider
       const rightContent = outputLines[outputIndex] || "";
-      lines.push(this.composeLine(leftContent, leftPaneWidth, rightContent, rightPaneWidth));
+      lines.push(
+        this.composeLine(
+          leftContent,
+          leftPaneWidth,
+          rightContent,
+          rightPaneWidth,
+        ),
+      );
     }
 
     // Footer
@@ -278,33 +299,49 @@ export class RunView implements RafaView {
     leftWidth: number,
     leftTitle: string,
     rightWidth: number,
-    rightTitle: string
+    rightTitle: string,
   ): string {
     const leftHeader = ` ${leftTitle} `.padEnd(leftWidth - 1, "─");
     const rightHeader = `┬─ ${rightTitle} `.padEnd(rightWidth, "─");
-    return truncateToWidth(leftHeader + rightHeader, leftWidth + rightWidth + BORDER_WIDTH);
+    return truncateToWidth(
+      leftHeader + rightHeader,
+      leftWidth + rightWidth + BORDER_WIDTH,
+    );
   }
 
   private renderLeftDivider(
     leftWidth: number,
     sectionTitle: string,
-    rightWidth: number
+    rightWidth: number,
   ): string {
     const leftPart = `├─ ${sectionTitle} `.padEnd(leftWidth - 1, "─");
     const rightPart = "│" + " ".repeat(rightWidth);
-    return truncateToWidth(leftPart + rightPart, leftWidth + rightWidth + BORDER_WIDTH);
+    return truncateToWidth(
+      leftPart + rightPart,
+      leftWidth + rightWidth + BORDER_WIDTH,
+    );
   }
 
   private composeLine(
     leftContent: string,
     leftWidth: number,
     rightContent: string,
-    rightWidth: number
+    rightWidth: number,
   ): string {
     // Pad left content
-    const leftPadded = truncateToWidth(` ${leftContent}`, leftWidth - 1, "", true);
+    const leftPadded = truncateToWidth(
+      ` ${leftContent}`,
+      leftWidth - 1,
+      "",
+      true,
+    );
     // Add separator and right content
-    const rightPadded = truncateToWidth(` ${rightContent}`, rightWidth, "", true);
+    const rightPadded = truncateToWidth(
+      ` ${rightContent}`,
+      rightWidth,
+      "",
+      true,
+    );
     return `${leftPadded}│${rightPadded}`;
   }
 

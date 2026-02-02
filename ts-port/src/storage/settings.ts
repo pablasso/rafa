@@ -38,7 +38,7 @@ export async function loadSettings(settingsPath: string): Promise<Settings> {
  */
 export async function saveSettings(
   settings: Settings,
-  settingsPath: string
+  settingsPath: string,
 ): Promise<void> {
   const content = JSON.stringify(settings, null, 2) + "\n";
   await fs.writeFile(settingsPath, content, "utf-8");

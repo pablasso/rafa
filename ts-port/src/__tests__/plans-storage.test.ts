@@ -109,7 +109,7 @@ describe("plan storage", () => {
 
     it("throws when plan directory does not exist", async () => {
       await expect(
-        loadPlan(path.join(TEST_DIR, "nonexistent"))
+        loadPlan(path.join(TEST_DIR, "nonexistent")),
       ).rejects.toThrow("Plan not found");
     });
   });
@@ -135,11 +135,11 @@ describe("plan storage", () => {
           createdAt: "",
           status: "not_started",
           tasks: [],
-        })
+        }),
       );
 
       await expect(loadPlan(planDir)).rejects.toThrow(
-        "Plan has invalid or missing 'id'"
+        "Plan has invalid or missing 'id'",
       );
     });
 
@@ -156,11 +156,11 @@ describe("plan storage", () => {
           createdAt: "",
           status: "invalid_status",
           tasks: [],
-        })
+        }),
       );
 
       await expect(loadPlan(planDir)).rejects.toThrow(
-        "Plan has invalid 'status'"
+        "Plan has invalid 'status'",
       );
     });
 
@@ -185,11 +185,11 @@ describe("plan storage", () => {
               attempts: 0,
             },
           ],
-        })
+        }),
       );
 
       await expect(loadPlan(planDir)).rejects.toThrow(
-        "invalid or missing 'acceptanceCriteria'"
+        "invalid or missing 'acceptanceCriteria'",
       );
     });
 
@@ -215,11 +215,11 @@ describe("plan storage", () => {
               attempts: 0,
             },
           ],
-        })
+        }),
       );
 
       await expect(loadPlan(planDir)).rejects.toThrow(
-        "invalid 'status': invalid"
+        "invalid 'status': invalid",
       );
     });
   });
@@ -254,7 +254,7 @@ describe("plan storage", () => {
         TEST_DIR,
         ".rafa",
         "plans",
-        "invalid-broken"
+        "invalid-broken",
       );
       await fs.mkdir(invalidDir, { recursive: true });
       await fs.writeFile(path.join(invalidDir, "plan.json"), "invalid json");
@@ -276,7 +276,7 @@ describe("plan storage", () => {
 
     it("throws when plan not found", async () => {
       await expect(findPlanFolder("nonexistent", TEST_DIR)).rejects.toThrow(
-        "Plan not found: nonexistent"
+        "Plan not found: nonexistent",
       );
     });
 
@@ -288,7 +288,7 @@ describe("plan storage", () => {
       await createPlanFolder(plan2, TEST_DIR);
 
       await expect(findPlanFolder("feature", TEST_DIR)).rejects.toThrow(
-        "Multiple plans match"
+        "Multiple plans match",
       );
     });
   });
@@ -327,7 +327,7 @@ describe("plan storage", () => {
 
       const planJson = await fs.readFile(
         path.join(folder, "plan.json"),
-        "utf-8"
+        "utf-8",
       );
       expect(JSON.parse(planJson).id).toBe("abc123");
 

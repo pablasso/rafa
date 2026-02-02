@@ -21,7 +21,7 @@ export function createPlan(
   name: string,
   description: string,
   sourceFile: string,
-  tasks: Task[]
+  tasks: Task[],
 ): Plan {
   return {
     id,

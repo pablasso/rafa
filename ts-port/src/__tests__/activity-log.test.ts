@@ -3,7 +3,11 @@ import {
   ActivityLogComponent,
   type ActivityEvent,
 } from "../tui/components/activity-log.js";
-import type { ClaudeEvent, ToolUseEventData, ToolResultEventData } from "../core/stream-parser.js";
+import type {
+  ClaudeEvent,
+  ToolUseEventData,
+  ToolResultEventData,
+} from "../core/stream-parser.js";
 
 describe("ActivityLogComponent", () => {
   let component: ActivityLogComponent;
@@ -166,7 +170,8 @@ describe("ActivityLogComponent", () => {
     });
 
     it("truncates long bash commands", () => {
-      const longCommand = "npm run test -- --coverage --verbose --watch --reporter=html";
+      const longCommand =
+        "npm run test -- --coverage --verbose --watch --reporter=html";
       const event: ClaudeEvent = {
         type: "tool_use",
         data: {
@@ -198,7 +203,8 @@ describe("ActivityLogComponent", () => {
     });
 
     it("shortens long file paths", () => {
-      const longPath = "/very/long/path/that/exceeds/the/maximum/allowed/length/for/display/purposes/file.ts";
+      const longPath =
+        "/very/long/path/that/exceeds/the/maximum/allowed/length/for/display/purposes/file.ts";
       const event: ClaudeEvent = {
         type: "tool_use",
         data: {

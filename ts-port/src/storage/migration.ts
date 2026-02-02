@@ -43,7 +43,7 @@ export async function needsMigration(rafaDir: string): Promise<boolean> {
  * Returns null if file doesn't exist
  */
 export async function getVersionInfo(
-  rafaDir: string
+  rafaDir: string,
 ): Promise<VersionInfo | null> {
   const versionPath = path.join(rafaDir, VERSION_FILE);
   try {
@@ -69,7 +69,7 @@ export async function writeVersionFile(rafaDir: string): Promise<void> {
   await fs.writeFile(
     versionPath,
     JSON.stringify(versionInfo, null, 2) + "\n",
-    "utf-8"
+    "utf-8",
   );
 }
 

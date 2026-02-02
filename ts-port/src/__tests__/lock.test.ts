@@ -136,5 +136,4 @@ describe("processExists", () => {
     // Use a very large PID that's unlikely to exist
     expect(processExists(999999999)).toBe(false);
   });
-
 });

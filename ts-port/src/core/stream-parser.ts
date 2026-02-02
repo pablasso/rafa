@@ -243,7 +243,10 @@ function parseStreamEvent(raw: RawStreamEvent): ClaudeEvent {
   const { event } = raw;
 
   // Handle text streaming
-  if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+  if (
+    event.type === "content_block_delta" &&
+    event.delta?.type === "text_delta"
+  ) {
     return {
       type: "text",
       data: {
@@ -255,7 +258,10 @@ function parseStreamEvent(raw: RawStreamEvent): ClaudeEvent {
   }
 
   // Handle tool use start (partial)
-  if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+  if (
+    event.type === "content_block_start" &&
+    event.content_block?.type === "tool_use"
+  ) {
     return {
       type: "tool_use",
       data: {

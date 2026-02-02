@@ -101,7 +101,7 @@ export async function runTask(options: TaskRunOptions): Promise<void> {
     args,
     options.onEvent,
     options.cwd,
-    options.abortController
+    options.abortController,
   );
 
   // Check if aborted
@@ -127,7 +127,7 @@ export async function runTask(options: TaskRunOptions): Promise<void> {
  * Returns the session ID for future resume
  */
 export async function runConversation(
-  options: ConversationRunOptions
+  options: ConversationRunOptions,
 ): Promise<string> {
   const args = [
     "-p",
@@ -175,7 +175,7 @@ async function runClaude(
   args: string[],
   onEvent: (event: ClaudeEvent) => void,
   cwd?: string,
-  abortController?: ClaudeAbortController
+  abortController?: ClaudeAbortController,
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     // Check if already aborted before starting
@@ -254,7 +254,7 @@ async function runClaude(
 export class ClaudeError extends Error {
   constructor(
     message: string,
-    public readonly exitCode: number
+    public readonly exitCode: number,
   ) {
     super(message);
     this.name = "ClaudeError";

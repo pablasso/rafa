@@ -28,7 +28,11 @@ export class PlanLock {
 
     // Try atomic creation with O_EXCL
     try {
-      const fd = fs.openSync(this.path, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o644);
+      const fd = fs.openSync(
+        this.path,
+        fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY,
+        0o644,
+      );
       fs.writeSync(fd, String(pid));
       fs.closeSync(fd);
       return;
@@ -83,7 +87,11 @@ export class PlanLock {
     const pid = process.pid;
 
     try {
-      const fd = fs.openSync(this.path, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o644);
+      const fd = fs.openSync(
+        this.path,
+        fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY,
+        0o644,
+      );
       fs.writeSync(fd, String(pid));
       fs.closeSync(fd);
     } catch (err: unknown) {

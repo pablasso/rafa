@@ -5,7 +5,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { runInit, isInitialized, getRafaDir, getSettingsPath, addToGitignore, removeFromGitignore } from "../cli/init.js";
+import {
+  runInit,
+  isInitialized,
+  getRafaDir,
+  getSettingsPath,
+  addToGitignore,
+  removeFromGitignore,
+} from "../cli/init.js";
 import { runDeinit } from "../cli/deinit.js";
 
 describe("init command", () => {

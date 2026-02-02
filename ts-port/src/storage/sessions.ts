@@ -98,7 +98,7 @@ export class SessionResumeError extends Error {
   constructor(
     message: string,
     public readonly sessionPath: string,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = "SessionResumeError";
@@ -116,7 +116,10 @@ export function getSessionsDir(workDir: string = process.cwd()): string {
  * Gets the filename for a session
  * Format: <phase>-<name>.jsonl (e.g., "prd-user-auth.jsonl")
  */
-export function getSessionFilename(phase: "prd" | "design", name: string): string {
+export function getSessionFilename(
+  phase: "prd" | "design",
+  name: string,
+): string {
   return `${phase}-${name}.jsonl`;
 }
 
@@ -126,7 +129,7 @@ export function getSessionFilename(phase: "prd" | "design", name: string): strin
 export function getSessionPath(
   phase: "prd" | "design",
   name: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): string {
   return path.join(getSessionsDir(workDir), getSessionFilename(phase, name));
 }
@@ -134,7 +137,9 @@ export function getSessionPath(
 /**
  * Ensures the sessions directory exists
  */
-export async function ensureSessionsDir(workDir: string = process.cwd()): Promise<string> {
+export async function ensureSessionsDir(
+  workDir: string = process.cwd(),
+): Promise<string> {
   const sessionsDir = getSessionsDir(workDir);
   await fs.mkdir(sessionsDir, { recursive: true });
   return sessionsDir;
@@ -164,7 +169,10 @@ async function parseJsonlFile(filePath: string): Promise<AnySessionEntry[]> {
 /**
  * Converts session entries to a LoadedSession
  */
-function entriesToSession(entries: AnySessionEntry[], filePath: string): LoadedSession {
+function entriesToSession(
+  entries: AnySessionEntry[],
+  filePath: string,
+): LoadedSession {
   if (entries.length === 0) {
     throw new SessionResumeError("Session file is empty", filePath);
   }
@@ -173,7 +181,7 @@ function entriesToSession(entries: AnySessionEntry[], filePath: string): LoadedS
   if (firstEntry.type !== "session") {
     throw new SessionResumeError(
       "Session file does not start with session metadata",
-      filePath
+      filePath,
     );
   }
 
@@ -182,17 +190,27 @@ function entriesToSession(entries: AnySessionEntry[], filePath: string): LoadedS
 
   for (let i = 1; i < entries.length; i++) {
     const entry = entries[i];
-    if (entry.type === "user" || entry.type === "assistant" || entry.type === "tool_use") {
+    if (
+      entry.type === "user" ||
+      entry.type === "assistant" ||
+      entry.type === "tool_use"
+    ) {
       messages.push({
         type: entry.type,
         id: entry.id,
         parentId: entry.parentId,
-        content: entry.type === "tool_use"
-          ? undefined
-          : (entry as UserMessageEntry | AssistantMessageEntry).content,
-        tool: entry.type === "tool_use" ? (entry as ToolUseEntry).tool : undefined,
-        target: entry.type === "tool_use" ? (entry as ToolUseEntry).target : undefined,
-        input: entry.type === "tool_use" ? (entry as ToolUseEntry).input : undefined,
+        content:
+          entry.type === "tool_use"
+            ? undefined
+            : (entry as UserMessageEntry | AssistantMessageEntry).content,
+        tool:
+          entry.type === "tool_use" ? (entry as ToolUseEntry).tool : undefined,
+        target:
+          entry.type === "tool_use"
+            ? (entry as ToolUseEntry).target
+            : undefined,
+        input:
+          entry.type === "tool_use" ? (entry as ToolUseEntry).input : undefined,
       });
     }
   }
@@ -215,7 +233,9 @@ function entriesToSession(entries: AnySessionEntry[], filePath: string): LoadedS
  * @returns LoadedSession with metadata and messages, or null if file doesn't exist
  * @throws SessionResumeError if file exists but is corrupted/invalid
  */
-export async function loadSession(sessionPath: string): Promise<LoadedSession | null> {
+export async function loadSession(
+  sessionPath: string,
+): Promise<LoadedSession | null> {
   try {
     const entries = await parseJsonlFile(sessionPath);
     return entriesToSession(entries, sessionPath);
@@ -229,7 +249,7 @@ export async function loadSession(sessionPath: string): Promise<LoadedSession | 
     throw new SessionResumeError(
       `Failed to load session: ${(err as Error).message}`,
       sessionPath,
-      err as Error
+      err as Error,
     );
   }
 }
@@ -246,7 +266,7 @@ export async function loadSession(sessionPath: string): Promise<LoadedSession | 
 export async function loadSessionByName(
   phase: "prd" | "design",
   name: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<LoadedSession | null> {
   const sessionPath = getSessionPath(phase, name, workDir);
   return loadSession(sessionPath);
@@ -263,7 +283,7 @@ export async function loadSessionByName(
 export async function createSessionFile(
   session: Session,
   name: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<string> {
   await ensureSessionsDir(workDir);
 
@@ -290,7 +310,7 @@ export async function createSessionFile(
  */
 export async function appendMessage(
   sessionPath: string,
-  entry: UserMessageEntry | AssistantMessageEntry | ToolUseEntry
+  entry: UserMessageEntry | AssistantMessageEntry | ToolUseEntry,
 ): Promise<void> {
   const handle = await fs.open(sessionPath, "a");
   try {
@@ -311,7 +331,7 @@ export async function appendMessage(
 export async function appendUserMessage(
   sessionPath: string,
   content: string,
-  parentId: string | null = null
+  parentId: string | null = null,
 ): Promise<string> {
   const id = `m${generateId()}`;
   const entry: UserMessageEntry = {
@@ -335,7 +355,7 @@ export async function appendUserMessage(
 export async function appendAssistantMessage(
   sessionPath: string,
   content: string,
-  parentId: string | null
+  parentId: string | null,
 ): Promise<string> {
   const id = `m${generateId()}`;
   const entry: AssistantMessageEntry = {
@@ -363,7 +383,7 @@ export async function appendToolUse(
   tool: string,
   parentId: string | null,
   target?: string,
-  input?: Record<string, unknown>
+  input?: Record<string, unknown>,
 ): Promise<string> {
   const id = `m${generateId()}`;
   const entry: ToolUseEntry = {
@@ -392,7 +412,7 @@ export async function updateSessionMetadata(
   updates: {
     claudeSessionId?: string;
     updatedAt?: string;
-  }
+  },
 ): Promise<void> {
   const content = await fs.readFile(sessionPath, "utf-8");
   const lines = content.split("\n");
@@ -427,7 +447,7 @@ export async function updateSessionMetadata(
  */
 export async function saveSession(
   session: LoadedSession,
-  sessionPath: string
+  sessionPath: string,
 ): Promise<void> {
   const dir = path.dirname(sessionPath);
   await fs.mkdir(dir, { recursive: true });
@@ -502,7 +522,7 @@ export async function saveSession(
  * @returns Array of session metadata (without messages for efficiency)
  */
 export async function listSessions(
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<Session[]> {
   const sessionsDir = getSessionsDir(workDir);
 
@@ -586,7 +606,7 @@ export async function deleteSession(sessionPath: string): Promise<boolean> {
 export async function sessionExists(
   phase: "prd" | "design",
   name: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<boolean> {
   const sessionPath = getSessionPath(phase, name, workDir);
   try {
@@ -608,7 +628,7 @@ export async function sessionExists(
 export async function resolveSessionName(
   phase: "prd" | "design",
   baseName: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<string> {
   // Normalize the name (lowercase, hyphens instead of spaces)
   let name = baseName.toLowerCase().replace(/\s+/g, "-");
@@ -655,7 +675,7 @@ export type ResumeResult = ResumeSessionResult | ResumeSessionFailure;
 export async function tryResumeSession(
   phase: "prd" | "design",
   name: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<ResumeResult> {
   const sessionPath = getSessionPath(phase, name, workDir);
 
@@ -678,7 +698,7 @@ export async function tryResumeSession(
       error: new SessionResumeError(
         `Failed to resume session: ${(err as Error).message}`,
         sessionPath,
-        err as Error
+        err as Error,
       ),
       sessionPath,
     };
@@ -696,7 +716,7 @@ export async function tryResumeSession(
 export async function startFreshSession(
   phase: "prd" | "design",
   name: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<{ session: Session; sessionPath: string }> {
   const sessionPath = getSessionPath(phase, name, workDir);
 

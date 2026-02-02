@@ -9,7 +9,11 @@ import type { Plan } from "./plan.js";
 import type { Task } from "./task.js";
 import type { ClaudeEvent, ClaudeAbortController } from "./claude-runner.js";
 import type { TextEventData } from "./stream-parser.js";
-import { runTask, createAbortController, ClaudeAbortError } from "./claude-runner.js";
+import {
+  runTask,
+  createAbortController,
+  ClaudeAbortError,
+} from "./claude-runner.js";
 import { ProgressLogger } from "./progress.js";
 import { PlanLock } from "../utils/lock.js";
 import * as git from "../utils/git.js";
@@ -26,10 +30,19 @@ const COMMIT_MESSAGE_PREFIX = "SUGGESTED_COMMIT_MESSAGE:";
  */
 export interface ExecutorEvents {
   onPlanStart?: (plan: Plan) => void;
-  onPlanComplete?: (completed: number, total: number, durationMs: number) => void;
+  onPlanComplete?: (
+    completed: number,
+    total: number,
+    durationMs: number,
+  ) => void;
   onPlanFailed?: (task: Task, reason: string) => void;
   onPlanCancelled?: (taskId: string) => void;
-  onTaskStart?: (taskIndex: number, total: number, task: Task, attempt: number) => void;
+  onTaskStart?: (
+    taskIndex: number,
+    total: number,
+    task: Task,
+    attempt: number,
+  ) => void;
   onTaskComplete?: (task: Task) => void;
   onTaskFailed?: (task: Task, attempt: number, error: Error) => void;
   onClaudeEvent?: (event: ClaudeEvent) => void;
@@ -123,7 +136,7 @@ export class Executor {
       this.events?.onPlanComplete?.(
         this.plan.tasks.length,
         this.plan.tasks.length,
-        0
+        0,
       );
       return;
     }
@@ -134,7 +147,7 @@ export class Executor {
       this.events?.onPlanComplete?.(
         this.countCompleted(),
         this.plan.tasks.length,
-        0
+        0,
       );
       return;
     }
@@ -200,9 +213,11 @@ export class Executor {
         }
         this.events?.onPlanFailed?.(
           task,
-          `failed after ${task.attempts} attempts`
+          `failed after ${task.attempts} attempts`,
         );
-        throw new Error(`task ${task.id} failed after ${task.attempts} attempts`);
+        throw new Error(
+          `task ${task.id} failed after ${task.attempts} attempts`,
+        );
       }
     }
 
@@ -218,7 +233,7 @@ export class Executor {
       await this.logger.planCompleted(
         this.plan.tasks.length,
         this.countCompleted(),
-        durationMs
+        durationMs,
       );
     }
 
@@ -235,7 +250,7 @@ export class Executor {
     this.events?.onPlanComplete?.(
       this.countCompleted(),
       this.plan.tasks.length,
-      durationMs
+      durationMs,
     );
   }
 
@@ -245,7 +260,7 @@ export class Executor {
   private async executeTask(
     task: Task,
     idx: number,
-    planContext: string
+    planContext: string,
   ): Promise<void> {
     while (task.attempts < MAX_ATTEMPTS) {
       // Check for abort before starting
@@ -266,7 +281,7 @@ export class Executor {
         idx + 1,
         this.plan.tasks.length,
         task,
-        task.attempts
+        task.attempts,
       );
 
       // Log task started
@@ -278,7 +293,12 @@ export class Executor {
       this.capturedOutput = [];
 
       // Build the prompt for this task
-      const prompt = this.buildPrompt(task, planContext, task.attempts, MAX_ATTEMPTS);
+      const prompt = this.buildPrompt(
+        task,
+        planContext,
+        task.attempts,
+        MAX_ATTEMPTS,
+      );
 
       // Create a new abort controller for this task attempt
       this.currentAbortController = createAbortController();
@@ -314,7 +334,7 @@ export class Executor {
           const status = await git.getStatus(this.repoRoot);
           if (!status.clean) {
             throw new Error(
-              `workspace not clean after commit (possibly git hooks modified files): ${status.files.join(", ")}`
+              `workspace not clean after commit (possibly git hooks modified files): ${status.files.join(", ")}`,
             );
           }
         }
@@ -364,7 +384,7 @@ export class Executor {
     task: Task,
     planContext: string,
     attempt: number,
-    maxAttempts: number
+    maxAttempts: number,
   ): string {
     const lines: string[] = [];
 
@@ -384,14 +404,20 @@ export class Executor {
     // Add retry note if not first attempt
     if (attempt > 1) {
       lines.push("**Note**: Previous attempts to complete this task failed. ");
-      lines.push("Consider alternative approaches or investigate what went wrong. ");
-      lines.push("Review any uncommitted changes from previous attempts - you may be able to continue from where they left off. ");
+      lines.push(
+        "Consider alternative approaches or investigate what went wrong. ",
+      );
+      lines.push(
+        "Review any uncommitted changes from previous attempts - you may be able to continue from where they left off. ",
+      );
       lines.push("Use `git status` and `git diff` to see what was changed.");
       lines.push("");
     }
 
     lines.push("## Acceptance Criteria");
-    lines.push("You MUST verify ALL of the following before considering the task complete:");
+    lines.push(
+      "You MUST verify ALL of the following before considering the task complete:",
+    );
     for (let i = 0; i < task.acceptanceCriteria.length; i++) {
       lines.push(`${i + 1}. ${task.acceptanceCriteria[i]}`);
     }
@@ -400,13 +426,23 @@ export class Executor {
     lines.push("## Instructions");
     lines.push("1. Implement the task as described");
     lines.push("2. Verify ALL acceptance criteria are met");
-    lines.push("3. If you need additional context on requirements or implementation details, consult the Source document listed in the Context section above");
-    lines.push("4. Before finalizing, perform a code review of your changes. If you have a code review skill available (e.g., `/code-review`), use it to review your implementation and assess what findings are worth addressing vs. acceptable trade-offs");
-    lines.push("5. DO NOT commit your changes - the orchestrator will handle the commit");
-    lines.push("6. Output a suggested commit message in this exact format: SUGGESTED_COMMIT_MESSAGE: <your descriptive commit message>");
+    lines.push(
+      "3. If you need additional context on requirements or implementation details, consult the Source document listed in the Context section above",
+    );
+    lines.push(
+      "4. Before finalizing, perform a code review of your changes. If you have a code review skill available (e.g., `/code-review`), use it to review your implementation and assess what findings are worth addressing vs. acceptable trade-offs",
+    );
+    lines.push(
+      "5. DO NOT commit your changes - the orchestrator will handle the commit",
+    );
+    lines.push(
+      "6. Output a suggested commit message in this exact format: SUGGESTED_COMMIT_MESSAGE: <your descriptive commit message>",
+    );
     lines.push("");
 
-    lines.push("IMPORTANT: Leave changes uncommitted. The orchestrator will commit after validating. Do not declare success unless ALL acceptance criteria are met.");
+    lines.push(
+      "IMPORTANT: Leave changes uncommitted. The orchestrator will commit after validating. Do not declare success unless ALL acceptance criteria are met.",
+    );
 
     return lines.join("\n");
   }
@@ -481,7 +517,7 @@ export class Executor {
   private workspaceDirtyError(files: string[]): Error {
     const fileList = files.map((f) => `  ${f}`).join("\n");
     return new Error(
-      `workspace has uncommitted changes before starting plan\n\nModified files:\n${fileList}\n\nPlease commit or stash your changes before running the plan.\nOr use --allow-dirty to skip this check (not recommended).`
+      `workspace has uncommitted changes before starting plan\n\nModified files:\n${fileList}\n\nPlease commit or stash your changes before running the plan.\nOr use --allow-dirty to skip this check (not recommended).`,
     );
   }
 }

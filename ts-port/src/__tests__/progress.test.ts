@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { ProgressLogger, EventType, type ProgressEvent } from "../core/progress.js";
+import {
+  ProgressLogger,
+  EventType,
+  type ProgressEvent,
+} from "../core/progress.js";
 
 describe("ProgressLogger", () => {
   let testDir: string;

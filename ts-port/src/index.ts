@@ -7,15 +7,33 @@
 import { RafaApp } from "./tui/app.js";
 import { runInit } from "./cli/init.js";
 import { runDeinit } from "./cli/deinit.js";
+import { runPrd } from "./cli/prd.js";
+
+/**
+ * CLI parsed arguments
+ */
+interface ParsedArgs {
+  command: string | null;
+  force: boolean;
+  name?: string;
+}
 
 /**
  * Parses command line arguments
  */
-function parseArgs(): { command: string | null; force: boolean } {
+function parseArgs(): ParsedArgs {
   const args = process.argv.slice(2);
   const command = args[0] || null;
   const force = args.includes("--force") || args.includes("-f");
-  return { command, force };
+
+  // Parse --name flag
+  let name: string | undefined;
+  const nameIndex = args.indexOf("--name");
+  if (nameIndex !== -1 && args[nameIndex + 1]) {
+    name = args[nameIndex + 1];
+  }
+
+  return { command, force, name };
 }
 
 /**
@@ -28,8 +46,10 @@ Commands:
   (no command)    Launch TUI (home screen)
   init            Initialize Rafa in the current repository
   deinit          Remove Rafa from the current repository
+  prd             Create a Product Requirements Document
 
 Options:
+  --name <name>   Specify PRD name (for prd command)
   --force, -f     Skip confirmation prompts (for deinit)
   --help, -h      Show this help message
   --version, -v   Show version information`);
@@ -39,7 +59,7 @@ Options:
  * Main entry point
  */
 export async function main(): Promise<void> {
-  const { command, force } = parseArgs();
+  const { command, force, name } = parseArgs();
 
   switch (command) {
     case null: {
@@ -68,6 +88,11 @@ export async function main(): Promise<void> {
         console.error(`Error: ${result.message}`);
         process.exit(1);
       }
+      break;
+    }
+
+    case "prd": {
+      await runPrd({ name });
       break;
     }
 

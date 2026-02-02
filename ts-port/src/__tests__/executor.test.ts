@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Executor, MAX_ATTEMPTS, type ExecutorEvents } from "../core/executor.js";
+import {
+  Executor,
+  MAX_ATTEMPTS,
+  type ExecutorEvents,
+} from "../core/executor.js";
 import { createPlan } from "../core/plan.js";
 import { createTask, type Task } from "../core/task.js";
 import type { Plan } from "../core/plan.js";
@@ -53,8 +57,10 @@ describe("Executor", () => {
       "docs/designs/test.md",
       [
         createTask("t01", "First task", "Do the first thing", ["Criterion 1"]),
-        createTask("t02", "Second task", "Do the second thing", ["Criterion 2"]),
-      ]
+        createTask("t02", "Second task", "Do the second thing", [
+          "Criterion 2",
+        ]),
+      ],
     );
 
     // Reset mocks
@@ -238,7 +244,7 @@ describe("Executor", () => {
       });
 
       await expect(executor.run()).rejects.toThrow(
-        "task t01 failed after 5 attempts"
+        "task t01 failed after 5 attempts",
       );
 
       expect(failedTask?.id).toBe("t01");
@@ -273,8 +279,12 @@ describe("Executor", () => {
       expect(promptsSeen[2]).toContain("**Attempt**: 3 of 5");
 
       // Retry prompts should include the retry note
-      expect(promptsSeen[1]).toContain("Previous attempts to complete this task failed");
-      expect(promptsSeen[2]).toContain("Previous attempts to complete this task failed");
+      expect(promptsSeen[1]).toContain(
+        "Previous attempts to complete this task failed",
+      );
+      expect(promptsSeen[2]).toContain(
+        "Previous attempts to complete this task failed",
+      );
     });
   });
 
@@ -294,7 +304,7 @@ describe("Executor", () => {
       });
 
       await expect(executor.run()).rejects.toThrow(
-        /workspace has uncommitted changes/
+        /workspace has uncommitted changes/,
       );
     });
 
@@ -362,7 +372,7 @@ describe("Executor", () => {
 
       expect(git.commitAll).toHaveBeenCalledWith(
         "[rafa] Complete task t01: My task",
-        tempDir
+        tempDir,
       );
     });
 
@@ -395,7 +405,7 @@ describe("Executor", () => {
 
       expect(git.commitAll).toHaveBeenCalledWith(
         "[rafa] Add new feature X",
-        tempDir
+        tempDir,
       );
     });
 
@@ -433,7 +443,7 @@ describe("Executor", () => {
               "First criterion",
               "Second criterion",
             ]),
-          ]
+          ],
         ),
         repoRoot: tempDir,
         skipPersistence: true,
@@ -443,7 +453,9 @@ describe("Executor", () => {
       await executor.run();
 
       // Check required sections from Go version (runner.go lines 54-94)
-      expect(capturedPrompt).toContain("You are executing a task as part of an automated plan.");
+      expect(capturedPrompt).toContain(
+        "You are executing a task as part of an automated plan.",
+      );
       expect(capturedPrompt).toContain("## Context");
       expect(capturedPrompt).toContain("Plan: test-plan");
       expect(capturedPrompt).toContain("Description: A test description");
@@ -452,7 +464,9 @@ describe("Executor", () => {
       expect(capturedPrompt).toContain("**ID**: t01");
       expect(capturedPrompt).toContain("**Title**: First task");
       expect(capturedPrompt).toContain("**Attempt**: 1 of 5");
-      expect(capturedPrompt).toContain("**Description**: Task description here");
+      expect(capturedPrompt).toContain(
+        "**Description**: Task description here",
+      );
       expect(capturedPrompt).toContain("## Acceptance Criteria");
       expect(capturedPrompt).toContain("1. First criterion");
       expect(capturedPrompt).toContain("2. Second criterion");
@@ -483,10 +497,14 @@ describe("Executor", () => {
       await executor.run();
 
       // First attempt should not have retry note
-      expect(capturedPrompts[0]).not.toContain("Previous attempts to complete this task failed");
+      expect(capturedPrompts[0]).not.toContain(
+        "Previous attempts to complete this task failed",
+      );
 
       // Second attempt should have retry note
-      expect(capturedPrompts[1]).toContain("Previous attempts to complete this task failed");
+      expect(capturedPrompts[1]).toContain(
+        "Previous attempts to complete this task failed",
+      );
       expect(capturedPrompts[1]).toContain("git status");
       expect(capturedPrompts[1]).toContain("git diff");
     });
@@ -588,7 +606,7 @@ describe("Executor", () => {
         executor.abort();
         // Simulate being interrupted
         await new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("aborted")), 100)
+          setTimeout(() => reject(new Error("aborted")), 100),
         );
       });
 

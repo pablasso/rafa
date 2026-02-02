@@ -55,7 +55,7 @@ export class ActivityLogComponent {
   private addToolUse(
     id: string,
     name: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
   ): void {
     // Extract a meaningful target from the input
     const target = this.extractTarget(name, input);
@@ -100,7 +100,7 @@ export class ActivityLogComponent {
    */
   private extractTarget(
     toolName: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
   ): string {
     // Common file path parameters
     if (input.file_path && typeof input.file_path === "string") {
@@ -196,6 +196,22 @@ export class ActivityLogComponent {
     if (event.status === "running") {
       this.pendingToolUses.set(event.id, this.events.length - 1);
     }
+  }
+
+  /**
+   * Add a custom status event (not a tool use)
+   * Used for system messages like "Session started", "Auto-triggering review..."
+   */
+  addCustomEvent(message: string): void {
+    const event: ActivityEvent = {
+      id: `custom-${Date.now()}`,
+      name: message,
+      target: "",
+      status: "done",
+      startTime: Date.now(),
+      duration: 0,
+    };
+    this.addEvent(event);
   }
 
   /**

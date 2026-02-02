@@ -43,6 +43,7 @@ export class RafaApp {
   private currentView: ViewState = "home";
   private views: Map<ViewState, RafaView>;
   private viewContainer: ViewContainer;
+  private initialView?: { view: ViewState; context?: unknown };
 
   constructor() {
     const terminal = new ProcessTerminal();
@@ -61,6 +62,14 @@ export class RafaApp {
     this.viewContainer = new ViewContainer(this);
     this.tui.addChild(this.viewContainer);
     this.tui.setFocus(this.viewContainer);
+  }
+
+  /**
+   * Set a view to navigate to when run() is called
+   * This allows CLI commands to launch directly into specific views
+   */
+  navigateOnStart(view: ViewState, context?: unknown): void {
+    this.initialView = { view, context };
   }
 
   /**
@@ -107,10 +116,14 @@ export class RafaApp {
       process.exit(1);
     }
 
-    // Activate the initial view
-    const homeView = this.views.get("home");
-    if (homeView) {
-      homeView.activate();
+    // Navigate to initial view if set, otherwise home
+    if (this.initialView) {
+      this.navigate(this.initialView.view, this.initialView.context);
+    } else {
+      const homeView = this.views.get("home");
+      if (homeView) {
+        homeView.activate();
+      }
     }
 
     // Start the TUI
@@ -151,7 +164,9 @@ class ViewContainer implements Component {
         const runView = this.app.getCurrentViewInstance();
         // Use a type guard to check if the view has the getIsRunning method
         if (runView && "getIsRunning" in runView) {
-          const isRunning = (runView as { getIsRunning: () => boolean }).getIsRunning();
+          const isRunning = (
+            runView as { getIsRunning: () => boolean }
+          ).getIsRunning();
           if (isRunning && runView.handleInput) {
             // Let the run view handle Ctrl+C for aborting execution
             runView.handleInput(data);

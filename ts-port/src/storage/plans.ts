@@ -64,48 +64,50 @@ function validateTask(task: unknown, index: number): Task {
 
   if (typeof t.id !== "string" || t.id.length === 0) {
     throw new PlanValidationError(
-      `Task at index ${index} has invalid or missing 'id'`
+      `Task at index ${index} has invalid or missing 'id'`,
     );
   }
 
   if (typeof t.title !== "string") {
     throw new PlanValidationError(
-      `Task '${t.id}' has invalid or missing 'title'`
+      `Task '${t.id}' has invalid or missing 'title'`,
     );
   }
 
   if (typeof t.description !== "string") {
     throw new PlanValidationError(
-      `Task '${t.id}' has invalid or missing 'description'`
+      `Task '${t.id}' has invalid or missing 'description'`,
     );
   }
 
   if (!Array.isArray(t.acceptanceCriteria)) {
     throw new PlanValidationError(
-      `Task '${t.id}' has invalid or missing 'acceptanceCriteria'`
+      `Task '${t.id}' has invalid or missing 'acceptanceCriteria'`,
     );
   }
 
   for (let i = 0; i < t.acceptanceCriteria.length; i++) {
     if (typeof t.acceptanceCriteria[i] !== "string") {
       throw new PlanValidationError(
-        `Task '${t.id}' has invalid acceptanceCriteria at index ${i}`
+        `Task '${t.id}' has invalid acceptanceCriteria at index ${i}`,
       );
     }
   }
 
   if (
     typeof t.status !== "string" ||
-    !VALID_TASK_STATUSES.includes(t.status as (typeof VALID_TASK_STATUSES)[number])
+    !VALID_TASK_STATUSES.includes(
+      t.status as (typeof VALID_TASK_STATUSES)[number],
+    )
   ) {
     throw new PlanValidationError(
-      `Task '${t.id}' has invalid 'status': ${t.status}`
+      `Task '${t.id}' has invalid 'status': ${t.status}`,
     );
   }
 
   if (typeof t.attempts !== "number" || t.attempts < 0) {
     throw new PlanValidationError(
-      `Task '${t.id}' has invalid 'attempts': ${t.attempts}`
+      `Task '${t.id}' has invalid 'attempts': ${t.attempts}`,
     );
   }
 
@@ -151,7 +153,9 @@ function validatePlan(data: unknown): Plan {
 
   if (
     typeof p.status !== "string" ||
-    !VALID_PLAN_STATUSES.includes(p.status as (typeof VALID_PLAN_STATUSES)[number])
+    !VALID_PLAN_STATUSES.includes(
+      p.status as (typeof VALID_PLAN_STATUSES)[number],
+    )
   ) {
     throw new PlanValidationError(`Plan has invalid 'status': ${p.status}`);
   }
@@ -188,7 +192,7 @@ export function getPlansDir(workDir: string = process.cwd()): string {
  */
 export function getPlanDir(
   folderName: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): string {
   return path.join(getPlansDir(workDir), folderName);
 }
@@ -206,7 +210,7 @@ export function getPlanJsonPath(planDir: string): string {
  */
 export async function findPlanFolder(
   name: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<string> {
   // Migrate from Go version if needed
   await migrateIfNeeded(getRafaDir(workDir));
@@ -218,7 +222,9 @@ export async function findPlanFolder(
     entries = await fs.readdir(plansPath, { withFileTypes: true });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error("No plans found. Run 'rafa plan create <design.md>' first");
+      throw new Error(
+        "No plans found. Run 'rafa plan create <design.md>' first",
+      );
     }
     throw new Error(`Failed to read plans directory: ${err}`);
   }
@@ -250,7 +256,7 @@ export async function findPlanFolder(
  */
 export async function resolvePlanName(
   baseName: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<string> {
   const plansPath = getPlansDir(workDir);
 
@@ -350,7 +356,7 @@ export async function savePlan(planDir: string, plan: Plan): Promise<void> {
  */
 export async function createPlanFolder(
   plan: Plan,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<string> {
   const folderName = `${plan.id}-${plan.name}`;
   const folderPath = path.join(getPlansDir(workDir), folderName);
@@ -371,7 +377,9 @@ export async function createPlanFolder(
 /**
  * Lists all plans from .rafa/plans/
  */
-export async function listPlans(workDir: string = process.cwd()): Promise<Plan[]> {
+export async function listPlans(
+  workDir: string = process.cwd(),
+): Promise<Plan[]> {
   // Migrate from Go version if needed
   await migrateIfNeeded(getRafaDir(workDir));
 

@@ -5,7 +5,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { loadSettings, saveSettings, getDefaultSettings } from "../storage/settings.js";
+import {
+  loadSettings,
+  saveSettings,
+  getDefaultSettings,
+} from "../storage/settings.js";
 
 describe("settings", () => {
   let testDir: string;
@@ -32,7 +36,7 @@ describe("settings", () => {
     it("should load settings from file", async () => {
       await fs.writeFile(
         settingsPath,
-        JSON.stringify({ defaultMaxAttempts: 10 })
+        JSON.stringify({ defaultMaxAttempts: 10 }),
       );
 
       const settings = await loadSettings(settingsPath);

@@ -3,7 +3,12 @@ import { RunView, type RunContext } from "../tui/views/run.js";
 import type { RafaApp } from "../tui/app.js";
 import type { Plan } from "../core/plan.js";
 import type { Task } from "../core/task.js";
-import type { ClaudeEvent, ToolUseEventData, ToolResultEventData, TextEventData } from "../core/stream-parser.js";
+import type {
+  ClaudeEvent,
+  ToolUseEventData,
+  ToolResultEventData,
+  TextEventData,
+} from "../core/stream-parser.js";
 
 // Mock RafaApp
 function createMockApp(): RafaApp {
@@ -81,7 +86,7 @@ describe("RunView", () => {
       // Should be able to render without errors
       const lines = view.render(100);
       expect(lines.length).toBeGreaterThan(0);
-      expect(lines.some(l => l.includes("test-feature"))).toBe(true);
+      expect(lines.some((l) => l.includes("test-feature"))).toBe(true);
     });
 
     it("clears previous state on activation", () => {
@@ -136,7 +141,7 @@ describe("RunView", () => {
       const lines = view.render(100);
 
       // Should have │ separator in content lines
-      const contentLines = lines.filter(l => l.includes("│"));
+      const contentLines = lines.filter((l) => l.includes("│"));
       expect(contentLines.length).toBeGreaterThan(0);
     });
 
@@ -211,7 +216,10 @@ describe("RunView", () => {
     it("updates output stream when text event arrives", () => {
       const event: ClaudeEvent = {
         type: "text",
-        data: { text: "Processing files...", isPartial: false } as TextEventData,
+        data: {
+          text: "Processing files...",
+          isPartial: false,
+        } as TextEventData,
         raw: {} as any,
       };
 

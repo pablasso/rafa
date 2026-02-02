@@ -72,9 +72,13 @@ export interface SkillsInstallerOptions {
  * Installs skills from GitHub to the target directory
  */
 export async function installSkills(
-  options: SkillsInstallerOptions
+  options: SkillsInstallerOptions,
 ): Promise<void> {
-  const { targetDir, skillsUrl = DEFAULT_SKILLS_URL, httpFetcher = defaultFetcher } = options;
+  const {
+    targetDir,
+    skillsUrl = DEFAULT_SKILLS_URL,
+    httpFetcher = defaultFetcher,
+  } = options;
 
   // Create target directory
   await fs.mkdir(targetDir, { recursive: true });
@@ -85,13 +89,13 @@ export async function installSkills(
     response = await httpFetcher.fetch(skillsUrl);
   } catch (err) {
     throw new SkillsInstallError(
-      `Failed to download skills: ${err instanceof Error ? err.message : err}`
+      `Failed to download skills: ${err instanceof Error ? err.message : err}`,
     );
   }
 
   if (!response.ok) {
     throw new SkillsInstallError(
-      `Failed to download skills: HTTP ${response.status}`
+      `Failed to download skills: HTTP ${response.status}`,
     );
   }
 
@@ -106,7 +110,7 @@ export async function installSkills(
     // Clean up partial installation
     await uninstallSkills(targetDir);
     throw new SkillsInstallError(
-      `Failed to extract skills: ${err instanceof Error ? err.message : err}`
+      `Failed to extract skills: ${err instanceof Error ? err.message : err}`,
     );
   }
 
@@ -126,7 +130,7 @@ export async function installSkills(
  */
 async function extractTarball(
   body: ReadableStream<Uint8Array>,
-  targetDir: string
+  targetDir: string,
 ): Promise<void> {
   // Create a temporary file to store the tarball
   const tmpDir = await fs.mkdtemp(path.join(targetDir, ".tmp-"));
@@ -134,7 +138,9 @@ async function extractTarball(
 
   try {
     // Convert web stream to Node stream and save to temp file
-    const nodeStream = Readable.fromWeb(body as import("stream/web").ReadableStream<Uint8Array>);
+    const nodeStream = Readable.fromWeb(
+      body as import("stream/web").ReadableStream<Uint8Array>,
+    );
     const writeStream = createWriteStream(tmpFile);
     await pipeline(nodeStream, writeStream);
 
@@ -180,7 +186,7 @@ async function verifySkills(targetDir: string): Promise<void> {
       await fs.access(skillFile);
     } catch {
       throw new SkillsInstallError(
-        `Required skill "${skill}" missing SKILL.md file`
+        `Required skill "${skill}" missing SKILL.md file`,
       );
     }
   }

@@ -7,7 +7,11 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { installSkills, uninstallSkills, SkillsInstallError } from "../core/skills.js";
+import {
+  installSkills,
+  uninstallSkills,
+  SkillsInstallError,
+} from "../core/skills.js";
 import { checkClaudeCli } from "../utils/claude-check.js";
 import { writeVersionFile } from "../storage/migration.js";
 
@@ -20,7 +24,9 @@ const CLAUDE_SKILLS_DIR = ".claude/skills";
 /**
  * Checks if Rafa is already initialized in the current directory
  */
-export async function isInitialized(workDir: string = process.cwd()): Promise<boolean> {
+export async function isInitialized(
+  workDir: string = process.cwd(),
+): Promise<boolean> {
   const rafaPath = path.join(workDir, RAFA_DIR);
   try {
     const stat = await fs.stat(rafaPath);
@@ -56,7 +62,7 @@ export function getSkillsDir(workDir: string = process.cwd()): string {
  */
 async function addToGitignore(
   entry: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<void> {
   const gitignorePath = path.join(workDir, GITIGNORE_PATH);
 
@@ -95,7 +101,7 @@ async function addToGitignore(
  */
 async function removeFromGitignore(
   entry: string,
-  workDir: string = process.cwd()
+  workDir: string = process.cwd(),
 ): Promise<void> {
   const gitignorePath = path.join(workDir, GITIGNORE_PATH);
 
@@ -210,7 +216,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     await fs.writeFile(
       settingsPath,
       JSON.stringify(defaultSettings, null, 2) + "\n",
-      "utf-8"
+      "utf-8",
     );
 
     // Install skills from GitHub (unless skipped for testing)

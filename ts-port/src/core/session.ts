@@ -24,10 +24,10 @@ export interface SessionMessage {
   type: "user" | "assistant" | "tool_use";
   id: string;
   parentId: string | null;
-  content?: string;       // For user/assistant messages
-  tool?: string;          // For tool_use
-  target?: string;        // For tool_use (file path, etc.)
-  input?: Record<string, unknown>;  // For tool_use
+  content?: string; // For user/assistant messages
+  tool?: string; // For tool_use
+  target?: string; // For tool_use (file path, etc.)
+  input?: Record<string, unknown>; // For tool_use
 }
 
 /**

@@ -40,7 +40,12 @@ export class PlanListView implements RafaView {
     if (this.plans.length === 0) {
       lines.push(truncateToWidth("  No plans found.", width));
       lines.push(truncateToWidth("", width));
-      lines.push(truncateToWidth("  Create a plan from a design doc to get started:", width));
+      lines.push(
+        truncateToWidth(
+          "  Create a plan from a design doc to get started:",
+          width,
+        ),
+      );
       lines.push(truncateToWidth("    [c] Create Plan", width));
     } else {
       for (let i = 0; i < this.plans.length; i++) {
@@ -55,7 +60,9 @@ export class PlanListView implements RafaView {
     }
 
     lines.push(truncateToWidth("", width));
-    lines.push(truncateToWidth("  [Enter] Run plan  [Esc] Back to Home", width));
+    lines.push(
+      truncateToWidth("  [Enter] Run plan  [Esc] Back to Home", width),
+    );
 
     return lines;
   }
@@ -80,7 +87,10 @@ export class PlanListView implements RafaView {
       this.selectedIndex = Math.max(0, this.selectedIndex - 1);
       this.app.requestRender();
     } else if (matchesKey(data, Key.down) && this.plans.length > 0) {
-      this.selectedIndex = Math.min(this.plans.length - 1, this.selectedIndex + 1);
+      this.selectedIndex = Math.min(
+        this.plans.length - 1,
+        this.selectedIndex + 1,
+      );
       this.app.requestRender();
     } else if (matchesKey(data, Key.enter) && this.plans.length > 0) {
       const plan = this.plans[this.selectedIndex];

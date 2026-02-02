@@ -87,7 +87,10 @@ export class MultilineEditorComponent {
     }
     // Clamp cursor position
     this.cursorLine = Math.min(this.cursorLine, this.lines.length - 1);
-    this.cursorCol = Math.min(this.cursorCol, this.lines[this.cursorLine].length);
+    this.cursorCol = Math.min(
+      this.cursorCol,
+      this.lines[this.cursorLine].length,
+    );
   }
 
   /**
@@ -282,14 +285,20 @@ export class MultilineEditorComponent {
   private moveCursorUp(): void {
     if (this.cursorLine > 0) {
       this.cursorLine--;
-      this.cursorCol = Math.min(this.cursorCol, this.lines[this.cursorLine].length);
+      this.cursorCol = Math.min(
+        this.cursorCol,
+        this.lines[this.cursorLine].length,
+      );
     }
   }
 
   private moveCursorDown(): void {
     if (this.cursorLine < this.lines.length - 1) {
       this.cursorLine++;
-      this.cursorCol = Math.min(this.cursorCol, this.lines[this.cursorLine].length);
+      this.cursorCol = Math.min(
+        this.cursorCol,
+        this.lines[this.cursorLine].length,
+      );
     }
   }
 
@@ -333,7 +342,7 @@ export class MultilineEditorComponent {
     if (this.isEmpty() && this.placeholder) {
       const placeholderLine = truncateToWidth(
         `│ \x1b[90m${this.placeholder}\x1b[0m`,
-        width
+        width,
       );
       result.push(placeholderLine);
       // Pad to maxHeight

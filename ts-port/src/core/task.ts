@@ -17,7 +17,7 @@ export function createTask(
   id: string,
   title: string,
   description: string,
-  acceptanceCriteria: string[]
+  acceptanceCriteria: string[],
 ): Task {
   return {
     id,

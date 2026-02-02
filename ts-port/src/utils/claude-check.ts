@@ -31,7 +31,8 @@ export async function checkClaudeCli(): Promise<ClaudeCliCheckResult> {
         proc.kill();
         resolve({
           available: false,
-          message: "Claude CLI check timed out. Please ensure claude is installed and responding.",
+          message:
+            "Claude CLI check timed out. Please ensure claude is installed and responding.",
         });
       }
     }, CHECK_TIMEOUT_MS);
@@ -85,7 +86,8 @@ For more information, visit: https://docs.anthropic.com/claude-code`,
       } else {
         resolve({
           available: false,
-          message: `Claude CLI check failed (exit code ${code}): ${stderr || stdout}`.trim(),
+          message:
+            `Claude CLI check failed (exit code ${code}): ${stderr || stdout}`.trim(),
         });
       }
     });

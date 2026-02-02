@@ -10,7 +10,7 @@ describe("createPlan", () => {
       "test-plan",
       "A test plan",
       "docs/designs/test.md",
-      [task]
+      [task],
     );
 
     expect(plan.id).toBe("abc123");

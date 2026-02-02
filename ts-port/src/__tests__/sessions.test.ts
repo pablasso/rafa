@@ -66,7 +66,7 @@ describe("session storage", () => {
     it("returns correct session file path", () => {
       const sessionPath = getSessionPath("prd", "my-feature", TEST_DIR);
       expect(sessionPath).toBe(
-        path.join(TEST_DIR, ".rafa", "sessions", "prd-my-feature.jsonl")
+        path.join(TEST_DIR, ".rafa", "sessions", "prd-my-feature.jsonl"),
       );
     });
   });
@@ -74,7 +74,11 @@ describe("session storage", () => {
   describe("createSession and loadSession", () => {
     it("creates and loads a session correctly", async () => {
       const session = createTestSession();
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       const loaded = await loadSession(sessionPath);
       expect(loaded).not.toBeNull();
@@ -87,7 +91,11 @@ describe("session storage", () => {
 
     it("stores claudeSessionId when provided", async () => {
       const session = createTestSession({ claudeSessionId: "claude-123" });
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       const loaded = await loadSession(sessionPath);
       expect(loaded!.claudeSessionId).toBe("claude-123");
@@ -95,7 +103,7 @@ describe("session storage", () => {
 
     it("returns null for non-existent session", async () => {
       const result = await loadSession(
-        path.join(TEST_DIR, ".rafa", "sessions", "nonexistent.jsonl")
+        path.join(TEST_DIR, ".rafa", "sessions", "nonexistent.jsonl"),
       );
       expect(result).toBeNull();
     });
@@ -105,12 +113,12 @@ describe("session storage", () => {
         TEST_DIR,
         ".rafa",
         "sessions",
-        "prd-corrupted.jsonl"
+        "prd-corrupted.jsonl",
       );
       await fs.writeFile(sessionPath, "invalid json");
 
       await expect(loadSession(sessionPath)).rejects.toBeInstanceOf(
-        SessionResumeError
+        SessionResumeError,
       );
     });
 
@@ -119,12 +127,12 @@ describe("session storage", () => {
         TEST_DIR,
         ".rafa",
         "sessions",
-        "prd-empty.jsonl"
+        "prd-empty.jsonl",
       );
       await fs.writeFile(sessionPath, "");
 
       await expect(loadSession(sessionPath)).rejects.toThrow(
-        "Session file is empty"
+        "Session file is empty",
       );
     });
   });
@@ -148,7 +156,11 @@ describe("session storage", () => {
   describe("appendUserMessage", () => {
     it("appends a user message to session", async () => {
       const session = createTestSession();
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       const msgId = await appendUserMessage(sessionPath, "Hello, Claude!");
 
@@ -162,14 +174,14 @@ describe("session storage", () => {
 
     it("appends user message with parentId", async () => {
       const session = createTestSession();
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       const msg1Id = await appendUserMessage(sessionPath, "First message");
-      const msg2Id = await appendUserMessage(
-        sessionPath,
-        "Follow up",
-        msg1Id
-      );
+      const msg2Id = await appendUserMessage(sessionPath, "Follow up", msg1Id);
 
       const loaded = await loadSession(sessionPath);
       expect(loaded!.messages).toHaveLength(2);
@@ -181,13 +193,17 @@ describe("session storage", () => {
   describe("appendAssistantMessage", () => {
     it("appends an assistant message to session", async () => {
       const session = createTestSession();
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       const userMsgId = await appendUserMessage(sessionPath, "Hello");
       const assistantMsgId = await appendAssistantMessage(
         sessionPath,
         "Hi there!",
-        userMsgId
+        userMsgId,
       );
 
       const loaded = await loadSession(sessionPath);
@@ -202,19 +218,23 @@ describe("session storage", () => {
   describe("appendToolUse", () => {
     it("appends a tool use entry to session", async () => {
       const session = createTestSession();
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       const assistantMsgId = await appendAssistantMessage(
         sessionPath,
         "Let me read that file",
-        null
+        null,
       );
       const toolId = await appendToolUse(
         sessionPath,
         "Read",
         assistantMsgId,
         "/path/to/file.ts",
-        { encoding: "utf-8" }
+        { encoding: "utf-8" },
       );
 
       const loaded = await loadSession(sessionPath);
@@ -231,7 +251,11 @@ describe("session storage", () => {
   describe("updateSessionMetadata", () => {
     it("updates claudeSessionId", async () => {
       const session = createTestSession();
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       await updateSessionMetadata(sessionPath, {
         claudeSessionId: "new-claude-id",
@@ -243,7 +267,11 @@ describe("session storage", () => {
 
     it("updates updatedAt timestamp", async () => {
       const session = createTestSession();
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       await updateSessionMetadata(sessionPath, {
         updatedAt: "2024-06-15T12:00:00.000Z",
@@ -255,7 +283,11 @@ describe("session storage", () => {
 
     it("preserves existing messages when updating metadata", async () => {
       const session = createTestSession();
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       await appendUserMessage(sessionPath, "Hello");
       await appendAssistantMessage(sessionPath, "Hi!", null);
@@ -305,7 +337,7 @@ describe("session storage", () => {
         TEST_DIR,
         ".rafa",
         "sessions",
-        "design-my-design.jsonl"
+        "design-my-design.jsonl",
       );
       await saveSession(session, sessionPath);
 
@@ -346,7 +378,7 @@ describe("session storage", () => {
       // Create an invalid session file
       await fs.writeFile(
         path.join(TEST_DIR, ".rafa", "sessions", "prd-invalid.jsonl"),
-        "invalid json"
+        "invalid json",
       );
 
       const sessions = await listSessions(TEST_DIR);
@@ -376,7 +408,11 @@ describe("session storage", () => {
   describe("deleteSession", () => {
     it("deletes an existing session", async () => {
       const session = createTestSession();
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       const result = await deleteSession(sessionPath);
       expect(result).toBe(true);
@@ -387,7 +423,7 @@ describe("session storage", () => {
 
     it("returns false when session does not exist", async () => {
       const result = await deleteSession(
-        path.join(TEST_DIR, ".rafa", "sessions", "nonexistent.jsonl")
+        path.join(TEST_DIR, ".rafa", "sessions", "nonexistent.jsonl"),
       );
       expect(result).toBe(false);
     });
@@ -433,7 +469,11 @@ describe("session storage", () => {
     });
 
     it("normalizes spaces to hyphens", async () => {
-      const name = await resolveSessionName("prd", "User Auth Feature", TEST_DIR);
+      const name = await resolveSessionName(
+        "prd",
+        "User Auth Feature",
+        TEST_DIR,
+      );
       expect(name).toBe("user-auth-feature");
     });
   });
@@ -464,7 +504,7 @@ describe("session storage", () => {
         TEST_DIR,
         ".rafa",
         "sessions",
-        "prd-corrupted.jsonl"
+        "prd-corrupted.jsonl",
       );
       await fs.writeFile(sessionPath, "invalid json");
 
@@ -491,7 +531,11 @@ describe("session storage", () => {
     it("deletes existing session before creating new one", async () => {
       // Create existing session with some messages
       const oldSession = createTestSession({ id: "old-id" });
-      const oldPath = await createSessionFile(oldSession, "my-session", TEST_DIR);
+      const oldPath = await createSessionFile(
+        oldSession,
+        "my-session",
+        TEST_DIR,
+      );
       await appendUserMessage(oldPath, "Old message");
 
       // Start fresh
@@ -506,7 +550,11 @@ describe("session storage", () => {
   describe("JSONL format compliance", () => {
     it("produces format matching design spec", async () => {
       const session = createTestSession({ claudeSessionId: "abc123" });
-      const sessionPath = await createSessionFile(session, "test-session", TEST_DIR);
+      const sessionPath = await createSessionFile(
+        session,
+        "test-session",
+        TEST_DIR,
+      );
 
       await appendUserMessage(sessionPath, "I want to build...");
 

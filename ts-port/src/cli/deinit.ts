@@ -9,7 +9,12 @@ import * as path from "node:path";
 import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { uninstallSkills } from "../core/skills.js";
-import { isInitialized, getRafaDir, getSkillsDir, removeFromGitignore } from "./init.js";
+import {
+  isInitialized,
+  getRafaDir,
+  getSkillsDir,
+  removeFromGitignore,
+} from "./init.js";
 
 const GITIGNORE_LOCK_ENTRY = ".rafa/**/*.lock";
 const GITIGNORE_SESSIONS_ENTRY = ".rafa/sessions/";
@@ -35,7 +40,7 @@ export interface DeinitResult {
  * Calculates directory statistics
  */
 async function calculateDirStats(
-  dir: string
+  dir: string,
 ): Promise<{ planCount: number; totalSize: number }> {
   let planCount = 0;
   let totalSize = 0;
@@ -109,7 +114,9 @@ async function promptConfirmation(message: string): Promise<boolean> {
 /**
  * Runs the deinit command
  */
-export async function runDeinit(options: DeinitOptions = {}): Promise<DeinitResult> {
+export async function runDeinit(
+  options: DeinitOptions = {},
+): Promise<DeinitResult> {
   const workDir = options.workDir ?? process.cwd();
   const rafaDir = getRafaDir(workDir);
   const skillsDir = getSkillsDir(workDir);
@@ -145,7 +152,7 @@ export async function runDeinit(options: DeinitOptions = {}): Promise<DeinitResu
   if (!options.force) {
     const confirmFn = options.confirm ?? promptConfirmation;
     const confirmed = await confirmFn(
-      `This will delete .rafa/ (${planCount} plans, ${formatSize(totalSize)}) and remove skills from .claude/skills/. Continue? [y/N] `
+      `This will delete .rafa/ (${planCount} plans, ${formatSize(totalSize)}) and remove skills from .claude/skills/. Continue? [y/N] `,
     );
 
     if (!confirmed) {
@@ -161,7 +168,7 @@ export async function runDeinit(options: DeinitOptions = {}): Promise<DeinitResu
     await uninstallSkills(skillsDir);
   } catch (err) {
     console.warn(
-      `Warning: failed to remove skills: ${err instanceof Error ? err.message : err}`
+      `Warning: failed to remove skills: ${err instanceof Error ? err.message : err}`,
     );
   }
 

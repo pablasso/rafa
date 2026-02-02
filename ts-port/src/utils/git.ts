@@ -22,7 +22,11 @@ export async function getStatus(dir?: string): Promise<GitStatus> {
   const options = dir ? { cwd: dir } : {};
 
   try {
-    const { stdout } = await execFileAsync("git", ["status", "--porcelain"], options);
+    const { stdout } = await execFileAsync(
+      "git",
+      ["status", "--porcelain"],
+      options,
+    );
 
     const files: string[] = [];
     const lines = stdout.split("\n");

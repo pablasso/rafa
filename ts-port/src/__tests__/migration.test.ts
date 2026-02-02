@@ -45,7 +45,7 @@ describe("migration", () => {
       await fs.mkdir(rafaDir, { recursive: true });
       await fs.writeFile(
         path.join(rafaDir, "version"),
-        JSON.stringify({ version: 2, runtime: "typescript" })
+        JSON.stringify({ version: 2, runtime: "typescript" }),
       );
 
       expect(await needsMigration(rafaDir)).toBe(false);
@@ -63,7 +63,7 @@ describe("migration", () => {
       await fs.mkdir(rafaDir, { recursive: true });
       await fs.writeFile(
         path.join(rafaDir, "version"),
-        JSON.stringify({ version: 2, runtime: "typescript" })
+        JSON.stringify({ version: 2, runtime: "typescript" }),
       );
 
       const info = await getVersionInfo(rafaDir);
@@ -77,10 +77,7 @@ describe("migration", () => {
 
       await writeVersionFile(rafaDir);
 
-      const content = await fs.readFile(
-        path.join(rafaDir, "version"),
-        "utf-8"
-      );
+      const content = await fs.readFile(path.join(rafaDir, "version"), "utf-8");
       const info = JSON.parse(content);
 
       expect(info.version).toBe(2);
@@ -95,7 +92,7 @@ describe("migration", () => {
       await fs.mkdir(planDir, { recursive: true });
       await fs.writeFile(
         path.join(planDir, "progress.log"),
-        '{"event":"test"}\n'
+        '{"event":"test"}\n',
       );
 
       await runMigration(rafaDir);
@@ -107,7 +104,7 @@ describe("migration", () => {
 
       // Check that progress.log no longer exists
       await expect(
-        fs.stat(path.join(planDir, "progress.log"))
+        fs.stat(path.join(planDir, "progress.log")),
       ).rejects.toThrow();
 
       // Content should be preserved
@@ -141,11 +138,11 @@ describe("migration", () => {
       await fs.mkdir(sessionsDir, { recursive: true });
       await fs.writeFile(
         path.join(sessionsDir, "session1.json"),
-        '{"old":"session"}'
+        '{"old":"session"}',
       );
       await fs.writeFile(
         path.join(sessionsDir, "session2.json"),
-        '{"old":"session2"}'
+        '{"old":"session2"}',
       );
 
       const result = await runMigration(rafaDir);

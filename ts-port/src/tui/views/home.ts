@@ -12,9 +12,17 @@ interface MenuItem {
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { key: "p", label: "PRD", description: "Create a Product Requirements Document" },
+  {
+    key: "p",
+    label: "PRD",
+    description: "Create a Product Requirements Document",
+  },
   { key: "d", label: "Design", description: "Create a Technical Design" },
-  { key: "c", label: "Create Plan", description: "Create a plan from a design doc" },
+  {
+    key: "c",
+    label: "Create Plan",
+    description: "Create a plan from a design doc",
+  },
   { key: "r", label: "Run Plan", description: "Execute an existing plan" },
   { key: "l", label: "List Plans", description: "View all plans" },
   { key: "q", label: "Quit", description: "Exit Rafa" },
@@ -37,7 +45,9 @@ export class HomeView implements RafaView {
 
     // Header
     lines.push(truncateToWidth("", width));
-    lines.push(truncateToWidth("  Rafa - Task Loop Runner for AI Coding Agents", width));
+    lines.push(
+      truncateToWidth("  Rafa - Task Loop Runner for AI Coding Agents", width),
+    );
     lines.push(truncateToWidth("  ═".repeat(Math.min(45, width - 2)), width));
     lines.push(truncateToWidth("", width));
 
@@ -57,7 +67,12 @@ export class HomeView implements RafaView {
     }
 
     lines.push(truncateToWidth("", width));
-    lines.push(truncateToWidth("  Use arrow keys or hotkeys to navigate, Enter to select", width));
+    lines.push(
+      truncateToWidth(
+        "  Use arrow keys or hotkeys to navigate, Enter to select",
+        width,
+      ),
+    );
 
     return lines;
   }
@@ -68,7 +83,10 @@ export class HomeView implements RafaView {
       this.selectedIndex = Math.max(0, this.selectedIndex - 1);
       this.app.requestRender();
     } else if (matchesKey(data, Key.down)) {
-      this.selectedIndex = Math.min(MENU_ITEMS.length - 1, this.selectedIndex + 1);
+      this.selectedIndex = Math.min(
+        MENU_ITEMS.length - 1,
+        this.selectedIndex + 1,
+      );
       this.app.requestRender();
     } else if (matchesKey(data, Key.enter)) {
       this.selectItem(this.selectedIndex);
@@ -97,7 +115,10 @@ export class HomeView implements RafaView {
         this.app.navigate("conversation", { phase: "prd" });
         break;
       case "d":
-        this.app.navigate("file-picker", { nextView: "conversation", phase: "design" });
+        this.app.navigate("file-picker", {
+          nextView: "conversation",
+          phase: "design",
+        });
         break;
       case "c":
         this.app.navigate("file-picker", { nextView: "plan-create" });

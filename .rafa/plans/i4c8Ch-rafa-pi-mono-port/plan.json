@@ -217,8 +217,8 @@
         "On approve, PRD saved to docs/prds/\u003cname\u003e.md",
         "--name flag allows custom PRD name"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t16",

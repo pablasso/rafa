@@ -51,7 +51,7 @@ export class ProgressLogger {
    */
   async log(
     event: ProgressEventType,
-    data?: Record<string, unknown>
+    data?: Record<string, unknown>,
   ): Promise<void> {
     const entry: ProgressEvent = {
       timestamp: new Date().toISOString(),
@@ -104,7 +104,7 @@ export class ProgressLogger {
   async planCompleted(
     totalTasks: number,
     succeededTasks: number,
-    durationMs: number
+    durationMs: number,
   ): Promise<void> {
     return this.log(EventType.PlanCompleted, {
       total_tasks: totalTasks,

@@ -3,12 +3,10 @@ import { createTask } from "../core/task.js";
 
 describe("createTask", () => {
   it("creates a task with correct properties", () => {
-    const task = createTask(
-      "t01",
-      "Test Task",
-      "A test task description",
-      ["Criterion 1", "Criterion 2"]
-    );
+    const task = createTask("t01", "Test Task", "A test task description", [
+      "Criterion 1",
+      "Criterion 2",
+    ]);
 
     expect(task.id).toBe("t01");
     expect(task.title).toBe("Test Task");

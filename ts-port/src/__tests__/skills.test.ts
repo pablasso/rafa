@@ -119,7 +119,7 @@ describe("skills installer", () => {
         installSkills({
           targetDir: testDir,
           httpFetcher: mockFetcher,
-        })
+        }),
       ).rejects.toThrow(SkillsInstallError);
     });
 
@@ -134,7 +134,7 @@ describe("skills installer", () => {
         installSkills({
           targetDir: testDir,
           httpFetcher: mockFetcher,
-        })
+        }),
       ).rejects.toThrow(SkillsInstallError);
     });
 
