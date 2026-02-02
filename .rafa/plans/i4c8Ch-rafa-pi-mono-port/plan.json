@@ -60,8 +60,8 @@
         "Can load existing .rafa/plans/*/plan.json files from Go version",
         "Plan validation rejects malformed JSON"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t05",
