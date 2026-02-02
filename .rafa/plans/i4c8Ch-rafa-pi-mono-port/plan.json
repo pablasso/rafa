@@ -102,8 +102,8 @@
         "Task progress highlights current task",
         "TUI refreshes smoothly during streaming"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t08",
