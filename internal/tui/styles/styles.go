@@ -48,4 +48,10 @@ var (
 			Bold(true).
 			Foreground(secondaryColor).
 			MarginTop(1)
+
+	// InputStyle for text input areas with visible border
+	InputStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(secondaryColor).
+			Padding(0, 1)
 )

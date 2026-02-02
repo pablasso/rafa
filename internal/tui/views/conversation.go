@@ -599,7 +599,8 @@ func (m *ConversationModel) updateLayout() {
 	}
 
 	m.responseView.SetSize(viewportWidth, viewportHeight)
-	m.input.SetWidth(m.width - 4)
+	// Account for InputStyle border (2) + padding (2) = 4 extra chars
+	m.input.SetWidth(m.width - 8)
 }
 
 // View implements tea.Model.
@@ -744,7 +745,8 @@ func (m ConversationModel) renderInput() string {
 		return styles.SubtleStyle.Render("Session cancelled.")
 	}
 
-	return m.input.View()
+	inputStyle := styles.InputStyle.Copy().Width(m.width - 4)
+	return inputStyle.Render(m.input.View())
 }
 
 // renderCompletionMessage returns the completion message with document path and next steps.

@@ -622,7 +622,8 @@ func (m *PlanCreateModel) updateLayout() {
 	}
 
 	m.responseView.SetSize(viewportWidth, viewportHeight)
-	m.input.SetWidth(m.width - 4)
+	// Account for InputStyle border (2) + padding (2) = 4 extra chars
+	m.input.SetWidth(m.width - 8)
 }
 
 // View implements tea.Model.
@@ -737,9 +738,11 @@ func (m PlanCreateModel) renderResponsePanel(width, height int) string {
 
 // renderInput returns the input field.
 func (m PlanCreateModel) renderInput() string {
+	inputStyle := styles.InputStyle.Copy().Width(m.width - 4)
+
 	switch m.state {
 	case PlanCreateStateInstructions:
-		return m.input.View() + "\n" + styles.SubtleStyle.Render("Press Enter to start extraction (or type instructions first)")
+		return inputStyle.Render(m.input.View()) + "\n" + styles.SubtleStyle.Render("Press Enter to start extraction (or type instructions first)")
 
 	case PlanCreateStateExtracting:
 		return styles.SubtleStyle.Render("Extracting tasks from design document...")
@@ -748,7 +751,7 @@ func (m PlanCreateModel) renderInput() string {
 		if m.isThinking {
 			return styles.SubtleStyle.Render("Waiting for Claude...")
 		}
-		return m.input.View()
+		return inputStyle.Render(m.input.View())
 
 	case PlanCreateStateCompleted:
 		return m.renderCompletionMessage()
