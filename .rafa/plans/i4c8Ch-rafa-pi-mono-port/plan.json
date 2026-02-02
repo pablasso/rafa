@@ -75,8 +75,8 @@
         "Captures session ID from system events for conversation mode",
         "Handles non-zero exit codes as errors"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t06",
