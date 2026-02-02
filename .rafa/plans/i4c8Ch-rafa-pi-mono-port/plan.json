@@ -345,8 +345,8 @@
         "Testing approach (Vitest unit, component, integration tests as per lines 498-503)",
         "Contributor can set up dev environment from doc alone"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     }
   ]
 }
