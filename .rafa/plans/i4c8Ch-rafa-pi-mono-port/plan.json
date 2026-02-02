@@ -331,8 +331,8 @@
         "Links to PRDs for detailed behavior",
         "New user can install and run first plan from README alone"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t24",
