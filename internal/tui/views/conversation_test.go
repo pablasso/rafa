@@ -745,8 +745,8 @@ func TestConversationModel_View_ContainsActionBar(t *testing.T) {
 
 	view := m.View()
 
-	if !strings.Contains(view, "Ctrl+Enter") {
-		t.Error("expected view to contain 'Ctrl+Enter' in action bar")
+	if !strings.Contains(view, "Enter Submit") {
+		t.Error("expected view to contain 'Enter Submit' in action bar")
 	}
 	if !strings.Contains(view, "Ctrl+C") {
 		t.Error("expected view to contain 'Ctrl+C' in action bar")

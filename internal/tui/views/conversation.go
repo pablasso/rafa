@@ -121,7 +121,7 @@ func NewConversationModel(config ConversationConfig) ConversationModel {
 	s.Style = styles.SelectedStyle
 
 	ta := textarea.New()
-	ta.Placeholder = "Type your message... (Ctrl+Enter to submit)"
+	ta.Placeholder = "Type your message... (Enter to submit)"
 	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
 	ta.Focus()
@@ -444,10 +444,16 @@ func (m ConversationModel) handleKeyPress(msg tea.KeyMsg) (ConversationModel, te
 			return m, tea.Quit, true
 		}
 
-	case "ctrl+enter":
+	case "enter":
 		if !m.isThinking && m.input.Value() != "" && m.state == StateConversing {
 			model, cmd := m.sendMessage()
 			return model, cmd, true
+		}
+
+	case "shift+enter", "ctrl+j":
+		if m.state == StateConversing {
+			m.input.InsertString("\n")
+			return m, nil, true
 		}
 	}
 
@@ -861,7 +867,7 @@ func (m ConversationModel) renderActionBar() string {
 	case StateSessionExpired:
 		items = []string{"[n] New Session", "[q] Quit"}
 	default:
-		items = []string{"Ctrl+Enter Submit", "Ctrl+C Cancel"}
+		items = []string{"Enter Submit", "Ctrl+C Cancel"}
 	}
 
 	return components.NewStatusBar().Render(m.width, items)

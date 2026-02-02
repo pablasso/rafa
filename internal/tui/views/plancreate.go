@@ -496,7 +496,7 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 		m.state = PlanCreateStateCancelled
 		return m, nil, true
 
-	case "ctrl+enter":
+	case "enter":
 		switch m.state {
 		case PlanCreateStateInstructions:
 			// Start extraction with optional instructions
@@ -518,19 +518,10 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 			}
 		}
 
-	case "enter":
-		// In instructions state, Enter alone also starts extraction (for convenience)
-		if m.state == PlanCreateStateInstructions && !m.isThinking {
-			instructions := m.input.Value()
-			m.state = PlanCreateStateExtracting
-			m.isThinking = true
-			m.addActivity("Starting task extraction...", 0)
-			if instructions != "" {
-				m.addActivity(fmt.Sprintf("Instructions: %s", truncate(instructions, 40)), 1)
-			}
-			m.input.Reset()
-			m.input.Placeholder = "Type to refine tasks, or say 'approve' when ready..."
-			return m, m.startExtraction(instructions), true
+	case "shift+enter", "ctrl+j":
+		if m.state == PlanCreateStateConversing {
+			m.input.InsertString("\n")
+			return m, nil, true
 		}
 
 	case "r":
@@ -791,7 +782,7 @@ func (m PlanCreateModel) renderActionBar() string {
 	case PlanCreateStateExtracting:
 		items = []string{"Extracting...", "Ctrl+C Cancel"}
 	case PlanCreateStateConversing:
-		items = []string{"Ctrl+Enter Send", "Ctrl+C Cancel"}
+		items = []string{"Enter Send", "Ctrl+C Cancel"}
 	case PlanCreateStateCompleted:
 		items = []string{"✓ Complete", "[r] Run", "[h] Home", "[q] Quit"}
 	case PlanCreateStateCancelled, PlanCreateStateError:
