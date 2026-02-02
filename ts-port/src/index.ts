@@ -8,6 +8,7 @@ import { RafaApp } from "./tui/app.js";
 import { runInit } from "./cli/init.js";
 import { runDeinit } from "./cli/deinit.js";
 import { runPrd } from "./cli/prd.js";
+import { runDesign } from "./cli/design.js";
 
 /**
  * CLI parsed arguments
@@ -16,6 +17,7 @@ interface ParsedArgs {
   command: string | null;
   force: boolean;
   name?: string;
+  from?: string;
 }
 
 /**
@@ -33,7 +35,14 @@ function parseArgs(): ParsedArgs {
     name = args[nameIndex + 1];
   }
 
-  return { command, force, name };
+  // Parse --from flag (for design command)
+  let from: string | undefined;
+  const fromIndex = args.indexOf("--from");
+  if (fromIndex !== -1 && args[fromIndex + 1]) {
+    from = args[fromIndex + 1];
+  }
+
+  return { command, force, name, from };
 }
 
 /**
@@ -47,9 +56,11 @@ Commands:
   init            Initialize Rafa in the current repository
   deinit          Remove Rafa from the current repository
   prd             Create a Product Requirements Document
+  design          Create a Technical Design document
 
 Options:
-  --name <name>   Specify PRD name (for prd command)
+  --name <name>   Specify document name (for prd/design)
+  --from <prd>    Reference existing PRD (for design)
   --force, -f     Skip confirmation prompts (for deinit)
   --help, -h      Show this help message
   --version, -v   Show version information`);
@@ -59,7 +70,7 @@ Options:
  * Main entry point
  */
 export async function main(): Promise<void> {
-  const { command, force, name } = parseArgs();
+  const { command, force, name, from } = parseArgs();
 
   switch (command) {
     case null: {
@@ -93,6 +104,11 @@ export async function main(): Promise<void> {
 
     case "prd": {
       await runPrd({ name });
+      break;
+    }
+
+    case "design": {
+      await runDesign({ name, from });
       break;
     }
 

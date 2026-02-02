@@ -274,27 +274,50 @@ Start by asking me about the problem I want to solve and the users who will bene
   }
 
   /**
-   * Detect if a PRD draft has been generated based on content markers
+   * Detect if a draft has been generated based on content markers
    */
   private detectPrdDraft(): boolean {
     const text = this.accumulatedText.toLowerCase();
 
-    // Look for common PRD section headers
-    const prdMarkers = [
-      "## problem",
-      "## users",
-      "## requirements",
-      "## user journey",
-      "## success metrics",
-      "# prd:",
-      "# product requirements",
-    ];
+    if (this.phase === "prd") {
+      // Look for common PRD section headers
+      const prdMarkers = [
+        "## problem",
+        "## users",
+        "## requirements",
+        "## user journey",
+        "## success metrics",
+        "# prd:",
+        "# product requirements",
+      ];
 
-    // Check if at least 2 markers are present (indicating a draft structure)
-    const markerCount = prdMarkers.filter((marker) =>
-      text.includes(marker),
-    ).length;
-    return markerCount >= 2;
+      // Check if at least 2 markers are present (indicating a draft structure)
+      const markerCount = prdMarkers.filter((marker) =>
+        text.includes(marker),
+      ).length;
+      return markerCount >= 2;
+    } else {
+      // Look for common Technical Design section headers
+      const designMarkers = [
+        "## overview",
+        "## goals",
+        "## non-goals",
+        "## architecture",
+        "## technical details",
+        "## implementation",
+        "## edge cases",
+        "## testing",
+        "## rollout",
+        "# technical design",
+        "# design:",
+      ];
+
+      // Check if at least 2 markers are present (indicating a draft structure)
+      const markerCount = designMarkers.filter((marker) =>
+        text.includes(marker),
+      ).length;
+      return markerCount >= 2;
+    }
   }
 
   /**

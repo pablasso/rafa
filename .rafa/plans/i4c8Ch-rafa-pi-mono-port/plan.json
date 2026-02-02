@@ -232,8 +232,8 @@
         "On approve, design saved to docs/designs/\u003cname\u003e.md",
         "--name flag allows custom design name"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t17",
