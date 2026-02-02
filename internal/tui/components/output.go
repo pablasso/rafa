@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const defaultMaxLines = 1000
@@ -126,11 +127,16 @@ func (o *OutputViewport) Clear() {
 }
 
 // SetContent replaces the viewport content with the given text.
-// The underlying viewport handles word-wrapping at its configured width.
+// Text is word-wrapped at the viewport width before being set.
 // Use this for streaming text that should be displayed as continuous prose.
 func (o *OutputViewport) SetContent(content string) {
-	o.lines = []string{content} // Store as single block for line counting
-	o.viewport.SetContent(content)
+	// Word-wrap the content at viewport width
+	// lipgloss.NewStyle().Width(w).Render() performs word-wrapping
+	wrapped := lipgloss.NewStyle().Width(o.width).Render(content)
+
+	// Store the wrapped content (now has newlines from wrapping)
+	o.lines = strings.Split(wrapped, "\n")
+	o.viewport.SetContent(wrapped)
 
 	if o.autoScroll {
 		o.viewport.GotoBottom()

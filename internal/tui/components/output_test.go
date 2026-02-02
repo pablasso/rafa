@@ -133,47 +133,38 @@ func TestOutputViewport_View(t *testing.T) {
 }
 
 func TestOutputViewport_SetContent_StreamingText(t *testing.T) {
-	ov := NewOutputViewport(80, 24, 100)
+	// Use a narrow width to test word-wrapping
+	ov := NewOutputViewport(40, 10, 100)
 
-	// Simulate streaming: accumulate text and set full content each time
-	accumulated := ""
+	// Simulate streaming text that exceeds viewport width
+	longText := "Hello world! This is a test of streaming text that should wrap properly across multiple lines."
+	ov.SetContent(longText)
 
-	accumulated += "Hello "
-	ov.SetContent(accumulated)
-
-	accumulated += "world! "
-	ov.SetContent(accumulated)
-
-	accumulated += "This is a test."
-	ov.SetContent(accumulated)
-
-	// Should have one logical block of content, not 3 lines
-	if ov.LineCount() != 1 {
-		t.Errorf("expected 1 logical content block, got %d", ov.LineCount())
+	// Should have multiple lines after wrapping (not 1 truncated line)
+	if ov.LineCount() <= 1 {
+		t.Errorf("expected multiple lines after wrapping, got %d", ov.LineCount())
 	}
 
-	// View should contain the full accumulated text
+	// View should contain text from both beginning AND end (not truncated)
 	view := ov.View()
-	if !strings.Contains(view, "Hello world! This is a test.") {
-		t.Error("expected view to contain full accumulated text as continuous sentence")
+	if !strings.Contains(view, "Hello") {
+		t.Error("expected view to contain beginning of text")
+	}
+	if !strings.Contains(view, "lines") {
+		t.Error("expected view to contain end of text (proves not truncated)")
 	}
 }
 
 func TestOutputViewport_SetContent_ReplacesExisting(t *testing.T) {
-	ov := NewOutputViewport(80, 24, 100)
+	ov := NewOutputViewport(40, 10, 100)
 
 	// First set some content
 	ov.SetContent("initial content")
-	if ov.LineCount() != 1 {
-		t.Errorf("expected 1 line after first SetContent, got %d", ov.LineCount())
-	}
 
 	// Replace with new content
 	ov.SetContent("completely new content")
-	if ov.LineCount() != 1 {
-		t.Errorf("expected 1 line after second SetContent, got %d", ov.LineCount())
-	}
 
+	// Should only have the new content
 	view := ov.View()
 	if !strings.Contains(view, "completely new content") {
 		t.Error("expected view to contain new content")

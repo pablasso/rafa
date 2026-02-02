@@ -621,7 +621,22 @@ func (m *ConversationModel) updateLayout() {
 		panelHeight = 5
 	}
 
-	m.responseView.SetSize(rightWidth, panelHeight)
+	// Account for panel padding (0, 1) and border (1 char each side)
+	// Padding: 1 left + 1 right = 2 chars
+	// Border: 1 left + 1 right = 2 chars
+	// Total: 4 chars less for content
+	viewportWidth := rightWidth - 4
+	if viewportWidth < 20 {
+		viewportWidth = 20
+	}
+
+	// Account for "Response" header (1 line) + empty line (1 line) + border (2 lines)
+	viewportHeight := panelHeight - 4
+	if viewportHeight < 3 {
+		viewportHeight = 3
+	}
+
+	m.responseView.SetSize(viewportWidth, viewportHeight)
 	m.input.SetWidth(m.width - 4)
 }
 
