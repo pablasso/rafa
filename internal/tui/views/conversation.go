@@ -122,6 +122,11 @@ func NewConversationModel(config ConversationConfig) ConversationModel {
 	ta.Placeholder = "Type your message... (Enter to submit)"
 	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
+	ta.Prompt = ""
+	ta.FocusedStyle.Base = lipgloss.NewStyle()
+	ta.BlurredStyle.Base = lipgloss.NewStyle()
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.BlurredStyle.CursorLine = lipgloss.NewStyle()
 	ta.Focus()
 
 	ctx, cancel := context.WithCancel(context.Background())
