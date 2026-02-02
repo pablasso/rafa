@@ -6,7 +6,7 @@
  * - runConversation: Resumable sessions for PRD/Design creation
  */
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import {
   parseClaudeEvent,
@@ -19,10 +19,52 @@ import {
 // Re-export event types for convenience
 export type { ClaudeEvent, ClaudeEventType };
 
+/**
+ * AbortController-like interface for cancelling Claude runs
+ */
+export interface ClaudeAbortController {
+  abort(): void;
+  readonly aborted: boolean;
+}
+
+/**
+ * Creates an abort controller for Claude runs
+ */
+export function createAbortController(): ClaudeAbortController {
+  let aborted = false;
+  let childProcess: ChildProcess | null = null;
+
+  return {
+    abort() {
+      aborted = true;
+      // Capture the reference to avoid race condition in setTimeout
+      const proc = childProcess;
+      if (proc) {
+        // Send SIGTERM for graceful shutdown, then SIGKILL if needed
+        proc.kill("SIGTERM");
+        // Give Claude a moment to clean up, then force kill
+        setTimeout(() => {
+          if (proc && !proc.killed) {
+            proc.kill("SIGKILL");
+          }
+        }, 1000);
+      }
+    },
+    get aborted() {
+      return aborted;
+    },
+    // Internal: set the child process to control
+    set _process(proc: ChildProcess | null) {
+      childProcess = proc;
+    },
+  } as ClaudeAbortController & { _process: ChildProcess | null };
+}
+
 export interface TaskRunOptions {
   prompt: string;
   onEvent: (event: ClaudeEvent) => void;
   cwd?: string;
+  abortController?: ClaudeAbortController;
 }
 
 export interface ConversationRunOptions extends TaskRunOptions {
@@ -55,7 +97,17 @@ export async function runTask(options: TaskRunOptions): Promise<void> {
     "--include-partial-messages",
   ];
 
-  const { exitCode } = await runClaude(args, options.onEvent, options.cwd);
+  const { exitCode } = await runClaude(
+    args,
+    options.onEvent,
+    options.cwd,
+    options.abortController
+  );
+
+  // Check if aborted
+  if (options.abortController?.aborted) {
+    throw new ClaudeAbortError("Task was aborted");
+  }
 
   if (exitCode !== 0) {
     throw new ClaudeError(`Claude exited with code ${exitCode}`, exitCode);
@@ -122,13 +174,25 @@ export async function runConversation(
 async function runClaude(
   args: string[],
   onEvent: (event: ClaudeEvent) => void,
-  cwd?: string
+  cwd?: string,
+  abortController?: ClaudeAbortController
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
+    // Check if already aborted before starting
+    if (abortController?.aborted) {
+      resolve({ sessionId: "", exitCode: -1 });
+      return;
+    }
+
     const proc = spawn("claude", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
     });
+
+    // Allow abort controller to kill the process
+    if (abortController && "_process" in abortController) {
+      (abortController as { _process: ChildProcess | null })._process = proc;
+    }
 
     let sessionId = "";
     let stderrOutput = "";
@@ -167,9 +231,15 @@ async function runClaude(
     });
 
     proc.on("close", (code) => {
+      // Clear the process reference
+      if (abortController && "_process" in abortController) {
+        (abortController as { _process: ChildProcess | null })._process = null;
+      }
+
       const exitCode = code ?? 0;
 
-      if (exitCode !== 0 && stderrOutput) {
+      // Don't log stderr if aborted - that's expected
+      if (exitCode !== 0 && stderrOutput && !abortController?.aborted) {
         console.error("Claude stderr:", stderrOutput);
       }
 
@@ -188,6 +258,16 @@ export class ClaudeError extends Error {
   ) {
     super(message);
     this.name = "ClaudeError";
+  }
+}
+
+/**
+ * Error thrown when a Claude run is aborted
+ */
+export class ClaudeAbortError extends Error {
+  constructor(message: string = "Claude run was aborted") {
+    super(message);
+    this.name = "ClaudeAbortError";
   }
 }
 

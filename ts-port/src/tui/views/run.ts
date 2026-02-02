@@ -42,6 +42,11 @@ export interface RunContext {
   plan?: Plan;
 }
 
+/**
+ * Callback for aborting execution
+ */
+export type AbortCallback = () => void;
+
 export class RunView implements RafaView {
   private app: RafaApp;
   private planId?: string;
@@ -51,6 +56,7 @@ export class RunView implements RafaView {
   private currentTaskId: string | null = null;
   private isRunning = false;
   private statusMessage = "Ready";
+  private abortCallback: AbortCallback | null = null;
 
   // Sub-components
   private taskProgress: TaskProgressComponent;
@@ -119,6 +125,31 @@ export class RunView implements RafaView {
   setRunning(running: boolean): void {
     this.isRunning = running;
     this.statusMessage = running ? "Running..." : "Stopped";
+  }
+
+  /**
+   * Set the abort callback for Ctrl+C handling during execution
+   */
+  setAbortCallback(callback: AbortCallback | null): void {
+    this.abortCallback = callback;
+  }
+
+  /**
+   * Check if the view is currently running
+   */
+  getIsRunning(): boolean {
+    return this.isRunning;
+  }
+
+  /**
+   * Abort the current execution (called when Ctrl+C is pressed)
+   */
+  abortExecution(): void {
+    if (this.isRunning && this.abortCallback) {
+      this.abortCallback();
+      this.statusMessage = "Stopping...";
+      this.app.requestRender();
+    }
   }
 
   /**
@@ -285,6 +316,12 @@ export class RunView implements RafaView {
   }
 
   handleInput(data: string): void {
+    // Ctrl+C during execution triggers abort
+    if (matchesKey(data, Key.ctrl("c")) && this.isRunning) {
+      this.abortExecution();
+      return;
+    }
+
     if (matchesKey(data, Key.escape) && !this.isRunning) {
       this.app.navigate("home");
     }

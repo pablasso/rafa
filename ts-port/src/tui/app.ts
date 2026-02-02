@@ -144,8 +144,22 @@ class ViewContainer implements Component {
   }
 
   handleInput(data: string): void {
-    // Global quit handler
+    // Check if run view is running - if so, let it handle Ctrl+C for abort
     if (matchesKey(data, Key.ctrl("c"))) {
+      const currentView = this.app.getCurrentView();
+      if (currentView === "run") {
+        const runView = this.app.getCurrentViewInstance();
+        // Use a type guard to check if the view has the getIsRunning method
+        if (runView && "getIsRunning" in runView) {
+          const isRunning = (runView as { getIsRunning: () => boolean }).getIsRunning();
+          if (isRunning && runView.handleInput) {
+            // Let the run view handle Ctrl+C for aborting execution
+            runView.handleInput(data);
+            return;
+          }
+        }
+      }
+      // Not running - do global quit
       this.app.stop();
       process.exit(0);
     }

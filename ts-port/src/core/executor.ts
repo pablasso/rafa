@@ -7,9 +7,9 @@
 
 import type { Plan } from "./plan.js";
 import type { Task } from "./task.js";
-import type { ClaudeEvent } from "./claude-runner.js";
+import type { ClaudeEvent, ClaudeAbortController } from "./claude-runner.js";
 import type { TextEventData } from "./stream-parser.js";
-import { runTask } from "./claude-runner.js";
+import { runTask, createAbortController, ClaudeAbortError } from "./claude-runner.js";
 import { ProgressLogger } from "./progress.js";
 import { PlanLock } from "../utils/lock.js";
 import * as git from "../utils/git.js";
@@ -63,6 +63,7 @@ export class Executor {
   private startTime: number = 0;
   private aborted = false;
   private capturedOutput: string[] = []; // Capture output for commit message extraction
+  private currentAbortController: ClaudeAbortController | null = null;
 
   constructor(options: ExecutorOptions) {
     this.planDir = options.planDir;
@@ -76,10 +77,14 @@ export class Executor {
   }
 
   /**
-   * Abort the execution
+   * Abort the execution - kills any running Claude process and stops the loop
    */
   abort(): void {
     this.aborted = true;
+    // Kill the current Claude process if running
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
+    }
   }
 
   /**
@@ -275,11 +280,15 @@ export class Executor {
       // Build the prompt for this task
       const prompt = this.buildPrompt(task, planContext, task.attempts, MAX_ATTEMPTS);
 
+      // Create a new abort controller for this task attempt
+      this.currentAbortController = createAbortController();
+
       try {
         // Run the task with fresh Claude session (no --resume)
         await runTask({
           prompt,
           cwd: this.repoRoot,
+          abortController: this.currentAbortController,
           onEvent: (event: ClaudeEvent) => {
             // Capture text output for commit message extraction
             this.captureEventText(event);
@@ -311,8 +320,16 @@ export class Executor {
         }
 
         this.events?.onTaskComplete?.(task);
+        this.currentAbortController = null;
         return;
       } catch (err) {
+        this.currentAbortController = null;
+
+        // Check if this was an abort
+        if (this.aborted || err instanceof ClaudeAbortError) {
+          throw new Error("aborted");
+        }
+
         // Task failed
         const error = err instanceof Error ? err : new Error(String(err));
 
@@ -329,11 +346,6 @@ export class Executor {
             this.events?.onPlanSaved?.();
           }
           throw new Error("max attempts reached");
-        }
-
-        // Check for abort before retrying
-        if (this.aborted) {
-          throw new Error("aborted");
         }
 
         // Spinning up fresh agent for retry (no --resume)

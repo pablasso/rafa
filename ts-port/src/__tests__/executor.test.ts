@@ -4,12 +4,24 @@ import { createPlan } from "../core/plan.js";
 import { createTask, type Task } from "../core/task.js";
 import type { Plan } from "../core/plan.js";
 import * as fs from "node:fs/promises";
+import * as fsSync from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
 // Mock the claude-runner module
 vi.mock("../core/claude-runner.js", () => ({
   runTask: vi.fn(),
+  createAbortController: vi.fn(() => ({
+    abort: vi.fn(),
+    aborted: false,
+    _process: null,
+  })),
+  ClaudeAbortError: class ClaudeAbortError extends Error {
+    constructor(message = "Claude run was aborted") {
+      super(message);
+      this.name = "ClaudeAbortError";
+    }
+  },
 }));
 
 // Mock git operations
@@ -515,6 +527,196 @@ describe("Executor", () => {
 
       // First task runs, then abort prevents second task from running
       expect(runTaskCallCount).toBe(1);
+    });
+
+    it("resets current task to pending when aborted", async () => {
+      let executor: Executor;
+      let abortDuringTask = false;
+
+      // Import the mock ClaudeAbortError for throwing
+      const { ClaudeAbortError } = await import("../core/claude-runner.js");
+
+      vi.mocked(runTask).mockImplementation(async () => {
+        if (abortDuringTask) {
+          // Simulate work then abort
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          executor.abort();
+          // Throw abort error to simulate being killed
+          throw new ClaudeAbortError("Task was aborted");
+        }
+      });
+
+      const testPlan = createPlan("abc123", "test-plan", "desc", "source.md", [
+        createTask("t01", "First task", "First", ["Criterion"]),
+        createTask("t02", "Second task", "Second", ["Criterion"]),
+      ]);
+
+      let cancelledTaskId: string | undefined;
+      const events: ExecutorEvents = {
+        onTaskStart: (_idx, _total, task) => {
+          if (task.id === "t02") {
+            abortDuringTask = true;
+          }
+        },
+        onPlanCancelled: (taskId) => {
+          cancelledTaskId = taskId;
+        },
+      };
+
+      executor = new Executor({
+        planDir,
+        plan: testPlan,
+        repoRoot: tempDir,
+        skipPersistence: true,
+        allowDirty: true,
+        events,
+      });
+
+      await executor.run();
+
+      // Second task should be reset to pending
+      expect(testPlan.tasks[1].status).toBe("pending");
+      expect(cancelledTaskId).toBe("t02");
+    });
+
+    it("emits onPlanCancelled event on abort", async () => {
+      let executor: Executor;
+      let cancelledTaskId: string | undefined;
+
+      vi.mocked(runTask).mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        executor.abort();
+        // Simulate being interrupted
+        await new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("aborted")), 100)
+        );
+      });
+
+      const testPlan = createPlan("abc123", "test-plan", "desc", "source.md", [
+        createTask("t01", "Task", "Description", ["Criterion"]),
+      ]);
+
+      const events: ExecutorEvents = {
+        onPlanCancelled: (taskId) => {
+          cancelledTaskId = taskId;
+        },
+      };
+
+      executor = new Executor({
+        planDir,
+        plan: testPlan,
+        repoRoot: tempDir,
+        skipPersistence: true,
+        allowDirty: true,
+        events,
+      });
+
+      await executor.run();
+
+      expect(cancelledTaskId).toBe("t01");
+    });
+
+    it("releases lock file even when aborted (with persistence)", async () => {
+      let executor: Executor;
+
+      vi.mocked(runTask).mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        executor.abort();
+        // Keep running a bit so abort is detected
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      const testPlan = createPlan("abc123", "test-plan", "desc", "source.md", [
+        createTask("t01", "Task", "Description", ["Criterion"]),
+      ]);
+
+      executor = new Executor({
+        planDir,
+        plan: testPlan,
+        repoRoot: tempDir,
+        skipPersistence: false, // Enable persistence to test lock
+        allowDirty: true,
+      });
+
+      // Verify lock file doesn't exist initially
+      const lockPath = path.join(planDir, "run.lock");
+      expect(fsSync.existsSync(lockPath)).toBe(false);
+
+      await executor.run();
+
+      // Verify lock file is released after abort
+      expect(fsSync.existsSync(lockPath)).toBe(false);
+    });
+  });
+
+  describe("lock file", () => {
+    it("acquires lock before execution starts", async () => {
+      let lockExistedDuringExecution = false;
+      const lockPath = path.join(planDir, "run.lock");
+
+      vi.mocked(runTask).mockImplementation(async () => {
+        // Check if lock file exists during execution
+        lockExistedDuringExecution = fsSync.existsSync(lockPath);
+      });
+
+      const testPlan = createPlan("abc123", "test-plan", "desc", "source.md", [
+        createTask("t01", "Task", "Description", ["Criterion"]),
+      ]);
+
+      const executor = new Executor({
+        planDir,
+        plan: testPlan,
+        repoRoot: tempDir,
+        skipPersistence: false,
+        allowDirty: true,
+      });
+
+      await executor.run();
+
+      expect(lockExistedDuringExecution).toBe(true);
+    });
+
+    it("blocks concurrent runs on the same plan", async () => {
+      const lockPath = path.join(planDir, "run.lock");
+      // Create a lock file with current PID to simulate another run
+      fsSync.writeFileSync(lockPath, String(process.pid));
+
+      const testPlan = createPlan("abc123", "test-plan", "desc", "source.md", [
+        createTask("t01", "Task", "Description", ["Criterion"]),
+      ]);
+
+      const executor = new Executor({
+        planDir,
+        plan: testPlan,
+        repoRoot: tempDir,
+        skipPersistence: false,
+        allowDirty: true,
+      });
+
+      await expect(executor.run()).rejects.toThrow(/already running/);
+    });
+
+    it("releases lock on normal completion", async () => {
+      const lockPath = path.join(planDir, "run.lock");
+
+      vi.mocked(runTask).mockResolvedValue(undefined);
+
+      const testPlan = createPlan("abc123", "test-plan", "desc", "source.md", [
+        createTask("t01", "Task", "Description", ["Criterion"]),
+      ]);
+
+      const executor = new Executor({
+        planDir,
+        plan: testPlan,
+        repoRoot: tempDir,
+        skipPersistence: false,
+        allowDirty: true,
+      });
+
+      await executor.run();
+
+      // Lock should be released after completion
+      expect(fsSync.existsSync(lockPath)).toBe(false);
     });
   });
 });

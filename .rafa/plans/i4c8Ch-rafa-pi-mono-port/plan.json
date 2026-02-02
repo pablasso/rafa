@@ -145,8 +145,8 @@
         "Concurrent runs on same plan blocked with clear error",
         "Lock released on normal exit and Ctrl+C"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t11",
