@@ -9,3 +9,4 @@ dist/
 
 # Rafa runtime
 .rafa/**/*.lock
+.rafa/sessions/

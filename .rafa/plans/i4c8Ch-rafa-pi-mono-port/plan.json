@@ -202,8 +202,8 @@
         "Resume errors handled gracefully with 'start fresh' option",
         "Sessions stored in .rafa/sessions/ (gitignored)"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t15",
