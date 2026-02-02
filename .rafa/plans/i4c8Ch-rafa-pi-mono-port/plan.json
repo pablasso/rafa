@@ -1,0 +1,352 @@
+{
+  "id": "i4c8Ch",
+  "name": "rafa-pi-mono-port",
+  "description": "Port Rafa from Go/Bubble Tea to TypeScript using pi-mono's TUI framework",
+  "sourceFile": "docs/designs/rafa-pi-mono-port.md",
+  "createdAt": "2026-02-01T23:18:06.037231-06:00",
+  "status": "not_started",
+  "tasks": [
+    {
+      "id": "t01",
+      "title": "Set up TypeScript project",
+      "description": "Create the new repository with the defined directory structure, dependencies, and build configuration. Reference the Package Structure section in docs/designs/rafa-pi-mono-port.md for the exact directory layout.",
+      "acceptanceCriteria": [
+        "New repository created with directory structure matching Package Structure section (docs/designs/rafa-pi-mono-port.md lines 62-95)",
+        "package.json includes @mariozechner/pi-tui dependency and Vitest for testing",
+        "tsconfig.json configured for ES modules",
+        "npm install completes without errors",
+        "npx tsc compiles without errors",
+        "Basic test script runs with Vitest"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t02",
+      "title": "Implement core utilities (ID generation, git, lock)",
+      "description": "Create foundational utility modules used by other components. Reference the Go implementations for git and lock logic.",
+      "acceptanceCriteria": [
+        "src/utils/id.ts generates 6-character random IDs",
+        "src/utils/git.ts implements status, add, commit functions (reference internal/git/git.go)",
+        "src/utils/lock.ts implements PID-based file locking with stale lock detection (reference internal/plan/lock.go)",
+        "Unit tests pass for ID generation and lock detection"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t03",
+      "title": "Implement minimal TUI with view routing",
+      "description": "Create the main TUI application with a view state machine and placeholder views. Study pi-mono/packages/tui/src/tui.ts and pi-mono/packages/coding-agent/src/modes/interactive/ for patterns.",
+      "acceptanceCriteria": [
+        "src/tui/app.ts created with TUI instance and ViewState type (docs/designs/rafa-pi-mono-port.md lines 101-132)",
+        "Placeholder views created: HomeView, RunView, ConversationView, PlanListView, FilePickerView",
+        "Views implement a common Component interface",
+        "Navigation between views works via app.navigate()",
+        "Running npm start shows a TUI with navigable views",
+        "Claude CLI availability checked on startup with helpful error if missing"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t04",
+      "title": "Port plan and task data structures",
+      "description": "Implement the Plan and Task TypeScript interfaces and storage operations, maintaining compatibility with existing Go-generated plan files.",
+      "acceptanceCriteria": [
+        "Plan and Task interfaces match Go structures exactly (docs/designs/rafa-pi-mono-port.md lines 360-378)",
+        "src/storage/plans.ts implements load/save/list operations",
+        "Atomic write pattern used (temp file + rename, reference internal/plan/storage.go)",
+        "Can load existing .rafa/plans/*/plan.json files from Go version",
+        "Plan validation rejects malformed JSON"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t05",
+      "title": "Implement Claude runner with stream-json parsing",
+      "description": "Create the Claude CLI wrapper and separate stream parser module. The exact stream-json format should be discovered by running: claude -p 'hello' --output-format stream-json --verbose",
+      "acceptanceCriteria": [
+        "src/core/stream-parser.ts parses JSONL into typed events",
+        "src/core/claude-runner.ts exports runTask() and runConversation() functions (docs/designs/rafa-pi-mono-port.md lines 139-192)",
+        "Spawns Claude with correct flags: -p, --output-format stream-json, --dangerously-skip-permissions, --verbose, --include-partial-messages",
+        "Emits typed events: tool_use, tool_result, text, error, done",
+        "Captures session ID from system events for conversation mode",
+        "Handles non-zero exit codes as errors"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t06",
+      "title": "Build RunView components (activity log, task progress, output stream)",
+      "description": "Create the three display components for the plan execution view. Reference pi-mono/packages/tui/src/components/markdown.ts for text rendering patterns.",
+      "acceptanceCriteria": [
+        "src/tui/components/activity-log.ts displays tool timeline with tree-style formatting (docs/designs/rafa-pi-mono-port.md lines 324-353)",
+        "src/tui/components/task-progress.ts shows task list with status indicators (pending/in_progress/completed/failed)",
+        "src/tui/components/output-stream.ts displays streaming Claude output with auto-scroll",
+        "Components handle large output gracefully (truncates history)",
+        "Unit tests for activity log event processing"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t07",
+      "title": "Build RunView with split-pane layout",
+      "description": "Assemble the RunView using the components from Task 6. Reference docs/designs/rafa-pi-mono-port.md lines 247-317 for the RunView structure.",
+      "acceptanceCriteria": [
+        "RunView has split-pane layout: task progress (top-left), activity log (bottom-left 25%), output (right 75%)",
+        "Activity log and output stream update in real-time as Claude events arrive",
+        "Task progress highlights current task",
+        "TUI refreshes smoothly during streaming"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t08",
+      "title": "Implement progress logging",
+      "description": "Add JSONL progress event logging for plan execution. Reference internal/plan/progress.go for event types.",
+      "acceptanceCriteria": [
+        "src/core/progress.ts logs events to progress.jsonl",
+        "Event types match Go version: task_start, task_complete, task_fail, attempt_start",
+        "Events include timestamps and relevant metadata",
+        "Progress file is append-only"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t09",
+      "title": "Port execution loop with retry logic",
+      "description": "Implement the core execution loop that runs tasks with retry support. Reference internal/executor/executor.go lines 111-290 for the loop and internal/executor/runner.go lines 54-94 for the task prompt template.",
+      "acceptanceCriteria": [
+        "Tasks execute sequentially, skipping completed tasks",
+        "Failed tasks retry up to MAX_ATTEMPTS (5) times",
+        "Each retry starts with fresh Claude session (no --resume)",
+        "Task prompt template matches Go version (internal/executor/runner.go lines 54-94)",
+        "Plan state saved after each status change",
+        "Workspace cleanliness checked before execution (unless --allow-dirty)",
+        "Each successful task auto-commits with [rafa] prefix",
+        "Commit message extracted from SUGGESTED_COMMIT_MESSAGE if present"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t10",
+      "title": "Implement Ctrl+C handling and plan locking",
+      "description": "Add graceful interruption and concurrent run prevention. Reference Edge Cases table in docs/designs/rafa-pi-mono-port.md lines 477-488.",
+      "acceptanceCriteria": [
+        "Ctrl+C during task resets current task to pending and saves plan state",
+        "File lock acquired before execution starts",
+        "Concurrent runs on same plan blocked with clear error",
+        "Lock released on normal exit and Ctrl+C"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t11",
+      "title": "Implement init command and settings",
+      "description": "Add repository initialization with skills installation and settings management. Reference docs/designs/rafa-pi-mono-port.md lines 458-475 for skills installation.",
+      "acceptanceCriteria": [
+        "rafa init creates .rafa/ directory structure (docs/designs/rafa-pi-mono-port.md lines 394-405)",
+        "rafa init fetches skills from GitHub to .claude/skills/",
+        "rafa init creates appropriate .gitignore entries (sessions directory)",
+        "Settings file at .rafa/settings.json",
+        "Clear error if GitHub unavailable during init",
+        "rafa deinit removes .rafa/ with confirmation prompt"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t12",
+      "title": "Implement migration from Go version",
+      "description": "Add automatic migration when TypeScript Rafa encounters Go-version data. Reference docs/designs/rafa-pi-mono-port.md lines 505-565 for the migration strategy.",
+      "acceptanceCriteria": [
+        "Detect Go version by absence of .rafa/version file",
+        "Rename progress.log to progress.jsonl in all plan directories",
+        "Clear old sessions directory (they are gitignored anyway)",
+        "Write .rafa/version with {\"version\": 2, \"runtime\": \"typescript\"}",
+        "Migration runs automatically on first access to .rafa/"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t13",
+      "title": "Build ConversationView with Editor",
+      "description": "Create the conversation view for PRD/Design creation. Study pi-mono/packages/tui/src/components/editor.ts for multi-line input patterns.",
+      "acceptanceCriteria": [
+        "ConversationView has three regions: activity log (left 25%), output pane (right 75%), input editor (bottom) (docs/designs/rafa-pi-mono-port.md lines 197-244)",
+        "Multi-line input editor with placeholder text",
+        "[a] Approve and [c] Cancel hotkeys work when editor not focused",
+        "Input disabled while Claude is responding",
+        "Footer shows available hotkeys"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t14",
+      "title": "Add session persistence with JSONL",
+      "description": "Implement session storage for pausable/resumable conversations. Reference docs/designs/rafa-pi-mono-port.md lines 381-388 for session format.",
+      "acceptanceCriteria": [
+        "src/storage/sessions.ts implements session CRUD with JSONL format",
+        "Session format matches design (docs/designs/rafa-pi-mono-port.md lines 383-388)",
+        "Claude session ID captured and stored for --resume support",
+        "Resume errors handled gracefully with 'start fresh' option",
+        "Sessions stored in .rafa/sessions/ (gitignored)"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t15",
+      "title": "Implement PRD creation flow",
+      "description": "Wire up the PRD creation workflow using Claude conversations with the /prd skill. Reference docs/prds/rafa-workflow.md for PRD flow requirements.",
+      "acceptanceCriteria": [
+        "rafa prd launches ConversationView in PRD mode",
+        "Initial prompt triggers /prd skill usage",
+        "After draft generated, /prd-review auto-triggered",
+        "User can revise via conversation",
+        "On approve, PRD saved to docs/prds/\u003cname\u003e.md",
+        "--name flag allows custom PRD name"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t16",
+      "title": "Implement Design creation flow",
+      "description": "Wire up the technical design creation workflow with /technical-design skill. Reference docs/prds/rafa-workflow.md for design flow requirements.",
+      "acceptanceCriteria": [
+        "rafa design launches ConversationView in design mode",
+        "--from \u003cprd\u003e flag references existing PRD in conversation",
+        "Initial prompt triggers /technical-design skill usage",
+        "After draft, /technical-design-review auto-triggered",
+        "On approve, design saved to docs/designs/\u003cname\u003e.md",
+        "--name flag allows custom design name"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t17",
+      "title": "Implement plan creation from design docs",
+      "description": "Add the ability to extract tasks from a design document using Claude. Reference internal/ai/claude.go for task extraction prompt and internal/cli/plan/create.go for the full flow.",
+      "acceptanceCriteria": [
+        "rafa plan create \u003cfile\u003e extracts tasks from markdown design doc",
+        "Task extraction prompt matches Go version (internal/ai/claude.go)",
+        "Plan ID generated using 6-char random ID",
+        "Task structure validated before saving",
+        "--name flag for custom plan name with collision detection",
+        "Plan saved to .rafa/plans/\u003cid\u003e-\u003cname\u003e/plan.json"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t18",
+      "title": "Build home screen with menu",
+      "description": "Create the home view with the main menu. Study pi-mono/packages/tui/src/components/select-list.ts for menu patterns. Reference docs/prds/rafa-workflow.md for TUI Home Screen layout.",
+      "acceptanceCriteria": [
+        "HomeView displays menu with options: [p] PRD, [d] Design, [c] Create Plan, [r] Run Plan",
+        "Layout matches docs/prds/rafa-workflow.md TUI Home Screen section",
+        "Hotkeys navigate to appropriate views",
+        "Current plan status shown if one exists"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t19",
+      "title": "Build file picker for design docs",
+      "description": "Create a file picker component for selecting design documents when creating plans.",
+      "acceptanceCriteria": [
+        "FilePickerView lists files from docs/designs/ directory",
+        "Arrow key navigation and Enter to select",
+        "Shows file modification dates",
+        "Used when rafa plan create called without file argument",
+        "Handles empty directory gracefully"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t20",
+      "title": "Build plan list view",
+      "description": "Create a view showing all existing plans with their status for selection.",
+      "acceptanceCriteria": [
+        "PlanListView lists plans from .rafa/plans/",
+        "Shows: name, task count (completed/total), status indicator",
+        "Status indicators: ✓ complete, ▶ in progress, ○ pending, ✗ failed",
+        "Arrow key navigation, Enter to select",
+        "Selected plan can be run or viewed"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t21",
+      "title": "Set up GitHub releases with Bun binaries",
+      "description": "Create CI/CD pipeline for building and releasing cross-platform binaries. Reference docs/designs/rafa-pi-mono-port.md lines 418-456 for build and distribution details.",
+      "acceptanceCriteria": [
+        "GitHub Actions workflow triggers on tagged releases",
+        "Builds with bun build --compile for: darwin-arm64, darwin-x64, linux-arm64, linux-x64",
+        "Generates checksums.txt with SHA256 hashes",
+        "All artifacts uploaded to GitHub release",
+        "Release notes auto-generated from commits"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t22",
+      "title": "Create curl install script",
+      "description": "Create a shell script for easy installation via curl. Reference docs/designs/rafa-pi-mono-port.md lines 435-454 for install script requirements.",
+      "acceptanceCriteria": [
+        "install.sh detects OS (darwin/linux) and architecture (arm64/x64)",
+        "Downloads correct binary from GitHub releases",
+        "Verifies SHA256 checksum",
+        "Installs to ~/.local/bin/rafa (or /usr/local/bin with sudo)",
+        "Adds to PATH if needed with shell-appropriate config",
+        "Clear error messages on failure"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t23",
+      "title": "Write README.md",
+      "description": "Create comprehensive documentation for users covering installation and usage.",
+      "acceptanceCriteria": [
+        "Installation instructions for both curl and npm methods",
+        "Quick start guide walking through first plan creation and execution",
+        "Complete command reference (all CLI commands from docs/designs/rafa-pi-mono-port.md lines 409-416)",
+        "Links to PRDs for detailed behavior",
+        "New user can install and run first plan from README alone"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t24",
+      "title": "Write CONTRIBUTING.md",
+      "description": "Create developer documentation for contributors. Reference docs/designs/rafa-pi-mono-port.md lines 498-503 for testing approach.",
+      "acceptanceCriteria": [
+        "Development setup instructions (clone, npm install, npm run dev)",
+        "Architecture overview matching Package Structure section (docs/designs/rafa-pi-mono-port.md lines 62-95)",
+        "Guide for adding new views/components",
+        "Testing approach (Vitest unit, component, integration tests as per lines 498-503)",
+        "Contributor can set up dev environment from doc alone"
+      ],
+      "status": "pending",
+      "attempts": 0
+    }
+  ]
+}
