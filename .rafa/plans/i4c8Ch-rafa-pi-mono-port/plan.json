@@ -247,8 +247,8 @@
         "--name flag for custom plan name with collision detection",
         "Plan saved to .rafa/plans/\u003cid\u003e-\u003cname\u003e/plan.json"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t18",
