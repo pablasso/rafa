@@ -188,8 +188,8 @@
         "Input disabled while Claude is responding",
         "Footer shows available hotkeys"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t14",
