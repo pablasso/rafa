@@ -81,7 +81,7 @@ Commands:
   deinit            Remove Rafa from the current repository
   prd               Create a Product Requirements Document
   design            Create a Technical Design document
-  plan create <file>  Create a plan from a design document
+  plan create [file]  Create plan from design doc (shows picker if no file)
 
 Options:
   --name <name>   Specify document/plan name
@@ -142,18 +142,20 @@ export async function main(): Promise<void> {
     case "plan": {
       if (subcommand === "create") {
         if (!positionalArg) {
-          console.error("Error: missing file argument");
-          console.error("Usage: rafa plan create <file> [--name <name>] [--dry-run]");
-          process.exit(1);
-        }
-        const result = await runPlanCreate({
-          filePath: positionalArg,
-          name,
-          dryRun,
-        });
-        if (!result.success) {
-          console.error(`Error: ${result.message}`);
-          process.exit(1);
+          // No file argument - launch TUI with file picker
+          const app = new RafaApp();
+          app.navigateOnStart("file-picker", { nextView: "plan-create" });
+          await app.run();
+        } else {
+          const result = await runPlanCreate({
+            filePath: positionalArg,
+            name,
+            dryRun,
+          });
+          if (!result.success) {
+            console.error(`Error: ${result.message}`);
+            process.exit(1);
+          }
         }
       } else {
         console.error(`Unknown plan subcommand: ${subcommand}`);
