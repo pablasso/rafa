@@ -46,8 +46,8 @@
         "Running npm start shows a TUI with navigable views",
         "Claude CLI availability checked on startup with helpful error if missing"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t04",

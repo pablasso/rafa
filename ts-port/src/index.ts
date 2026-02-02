@@ -4,8 +4,14 @@
  * Entry point and CLI routing
  */
 
-export function main(): void {
-  console.log("Rafa - Task loop runner for AI coding agents");
+import { RafaApp } from "./tui/app.js";
+
+export async function main(): Promise<void> {
+  const app = new RafaApp();
+  await app.run();
 }
 
-main();
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
