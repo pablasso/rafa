@@ -311,14 +311,18 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
-		return m.handleKeyPress(msg)
-	}
-
-	// Update textarea
-	if m.inputFocus && !m.isThinking && m.state == StateConversing {
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		cmds = append(cmds, cmd)
+		newModel, cmd, handled := m.handleKeyPress(msg)
+		if handled {
+			return newModel, cmd
+		}
+		m = newModel
+		// Pass unhandled keys to textarea
+		if m.inputFocus && !m.isThinking && m.state == StateConversing {
+			var inputCmd tea.Cmd
+			m.input, inputCmd = m.input.Update(msg)
+			return m, inputCmd
+		}
+		return m, nil
 	}
 
 	return m, tea.Batch(cmds...)
@@ -392,7 +396,8 @@ func (m *ConversationModel) formatToolUseEntry(toolName, target string) string {
 }
 
 // handleKeyPress processes keyboard input.
-func (m ConversationModel) handleKeyPress(msg tea.KeyMsg) (ConversationModel, tea.Cmd) {
+// Returns (model, cmd, handled) - if handled is false, the key should be passed to textarea.
+func (m ConversationModel) handleKeyPress(msg tea.KeyMsg) (ConversationModel, tea.Cmd, bool) {
 	switch msg.String() {
 	case "ctrl+c":
 		if m.conversation != nil {
@@ -401,11 +406,12 @@ func (m ConversationModel) handleKeyPress(msg tea.KeyMsg) (ConversationModel, te
 		m.cancel()
 		m.state = StateCancelled
 		m.session.Status = session.StatusCancelled
-		return m, nil
+		return m, nil, true
 
 	case "a":
 		if m.state == StateWaitingApproval {
-			return m.handleApprove()
+			model, cmd := m.handleApprove()
+			return model, cmd, true
 		}
 
 	case "c":
@@ -416,34 +422,37 @@ func (m ConversationModel) handleKeyPress(msg tea.KeyMsg) (ConversationModel, te
 			m.cancel()
 			m.state = StateCancelled
 			m.session.Status = session.StatusCancelled
-			return m, nil
+			return m, nil, true
 		}
 
 	case "m":
 		// Return to home menu from completed or cancelled state
 		if m.state == StateCompleted || m.state == StateCancelled {
-			return m, m.returnToHomeCmd()
+			return m, m.returnToHomeCmd(), true
 		}
 
 	case "n":
 		if m.state == StateSessionExpired {
-			return m.handleStartFreshSession()
+			model, cmd := m.handleStartFreshSession()
+			return model, cmd, true
 		}
 
 	case "q":
 		// Quit from completed, cancelled, or session expired states
 		if m.state == StateSessionExpired || m.state == StateCompleted || m.state == StateCancelled {
 			m.cancel()
-			return m, tea.Quit
+			return m, tea.Quit, true
 		}
 
 	case "ctrl+enter":
 		if !m.isThinking && m.input.Value() != "" && m.state == StateConversing {
-			return m.sendMessage()
+			model, cmd := m.sendMessage()
+			return model, cmd, true
 		}
 	}
 
-	return m, nil
+	// Key not handled by us - let textarea process it
+	return m, nil, false
 }
 
 // returnToHomeCmd returns a command to navigate back to the home menu.

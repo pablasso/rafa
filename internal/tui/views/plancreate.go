@@ -298,14 +298,18 @@ func (m PlanCreateModel) Update(msg tea.Msg) (PlanCreateModel, tea.Cmd) {
 		m.addActivity(fmt.Sprintf("✓ Plan saved: %s", msg.PlanID), 0)
 
 	case tea.KeyMsg:
-		return m.handleKeyPress(msg)
-	}
-
-	// Update textarea
-	if m.inputFocus && !m.isThinking && (m.state == PlanCreateStateInstructions || m.state == PlanCreateStateConversing) {
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		cmds = append(cmds, cmd)
+		newModel, cmd, handled := m.handleKeyPress(msg)
+		if handled {
+			return newModel, cmd
+		}
+		m = newModel
+		// Pass unhandled keys to textarea
+		if m.inputFocus && !m.isThinking && (m.state == PlanCreateStateInstructions || m.state == PlanCreateStateConversing) {
+			var inputCmd tea.Cmd
+			m.input, inputCmd = m.input.Update(msg)
+			return m, inputCmd
+		}
+		return m, nil
 	}
 
 	return m, tea.Batch(cmds...)
@@ -481,7 +485,8 @@ func (m *PlanCreateModel) savePlan() tea.Cmd {
 }
 
 // handleKeyPress processes keyboard input.
-func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cmd) {
+// Returns (model, cmd, handled) - if handled is false, the key should be passed to textarea.
+func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cmd, bool) {
 	switch msg.String() {
 	case "ctrl+c":
 		if m.conversation != nil {
@@ -489,7 +494,7 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 		}
 		m.cancel()
 		m.state = PlanCreateStateCancelled
-		return m, nil
+		return m, nil, true
 
 	case "ctrl+enter":
 		switch m.state {
@@ -504,11 +509,12 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 			}
 			m.input.Reset()
 			m.input.Placeholder = "Type to refine tasks, or say 'approve' when ready..."
-			return m, m.startExtraction(instructions)
+			return m, m.startExtraction(instructions), true
 
 		case PlanCreateStateConversing:
 			if !m.isThinking && m.input.Value() != "" {
-				return m.sendMessage()
+				model, cmd := m.sendMessage()
+				return model, cmd, true
 			}
 		}
 
@@ -524,27 +530,28 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 			}
 			m.input.Reset()
 			m.input.Placeholder = "Type to refine tasks, or say 'approve' when ready..."
-			return m, m.startExtraction(instructions)
+			return m, m.startExtraction(instructions), true
 		}
 
 	case "r":
 		if m.state == PlanCreateStateCompleted && m.savedPlanID != "" {
-			return m, func() tea.Msg { return msgs.RunPlanMsg{PlanID: m.savedPlanID} }
+			return m, func() tea.Msg { return msgs.RunPlanMsg{PlanID: m.savedPlanID} }, true
 		}
 
 	case "h", "m":
 		if m.state == PlanCreateStateCompleted || m.state == PlanCreateStateCancelled || m.state == PlanCreateStateError {
-			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
+			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }, true
 		}
 
 	case "q":
 		if m.state == PlanCreateStateCompleted || m.state == PlanCreateStateCancelled || m.state == PlanCreateStateError {
 			m.cancel()
-			return m, tea.Quit
+			return m, tea.Quit, true
 		}
 	}
 
-	return m, nil
+	// Key not handled by us - let textarea process it
+	return m, nil, false
 }
 
 // sendMessage sends user input to Claude for task refinement.

@@ -2212,10 +2212,15 @@ func TestConversationModel_KeyPress_M_NotInCompletedOrCancelled_NoAction(t *test
 	m.state = StateConversing
 
 	// Press 'm' while conversing - should not return to menu
+	// (key is passed to textarea instead, which may return a cmd for input handling)
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 
+	// The important thing is that the command (if any) doesn't produce a GoToHomeMsg
 	if cmd != nil {
-		t.Error("expected no command when pressing 'm' in conversing state")
+		msg := cmd()
+		if _, ok := msg.(msgs.GoToHomeMsg); ok {
+			t.Error("pressing 'm' in conversing state should not navigate to home")
+		}
 	}
 }
 
