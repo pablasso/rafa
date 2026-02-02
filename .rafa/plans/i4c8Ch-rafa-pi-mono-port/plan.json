@@ -132,8 +132,8 @@
         "Each successful task auto-commits with [rafa] prefix",
         "Commit message extracted from SUGGESTED_COMMIT_MESSAGE if present"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t10",
