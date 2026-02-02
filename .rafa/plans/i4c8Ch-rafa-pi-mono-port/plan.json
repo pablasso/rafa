@@ -160,8 +160,8 @@
         "Clear error if GitHub unavailable during init",
         "rafa deinit removes .rafa/ with confirmation prompt"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t12",

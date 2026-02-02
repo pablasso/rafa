@@ -15,10 +15,12 @@
     "build:binary": "bun build --compile ./dist/index.js --outfile dist/rafa"
   },
   "dependencies": {
-    "@mariozechner/pi-tui": "^0.51.0"
+    "@mariozechner/pi-tui": "^0.51.0",
+    "tar": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/tar": "^6.1.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
