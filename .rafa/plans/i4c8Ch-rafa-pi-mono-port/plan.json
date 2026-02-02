@@ -317,8 +317,8 @@
         "Adds to PATH if needed with shell-appropriate config",
         "Clear error messages on failure"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t23",
