@@ -37,3 +37,5 @@
 {"timestamp":"2026-02-02T00:47:22.138762-06:00","event":"task_completed","data":{"task_id":"t18"}}
 {"timestamp":"2026-02-02T00:47:22.871669-06:00","event":"task_started","data":{"attempt":1,"task_id":"t19"}}
 {"timestamp":"2026-02-02T00:51:57.268667-06:00","event":"task_completed","data":{"task_id":"t19"}}
+{"timestamp":"2026-02-02T00:51:58.020605-06:00","event":"task_started","data":{"attempt":1,"task_id":"t20"}}
+{"timestamp":"2026-02-02T00:55:48.223959-06:00","event":"task_completed","data":{"task_id":"t20"}}
