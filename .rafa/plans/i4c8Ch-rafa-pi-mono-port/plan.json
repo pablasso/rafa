@@ -31,8 +31,8 @@
         "src/utils/lock.ts implements PID-based file locking with stale lock detection (reference internal/plan/lock.go)",
         "Unit tests pass for ID generation and lock detection"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t03",
