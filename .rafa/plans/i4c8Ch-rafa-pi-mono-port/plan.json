@@ -260,8 +260,8 @@
         "Hotkeys navigate to appropriate views",
         "Current plan status shown if one exists"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t19",
