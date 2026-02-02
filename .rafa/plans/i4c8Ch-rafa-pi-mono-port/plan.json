@@ -89,8 +89,8 @@
         "Components handle large output gracefully (truncates history)",
         "Unit tests for activity log event processing"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t07",
