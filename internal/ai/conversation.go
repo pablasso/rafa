@@ -9,12 +9,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 )
-
-// ErrSessionExpired indicates the session cannot be resumed.
-var ErrSessionExpired = errors.New("session expired or not found")
 
 // ConversationConfig holds settings for a conversation session.
 type ConversationConfig struct {
@@ -25,15 +21,14 @@ type ConversationConfig struct {
 
 // StreamEvent represents a parsed event from Claude's stream-json output.
 type StreamEvent struct {
-	Type           string // "init", "text", "tool_use", "tool_result", "error", "done"
-	Text           string // For text events
-	ToolName       string // For tool_use events
-	ToolTarget     string // File or resource being accessed
-	SessionID      string // Available from init, assistant, and result events
-	InputTokens    int64  // Token usage (from result event)
-	OutputTokens   int64
-	CostUSD        float64 // Total cost (from result event)
-	SessionExpired bool    // True if this error is due to session expiration
+	Type         string // "init", "text", "tool_use", "tool_result", "error", "done"
+	Text         string // For text events and error messages
+	ToolName     string // For tool_use events
+	ToolTarget   string // File or resource being accessed
+	SessionID    string // Available from init, assistant, and result events
+	InputTokens  int64  // Token usage (from result event)
+	OutputTokens int64
+	CostUSD      float64 // Total cost (from result event)
 }
 
 // Conversation manages a multi-turn conversation with Claude CLI.
@@ -125,12 +120,6 @@ func (c *Conversation) invoke(prompt string) (<-chan StreamEvent, error) {
 		for scanner.Scan() {
 			line := scanner.Text()
 
-			// Check for session expiration error
-			if isSessionExpiredError(line) {
-				events <- StreamEvent{Type: "error", Text: "session expired", SessionExpired: true}
-				break
-			}
-
 			event := parseStreamEvent(line)
 			if event.Type != "" {
 				// Capture session ID for future --resume calls
@@ -175,19 +164,6 @@ func (c *Conversation) Stop() error {
 		return c.cmd.Process.Kill()
 	}
 	return nil
-}
-
-// isSessionExpiredError checks if the output indicates an expired session.
-func isSessionExpiredError(output string) bool {
-	lower := strings.ToLower(output)
-	return strings.Contains(lower, "session not found") ||
-		strings.Contains(lower, "session expired") ||
-		strings.Contains(lower, "invalid session")
-}
-
-// IsSessionExpiredEvent checks if a StreamEvent indicates session expiration.
-func IsSessionExpiredEvent(event StreamEvent) bool {
-	return event.SessionExpired || (event.Type == "error" && isSessionExpiredError(event.Text))
 }
 
 // parseStreamEvent converts a JSON line to a StreamEvent.
@@ -318,7 +294,8 @@ func parseUserMessage(raw map[string]interface{}) StreamEvent {
 func parseResultEvent(raw map[string]interface{}) StreamEvent {
 	// Check for error
 	if isError, _ := raw["is_error"].(bool); isError {
-		return StreamEvent{Type: "error"}
+		errorText, _ := raw["error"].(string)
+		return StreamEvent{Type: "error", Text: errorText}
 	}
 
 	sessionID, _ := raw["session_id"].(string)

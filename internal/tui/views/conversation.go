@@ -2,7 +2,6 @@ package views
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -28,7 +27,6 @@ const (
 	StateWaitingApproval
 	StateCompleted
 	StateCancelled
-	StateSessionExpired // Session could not be resumed (expired/invalid)
 )
 
 // ActivityEntry represents a single item in the activity timeline.
@@ -300,15 +298,9 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 		cmds = append(cmds, m.listenForEvents())
 
 	case ConversationErrorMsg:
-		// Check if this is a session expiration error
-		if errors.Is(msg.Err, ai.ErrSessionExpired) {
-			m.state = StateSessionExpired
-			m.addActivity("Session expired or not found", 0)
-		} else {
-			m.addActivity(fmt.Sprintf("Error: %v", msg.Err), 0)
-			m.state = StateCancelled
-			m.session.Status = session.StatusCancelled
-		}
+		m.addActivity(fmt.Sprintf("Error: %v", msg.Err), 0)
+		m.state = StateCancelled
+		m.session.Status = session.StatusCancelled
 
 	case tea.KeyMsg:
 		newModel, cmd, handled := m.handleKeyPress(msg)
@@ -372,14 +364,11 @@ func (m *ConversationModel) handleStreamEvent(event ai.StreamEvent) tea.Cmd {
 		}
 
 	case "error":
-		// Check if this is a session expiration error
-		if ai.IsSessionExpiredEvent(event) {
-			m.state = StateSessionExpired
-			m.addActivity("Session expired or not found", 0)
-			m.isThinking = false
-			return nil
+		errorText := event.Text
+		if errorText == "" {
+			errorText = "Unknown error"
 		}
-		m.addActivity(fmt.Sprintf("Error: %s", event.Text), 0)
+		m.addActivity(fmt.Sprintf("Error: %s", errorText), 0)
 		m.isThinking = false
 	}
 	return nil
@@ -431,15 +420,9 @@ func (m ConversationModel) handleKeyPress(msg tea.KeyMsg) (ConversationModel, te
 			return m, m.returnToHomeCmd(), true
 		}
 
-	case "n":
-		if m.state == StateSessionExpired {
-			model, cmd := m.handleStartFreshSession()
-			return model, cmd, true
-		}
-
 	case "q":
-		// Quit from completed, cancelled, or session expired states
-		if m.state == StateSessionExpired || m.state == StateCompleted || m.state == StateCancelled {
+		// Quit from completed or cancelled states
+		if m.state == StateCompleted || m.state == StateCancelled {
 			m.cancel()
 			return m, tea.Quit, true
 		}
@@ -563,42 +546,6 @@ func (m ConversationModel) handleApprove() (ConversationModel, tea.Cmd) {
 	}
 
 	return m, nil
-}
-
-// handleStartFreshSession starts a new session after the previous one expired.
-func (m ConversationModel) handleStartFreshSession() (ConversationModel, tea.Cmd) {
-	// Reset state for a fresh session
-	m.state = StateConversing
-	m.isThinking = false
-	m.conversation = nil
-
-	// Create a new session (clear the old session ID)
-	m.session = &session.Session{
-		Phase:        m.config.Phase,
-		Name:         m.config.Name,
-		Status:       session.StatusInProgress,
-		CreatedAt:    time.Now(),
-		FromDocument: m.config.FromDoc,
-	}
-
-	// Clear activities and add new one
-	m.activitiesMu.Lock()
-	m.activities = nil
-	m.activitiesMu.Unlock()
-	m.addActivity("Starting fresh session...", 0)
-
-	// Clear response
-	m.responseText.Reset()
-	m.responseView.Clear()
-
-	// Create new context
-	m.ctx, m.cancel = context.WithCancel(context.Background())
-
-	// Start conversation
-	return m, tea.Batch(
-		m.startConversation(),
-		m.listenForEvents(),
-	)
 }
 
 // addActivity adds an entry to the activity timeline.
@@ -797,10 +744,6 @@ func (m ConversationModel) renderInput() string {
 		return styles.SubtleStyle.Render("Session cancelled.")
 	}
 
-	if m.state == StateSessionExpired {
-		return styles.SubtleStyle.Render("Session expired. Press [n] to start fresh or [q] to quit.")
-	}
-
 	return m.input.View()
 }
 
@@ -864,8 +807,6 @@ func (m ConversationModel) renderActionBar() string {
 		items = []string{"✓ Complete", "[m] Menu", "[q] Quit"}
 	case StateCancelled:
 		items = []string{"Cancelled", "[m] Menu", "[q] Quit"}
-	case StateSessionExpired:
-		items = []string{"[n] New Session", "[q] Quit"}
 	default:
 		items = []string{"Enter Submit", "Ctrl+C Cancel"}
 	}

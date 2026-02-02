@@ -104,13 +104,16 @@ func TestParseStreamEvent_ResultExtractsUsageAndCost(t *testing.T) {
 }
 
 func TestParseStreamEvent_ResultWithError(t *testing.T) {
-	// Test result event with is_error:true returning error type
+	// Test result event with is_error:true returning error type and capturing error text
 	input := `{"type":"result","is_error":true,"error":"Something went wrong"}`
 
 	event := parseStreamEvent(input)
 
 	if event.Type != "error" {
 		t.Errorf("expected Type='error', got %q", event.Type)
+	}
+	if event.Text != "Something went wrong" {
+		t.Errorf("expected Text='Something went wrong', got %q", event.Text)
 	}
 }
 
@@ -313,93 +316,6 @@ func TestExtractToolTarget_EmptyInput(t *testing.T) {
 	}
 }
 
-func TestIsSessionExpiredError(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected bool
-	}{
-		{`{"error": "session not found"}`, true},
-		{`{"error": "Session Not Found"}`, true},
-		{`{"error": "session expired"}`, true},
-		{`{"error": "Session Expired"}`, true},
-		{`{"error": "invalid session"}`, true},
-		{`{"error": "Invalid Session"}`, true},
-		{`{"error": "some other error"}`, false},
-		{`{"type": "result", "data": "success"}`, false},
-		{``, false},
-	}
-
-	for _, tt := range tests {
-		result := isSessionExpiredError(tt.input)
-		if result != tt.expected {
-			t.Errorf("isSessionExpiredError(%q) = %v, expected %v", tt.input, result, tt.expected)
-		}
-	}
-}
-
-func TestIsSessionExpiredEvent(t *testing.T) {
-	tests := []struct {
-		name     string
-		event    StreamEvent
-		expected bool
-	}{
-		{
-			name:     "event with SessionExpired flag",
-			event:    StreamEvent{Type: "error", Text: "session expired", SessionExpired: true},
-			expected: true,
-		},
-		{
-			name:     "error event with session not found text",
-			event:    StreamEvent{Type: "error", Text: "session not found"},
-			expected: true,
-		},
-		{
-			name:     "error event with session expired text",
-			event:    StreamEvent{Type: "error", Text: "session expired"},
-			expected: true,
-		},
-		{
-			name:     "error event with invalid session text",
-			event:    StreamEvent{Type: "error", Text: "invalid session"},
-			expected: true,
-		},
-		{
-			name:     "error event with unrelated error",
-			event:    StreamEvent{Type: "error", Text: "connection failed"},
-			expected: false,
-		},
-		{
-			name:     "non-error event",
-			event:    StreamEvent{Type: "text", Text: "session expired"},
-			expected: false,
-		},
-		{
-			name:     "done event",
-			event:    StreamEvent{Type: "done", SessionID: "test-123"},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := IsSessionExpiredEvent(tt.event)
-			if result != tt.expected {
-				t.Errorf("IsSessionExpiredEvent(%+v) = %v, expected %v", tt.event, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestErrSessionExpired(t *testing.T) {
-	// Verify error exists and has expected message
-	if ErrSessionExpired == nil {
-		t.Error("ErrSessionExpired should not be nil")
-	}
-	if ErrSessionExpired.Error() != "session expired or not found" {
-		t.Errorf("ErrSessionExpired.Error() = %q, expected %q", ErrSessionExpired.Error(), "session expired or not found")
-	}
-}
-
 func TestParseStreamEvent_ResultWithZeroUsage(t *testing.T) {
 	// Test result event with zero or missing usage values
 	input := `{"type":"result","session_id":"test-123","total_cost_usd":0.0,"usage":{}}`
@@ -504,119 +420,16 @@ func TestParseStreamEvent_LargeTokenCounts(t *testing.T) {
 	}
 }
 
-// ========================================================================
-// Error Recovery Tests - Session Expiration Detection
-// ========================================================================
-
-func TestIsSessionExpiredError_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected bool
-	}{
-		// Case insensitive matching
-		{"lowercase session expired", `session expired`, true},
-		{"uppercase SESSION EXPIRED", `SESSION EXPIRED`, true},
-		{"mixed case Session Expired", `Session Expired`, true},
-		{"session not found lowercase", `session not found`, true},
-		{"Session Not Found title case", `Session Not Found`, true},
-		{"invalid session lowercase", `invalid session`, true},
-		{"Invalid Session title case", `Invalid Session`, true},
-
-		// Partial matches in longer strings
-		{"session expired in sentence", `The session expired while waiting`, true},
-		{"session not found with prefix", `Error: session not found`, true},
-		{"invalid session with suffix", `invalid session - please restart`, true},
-
-		// Non-matching cases
-		{"unrelated error", `connection timeout`, false},
-		{"empty string", ``, false},
-		{"contains session but not error", `session started`, false},
-		{"contains expired but not session", `token expired`, false},
-		{"similar but different", `session_not_found`, false}, // underscore
-		{"JSON error response", `{"error": "rate limit exceeded"}`, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isSessionExpiredError(tt.input)
-			if result != tt.expected {
-				t.Errorf("isSessionExpiredError(%q) = %v, want %v", tt.input, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestIsSessionExpiredEvent_AllErrorTypes(t *testing.T) {
-	tests := []struct {
-		name     string
-		event    StreamEvent
-		expected bool
-	}{
-		{
-			name:     "explicit SessionExpired flag",
-			event:    StreamEvent{Type: "error", SessionExpired: true},
-			expected: true,
-		},
-		{
-			name:     "error type with session expired text",
-			event:    StreamEvent{Type: "error", Text: "session expired"},
-			expected: true,
-		},
-		{
-			name:     "error type with session not found text",
-			event:    StreamEvent{Type: "error", Text: "session not found"},
-			expected: true,
-		},
-		{
-			name:     "error type with invalid session text",
-			event:    StreamEvent{Type: "error", Text: "invalid session"},
-			expected: true,
-		},
-		{
-			name:     "non-error type with session expired text",
-			event:    StreamEvent{Type: "text", Text: "session expired"},
-			expected: false,
-		},
-		{
-			name:     "error type with unrelated text",
-			event:    StreamEvent{Type: "error", Text: "network timeout"},
-			expected: false,
-		},
-		{
-			name:     "done event",
-			event:    StreamEvent{Type: "done"},
-			expected: false,
-		},
-		{
-			name:     "init event",
-			event:    StreamEvent{Type: "init"},
-			expected: false,
-		},
-		{
-			name:     "tool_use event",
-			event:    StreamEvent{Type: "tool_use"},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := IsSessionExpiredEvent(tt.event)
-			if result != tt.expected {
-				t.Errorf("IsSessionExpiredEvent(%+v) = %v, want %v", tt.event, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestParseStreamEvent_ErrorResultEvent(t *testing.T) {
-	t.Run("result with is_error true returns error type", func(t *testing.T) {
+	t.Run("result with is_error true returns error type with text", func(t *testing.T) {
 		input := `{"type":"result","is_error":true,"error":"command failed with exit code 1"}`
 		event := parseStreamEvent(input)
 
 		if event.Type != "error" {
 			t.Errorf("expected Type='error', got %q", event.Type)
+		}
+		if event.Text != "command failed with exit code 1" {
+			t.Errorf("expected Text='command failed with exit code 1', got %q", event.Text)
 		}
 	})
 
