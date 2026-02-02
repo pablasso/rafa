@@ -351,7 +351,7 @@ export async function createPlanFolder(
   await savePlan(folderPath, plan);
 
   // Create empty log files
-  await fs.writeFile(path.join(folderPath, "progress.log"), "", "utf-8");
+  await fs.writeFile(path.join(folderPath, "progress.jsonl"), "", "utf-8");
   await fs.writeFile(path.join(folderPath, "output.log"), "", "utf-8");
 
   return folderPath;

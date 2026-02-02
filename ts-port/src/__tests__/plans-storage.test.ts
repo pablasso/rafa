@@ -331,7 +331,7 @@ describe("plan storage", () => {
       );
       expect(JSON.parse(planJson).id).toBe("abc123");
 
-      await fs.access(path.join(folder, "progress.log"));
+      await fs.access(path.join(folder, "progress.jsonl"));
       await fs.access(path.join(folder, "output.log"));
     });
   });

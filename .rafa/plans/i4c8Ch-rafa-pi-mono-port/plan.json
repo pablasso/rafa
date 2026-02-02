@@ -115,8 +115,8 @@
         "Events include timestamps and relevant metadata",
         "Progress file is append-only"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t09",
