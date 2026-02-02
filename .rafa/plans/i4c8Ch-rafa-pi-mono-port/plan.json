@@ -174,8 +174,8 @@
         "Write .rafa/version with {\"version\": 2, \"runtime\": \"typescript\"}",
         "Migration runs automatically on first access to .rafa/"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t13",

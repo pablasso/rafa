@@ -9,6 +9,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { installSkills, uninstallSkills, SkillsInstallError } from "../core/skills.js";
 import { checkClaudeCli } from "../utils/claude-check.js";
+import { writeVersionFile } from "../storage/migration.js";
 
 const RAFA_DIR = ".rafa";
 const GITIGNORE_PATH = ".gitignore";
@@ -231,6 +232,9 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
         throw err;
       }
     }
+
+    // Write version file (marks as TypeScript version)
+    await writeVersionFile(rafaDir);
 
     // Add gitignore entries
     await addToGitignore(GITIGNORE_LOCK_ENTRY, workDir);

@@ -51,6 +51,17 @@ describe("init command", () => {
     expect(settings.defaultMaxAttempts).toBe(5);
   });
 
+  it("should create version file marking TypeScript version", async () => {
+    await runInit({ workDir: testDir, skipSkills: true });
+
+    const versionPath = path.join(getRafaDir(testDir), "version");
+    const content = await fs.readFile(versionPath, "utf-8");
+    const version = JSON.parse(content);
+
+    expect(version.version).toBe(2);
+    expect(version.runtime).toBe("typescript");
+  });
+
   it("should add gitignore entries", async () => {
     await runInit({ workDir: testDir, skipSkills: true });
 

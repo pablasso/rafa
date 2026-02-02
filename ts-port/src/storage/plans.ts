@@ -10,9 +10,17 @@ import * as path from "node:path";
 import type { Dirent } from "node:fs";
 import type { Plan } from "../core/plan.js";
 import type { Task } from "../core/task.js";
+import { migrateIfNeeded } from "./migration.js";
 
 const RAFA_DIR = ".rafa";
 const PLANS_DIR = "plans";
+
+/**
+ * Gets the path to the .rafa directory
+ */
+function getRafaDir(workDir: string = process.cwd()): string {
+  return path.join(workDir, RAFA_DIR);
+}
 
 /**
  * Plan validation error
@@ -200,6 +208,9 @@ export async function findPlanFolder(
   name: string,
   workDir: string = process.cwd()
 ): Promise<string> {
+  // Migrate from Go version if needed
+  await migrateIfNeeded(getRafaDir(workDir));
+
   const plansPath = getPlansDir(workDir);
 
   let entries: Dirent[];
@@ -361,6 +372,9 @@ export async function createPlanFolder(
  * Lists all plans from .rafa/plans/
  */
 export async function listPlans(workDir: string = process.cwd()): Promise<Plan[]> {
+  // Migrate from Go version if needed
+  await migrateIfNeeded(getRafaDir(workDir));
+
   const plansPath = getPlansDir(workDir);
 
   let entries: Dirent[];
