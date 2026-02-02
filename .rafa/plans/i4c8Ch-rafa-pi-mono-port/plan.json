@@ -4,7 +4,7 @@
   "description": "Port Rafa from Go/Bubble Tea to TypeScript using pi-mono's TUI framework",
   "sourceFile": "docs/designs/rafa-pi-mono-port.md",
   "createdAt": "2026-02-01T23:18:06.037231-06:00",
-  "status": "not_started",
+  "status": "in_progress",
   "tasks": [
     {
       "id": "t01",
@@ -18,8 +18,8 @@
         "npx tsc compiles without errors",
         "Basic test script runs with Vitest"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t02",
