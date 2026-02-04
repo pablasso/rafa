@@ -608,7 +608,7 @@ func TestFormatStreamLine_TextDelta(t *testing.T) {
 	// Test extracting text from stream_event with text_delta
 	jsonLine := `{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello world"}}}`
 
-	result := formatStreamLine(jsonLine)
+	result := FormatStreamLine(jsonLine)
 	expected := "Hello world"
 	if result != expected {
 		t.Errorf("formatStreamLine() = %q, want %q", result, expected)
@@ -619,7 +619,7 @@ func TestFormatStreamLine_ToolUse(t *testing.T) {
 	// Test extracting tool use from assistant message
 	jsonLine := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}`
 
-	result := formatStreamLine(jsonLine)
+	result := FormatStreamLine(jsonLine)
 	expected := "\n[Tool: Bash]"
 	if result != expected {
 		t.Errorf("formatStreamLine() = %q, want %q", result, expected)
@@ -630,7 +630,7 @@ func TestFormatStreamLine_SystemEvent(t *testing.T) {
 	// System events should be ignored
 	jsonLine := `{"type":"system","subtype":"init","session_id":"abc123"}`
 
-	result := formatStreamLine(jsonLine)
+	result := FormatStreamLine(jsonLine)
 	if result != "" {
 		t.Errorf("formatStreamLine() for system event = %q, want empty string", result)
 	}
@@ -640,7 +640,7 @@ func TestFormatStreamLine_ResultEvent(t *testing.T) {
 	// Result events should be ignored
 	jsonLine := `{"type":"result","subtype":"success","result":"done"}`
 
-	result := formatStreamLine(jsonLine)
+	result := FormatStreamLine(jsonLine)
 	if result != "" {
 		t.Errorf("formatStreamLine() for result event = %q, want empty string", result)
 	}
@@ -650,19 +650,19 @@ func TestFormatStreamLine_PlainText(t *testing.T) {
 	// Non-JSON input should pass through unchanged
 	plainText := "This is plain text output"
 
-	result := formatStreamLine(plainText)
+	result := FormatStreamLine(plainText)
 	if result != plainText {
 		t.Errorf("formatStreamLine() = %q, want %q", result, plainText)
 	}
 }
 
 func TestFormatStreamLine_EmptyLine(t *testing.T) {
-	result := formatStreamLine("")
+	result := FormatStreamLine("")
 	if result != "" {
 		t.Errorf("formatStreamLine() for empty = %q, want empty string", result)
 	}
 
-	result = formatStreamLine("   ")
+	result = FormatStreamLine("   ")
 	if result != "" {
 		t.Errorf("formatStreamLine() for whitespace = %q, want empty string", result)
 	}

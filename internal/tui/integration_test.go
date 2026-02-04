@@ -367,7 +367,7 @@ func TestKeyboardNavigation(t *testing.T) {
 			t.Fatalf("expected cursor at 0, got %d", m.home.Cursor())
 		}
 
-		// Navigate down through all 3 items (Execute: c, r; Quit: q)
+		// Navigate down through all 4 items (Execute: c, r, d; Quit: q)
 		sendKey(t, &m, "down")
 		if m.home.Cursor() != 1 {
 			t.Errorf("expected cursor at 1 after down, got %d", m.home.Cursor())
@@ -378,21 +378,31 @@ func TestKeyboardNavigation(t *testing.T) {
 			t.Errorf("expected cursor at 2 after second down, got %d", m.home.Cursor())
 		}
 
-		// Navigate past end (should stay at 2 - Quit)
 		sendKey(t, &m, "down")
-		if m.home.Cursor() != 2 {
-			t.Errorf("expected cursor to stay at 2, got %d", m.home.Cursor())
+		if m.home.Cursor() != 3 {
+			t.Errorf("expected cursor at 3 after third down, got %d", m.home.Cursor())
+		}
+
+		// Navigate past end (should stay at 3 - Quit)
+		sendKey(t, &m, "down")
+		if m.home.Cursor() != 3 {
+			t.Errorf("expected cursor to stay at 3, got %d", m.home.Cursor())
 		}
 
 		// Navigate up through all items
 		sendKey(t, &m, "up")
+		if m.home.Cursor() != 2 {
+			t.Errorf("expected cursor at 2 after up, got %d", m.home.Cursor())
+		}
+
+		sendKey(t, &m, "up")
 		if m.home.Cursor() != 1 {
-			t.Errorf("expected cursor at 1 after up, got %d", m.home.Cursor())
+			t.Errorf("expected cursor at 1 after second up, got %d", m.home.Cursor())
 		}
 
 		sendKey(t, &m, "up")
 		if m.home.Cursor() != 0 {
-			t.Errorf("expected cursor at 0 after second up, got %d", m.home.Cursor())
+			t.Errorf("expected cursor at 0 after third up, got %d", m.home.Cursor())
 		}
 
 		// Navigate past beginning (should stay)

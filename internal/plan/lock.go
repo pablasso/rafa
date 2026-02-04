@@ -107,6 +107,9 @@ func (l *PlanLock) Release() error {
 // processExists checks if a process with the given PID is running.
 // Uses kill with signal 0, which checks for process existence without sending a signal.
 func processExists(pid int) bool {
+	if pid == os.Getpid() {
+		return true
+	}
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return false

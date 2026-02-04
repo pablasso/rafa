@@ -26,3 +26,6 @@ type FileSelectedMsg struct {
 type RunPlanMsg struct {
 	PlanID string
 }
+
+// RunDemoMsg signals that the user wants to start demo mode.
+type RunDemoMsg struct{}

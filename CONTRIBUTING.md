@@ -47,6 +47,21 @@ Edit any `.go` file and save - the TUI restarts automatically with your changes.
 
 To exit, close the terminal tab/pane.
 
+### Demo Mode (TUI)
+
+Demo mode replays a recorded plan execution inside the TUI. It is TUI-only (no CLI command).
+
+1. Build or run the dev loop:
+   ```bash
+   make build
+   ./bin/rafa
+   ```
+   You can also use `make dev` for hot reload.
+2. On the home screen, select **Demo Mode** or press `d`.
+3. The status bar shows `[DEMO]`, and playback starts immediately in the running view.
+
+Demo data comes from `.rafa/plans/KG8JBy-rafa-workflow-orchestration/plan.json` and `output.log` in the repo. If those files are missing or invalid, the TUI falls back to a small in-memory dataset.
+
 ### Code Formatting
 
 Run `make fmt` before committing. CI checks formatting.

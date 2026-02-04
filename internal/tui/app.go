@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/pablasso/rafa/internal/demo"
 	"github.com/pablasso/rafa/internal/plan"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 	"github.com/pablasso/rafa/internal/tui/views"
@@ -184,10 +186,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgs.RunPlanMsg:
 		return m.transitionToRunning(msg.PlanID)
 
+	case msgs.RunDemoMsg:
+		return m.transitionToDemoRunning()
+
 	}
 
 	// Delegate all other messages to the current view
 	return m.delegateToCurrentView(msg)
+}
+
+func (m Model) transitionToDemoRunning() (tea.Model, tea.Cmd) {
+	dataset, err := demo.LoadDefaultDataset(m.repoRoot)
+	if err != nil {
+		dataset = demo.FallbackDataset()
+	}
+
+	m.currentView = ViewRunning
+	m.running = views.NewRunningModelForDemo("DEMO", dataset.Plan.Name, dataset.Plan.Tasks, dataset.Plan)
+	m.running.SetSize(m.width, m.height)
+
+	playback := demo.NewPlayback(dataset, demo.DefaultConfig())
+	runner := &m.running
+
+	cmd := func() tea.Msg {
+		if Program == nil {
+			return nil
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		runner.SetCancel(cancel)
+		playback.Run(ctx, Program, runner.OutputChan())
+		return nil
+	}
+
+	return m, tea.Batch(
+		m.running.Init(),
+		cmd,
+	)
 }
 
 // transitionToRunning loads the plan and transitions to the running view.

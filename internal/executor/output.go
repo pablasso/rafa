@@ -120,7 +120,7 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 		content = content[idx+1:]
 
 		// Parse JSON and extract displayable text
-		formatted := formatStreamLine(line)
+		formatted := FormatStreamLine(line)
 		if formatted != "" {
 			select {
 			case s.eventsChan <- formatted:
@@ -155,9 +155,9 @@ type streamEvent struct {
 	} `json:"message,omitempty"`
 }
 
-// formatStreamLine parses a JSON stream line and extracts displayable text.
+// FormatStreamLine parses a JSON stream line and extracts displayable text.
 // For non-JSON input, it returns the line unchanged.
-func formatStreamLine(line string) string {
+func FormatStreamLine(line string) string {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return ""

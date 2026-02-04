@@ -74,6 +74,9 @@ type RunningModel struct {
 	totalTokens   int64   // Cumulative tokens across all tasks in plan
 	estimatedCost float64 // Estimated cost in USD
 
+	// Demo mode indicator
+	demoMode bool
+
 	width  int
 	height int
 }
@@ -172,6 +175,13 @@ func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string,
 		planDir:     planDir,
 		plan:        p,
 	}
+}
+
+// NewRunningModelForDemo creates a running model for demo playback.
+func NewRunningModelForDemo(planID, planName string, tasks []plan.Task, p *plan.Plan) RunningModel {
+	model := NewRunningModel(planID, planName, tasks, "", p)
+	model.demoMode = true
+	return model
 }
 
 // Init implements tea.Model.
@@ -482,6 +492,9 @@ func (m RunningModel) renderRunning() string {
 
 	// Status bar
 	statusItems := []string{"Running...", "Ctrl+C Cancel"}
+	if m.demoMode {
+		statusItems = append([]string{"[DEMO]"}, statusItems...)
+	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
@@ -690,6 +703,9 @@ func (m RunningModel) renderDone() string {
 
 	// Status bar
 	statusItems := []string{"Enter Home", "q Quit"}
+	if m.demoMode {
+		statusItems = append([]string{"[DEMO]"}, statusItems...)
+	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
@@ -735,6 +751,9 @@ func (m RunningModel) renderCancelled() string {
 
 	// Status bar
 	statusItems := []string{"Enter Home", "q Quit"}
+	if m.demoMode {
+		statusItems = append([]string{"[DEMO]"}, statusItems...)
+	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
