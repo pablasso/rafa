@@ -10,3 +10,6 @@ dist/
 # Rafa runtime
 .rafa/**/*.lock
 .rafa/sessions/
+
+# python scripts
+.tmp_yaml
