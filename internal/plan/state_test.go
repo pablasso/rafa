@@ -84,7 +84,7 @@ func TestFindPlanFolder_NoPlansDir(t *testing.T) {
 	if !strings.Contains(err.Error(), "no plans found") {
 		t.Errorf("unexpected error message: %v", err)
 	}
-	if !strings.Contains(err.Error(), "rafa plan create") {
+	if !strings.Contains(err.Error(), "Create a plan") {
 		t.Errorf("error should mention how to create a plan: %v", err)
 	}
 }

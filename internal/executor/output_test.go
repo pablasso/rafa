@@ -647,7 +647,7 @@ func TestFormatStreamLine_ResultEvent(t *testing.T) {
 }
 
 func TestFormatStreamLine_PlainText(t *testing.T) {
-	// Non-JSON input should pass through (demo mode compatibility)
+	// Non-JSON input should pass through unchanged
 	plainText := "This is plain text output"
 
 	result := formatStreamLine(plainText)

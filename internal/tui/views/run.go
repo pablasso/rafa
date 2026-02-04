@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/pablasso/rafa/internal/demo"
 	"github.com/pablasso/rafa/internal/executor"
 	"github.com/pablasso/rafa/internal/plan"
 	"github.com/pablasso/rafa/internal/tui/components"
@@ -62,10 +61,6 @@ type RunningModel struct {
 	// Plan execution context
 	planDir string
 	plan    *plan.Plan
-
-	// Demo mode fields
-	demoMode   bool
-	demoConfig *demo.Config
 
 	// Final status
 	finalSuccess bool
@@ -179,41 +174,6 @@ func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string,
 	}
 }
 
-// NewRunningModelWithDemo creates a new RunningModel for demo mode execution.
-// In demo mode, no plan directory is used and execution is simulated.
-func NewRunningModelWithDemo(planID, planName string, tasks []plan.Task, p *plan.Plan, config *demo.Config) RunningModel {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = styles.SelectedStyle
-
-	taskDisplays := make([]TaskDisplay, len(tasks))
-	for i, t := range tasks {
-		taskDisplays[i] = TaskDisplay{
-			Title:  t.Title,
-			Status: "pending",
-		}
-	}
-
-	return RunningModel{
-		state:       stateRunning,
-		planID:      planID,
-		planName:    planName,
-		tasks:       taskDisplays,
-		currentTask: 0,
-		totalTasks:  len(tasks),
-		attempt:     0,
-		maxAttempts: executor.MaxAttempts,
-		startTime:   time.Now(),
-		spinner:     s,
-		output:      components.NewOutputViewport(80, 20, 0), // Will be resized
-		outputChan:  make(chan string, 100),                  // Buffered channel
-		planDir:     "",                                      // No plan directory in demo mode
-		plan:        p,
-		demoMode:    true,
-		demoConfig:  config,
-	}
-}
-
 // Init implements tea.Model.
 func (m RunningModel) Init() tea.Cmd {
 	return tea.Batch(
@@ -253,7 +213,6 @@ func (m *RunningModel) SetCancel(cancel context.CancelFunc) {
 
 // StartExecutor creates a command that starts plan execution in a goroutine.
 // It creates the executor with events integration and output capture.
-// In demo mode, it injects DemoRunner and skips persistence operations.
 func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 	return func() tea.Msg {
 		// Guard against nil program
@@ -266,42 +225,6 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 
 		// Create events handler to send messages to TUI
 		events := NewRunningModelEvents(program)
-
-		// In demo mode, use simplified execution without file-based output capture
-		if m.demoMode {
-			// Create demo runner with config
-			demoRunner := demo.NewDemoRunner(m.demoConfig)
-
-			// Create output capture for demo mode (no file, just channel streaming)
-			output := executor.NewOutputCaptureForDemo(m.outputChan)
-
-			// Create executor with demo runner injected
-			// Note: planDir is empty in demo mode, but WithSkipPersistence prevents file operations
-			exec := executor.New(m.planDir, m.plan).
-				WithRunner(demoRunner).
-				WithEvents(events).
-				WithOutput(output).
-				WithSkipPersistence(true) // Skips git checks, commits, and file persistence
-
-			// Run in background goroutine
-			go func() {
-				defer output.Close()
-				defer close(m.outputChan)
-
-				// Run executor and send error as message if it fails
-				if err := exec.Run(ctx); err != nil {
-					// Only send error if context wasn't cancelled (user didn't press Ctrl+C)
-					if ctx.Err() == nil {
-						program.Send(PlanDoneMsg{
-							Success: false,
-							Message: err.Error(),
-						})
-					}
-				}
-			}()
-
-			return nil
-		}
 
 		// Normal execution mode with file-based output capture
 		output, err := executor.NewOutputCaptureWithEvents(m.planDir, m.outputChan)
@@ -559,9 +482,6 @@ func (m RunningModel) renderRunning() string {
 
 	// Status bar
 	statusItems := []string{"Running...", "Ctrl+C Cancel"}
-	if m.demoMode {
-		statusItems = append([]string{"[DEMO]"}, statusItems...)
-	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
@@ -770,9 +690,6 @@ func (m RunningModel) renderDone() string {
 
 	// Status bar
 	statusItems := []string{"Enter Home", "q Quit"}
-	if m.demoMode {
-		statusItems = append([]string{"[DEMO]"}, statusItems...)
-	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
@@ -818,9 +735,6 @@ func (m RunningModel) renderCancelled() string {
 
 	// Status bar
 	statusItems := []string{"Enter Home", "q Quit"}
-	if m.demoMode {
-		statusItems = append([]string{"[DEMO]"}, statusItems...)
-	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()

@@ -22,7 +22,7 @@ type PlanSummary struct {
 	TaskCount int
 	Status    string // "not_started", "in_progress", "completed", "failed"
 	Completed int    // for in_progress: how many tasks are done
-	Locked    bool   // true if plan has a .lock file (running elsewhere)
+	Locked    bool   // true if plan has a run.lock file (running elsewhere)
 }
 
 // PlanListModel is the model for the plan selection view.
@@ -95,9 +95,9 @@ func (m PlanListModel) loadPlans() []PlanSummary {
 	return summaries
 }
 
-// isLocked checks if a plan directory has a .lock file indicating it's running elsewhere.
+// isLocked checks if a plan directory has a run.lock file indicating it's running elsewhere.
 func isLocked(planDir string) bool {
-	lockFile := filepath.Join(planDir, ".lock")
+	lockFile := filepath.Join(planDir, "run.lock")
 	_, err := os.Stat(lockFile)
 	return err == nil
 }
@@ -120,7 +120,7 @@ func (m PlanListModel) Update(msg tea.Msg) (PlanListModel, tea.Cmd) {
 		if len(m.plans) == 0 {
 			switch msg.String() {
 			case "c":
-				return m, func() tea.Msg { return msgs.GoToFilePickerMsg{} }
+				return m, func() tea.Msg { return msgs.GoToFilePickerMsg{ForPlanCreation: true} }
 			case "esc":
 				return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
 			case "ctrl+c":

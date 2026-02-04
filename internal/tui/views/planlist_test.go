@@ -165,8 +165,12 @@ func TestPlanListModel_Update_EmptyState_CReturnsFilePicker(t *testing.T) {
 	}
 
 	msg := cmd()
-	if _, ok := msg.(msgs.GoToFilePickerMsg); !ok {
+	fpMsg, ok := msg.(msgs.GoToFilePickerMsg)
+	if !ok {
 		t.Errorf("expected msgs.GoToFilePickerMsg, got %T", msg)
+	}
+	if !fpMsg.ForPlanCreation {
+		t.Error("expected ForPlanCreation to be true")
 	}
 }
 
@@ -557,7 +561,7 @@ func TestPlanListModel_LockedPlan_Detection(t *testing.T) {
 	// Create a plan with lock
 	createTestPlan(t, plansDir, "locked", "test2", plan.PlanStatusInProgress, nil)
 	lockedPlanDir := filepath.Join(plansDir, "locked-test2")
-	lockFile := filepath.Join(lockedPlanDir, ".lock")
+	lockFile := filepath.Join(lockedPlanDir, "run.lock")
 	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
 		t.Fatalf("failed to create lock file: %v", err)
 	}
@@ -603,7 +607,7 @@ func TestPlanListModel_LockedPlan_CannotSelect(t *testing.T) {
 	// Create a locked plan
 	createTestPlan(t, plansDir, "locked", "test", plan.PlanStatusInProgress, nil)
 	lockedPlanDir := filepath.Join(plansDir, "locked-test")
-	lockFile := filepath.Join(lockedPlanDir, ".lock")
+	lockFile := filepath.Join(lockedPlanDir, "run.lock")
 	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
 		t.Fatalf("failed to create lock file: %v", err)
 	}
@@ -639,7 +643,7 @@ func TestPlanListModel_LockedPlan_ShowsLockIndicator(t *testing.T) {
 	// Create a locked plan
 	createTestPlan(t, plansDir, "locked", "test", plan.PlanStatusInProgress, nil)
 	lockedPlanDir := filepath.Join(plansDir, "locked-test")
-	lockFile := filepath.Join(lockedPlanDir, ".lock")
+	lockFile := filepath.Join(lockedPlanDir, "run.lock")
 	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
 		t.Fatalf("failed to create lock file: %v", err)
 	}
@@ -666,7 +670,7 @@ func TestPlanListModel_LockedPlan_ErrMsgClearedOnNavigation(t *testing.T) {
 	// Create two plans, first one locked
 	createTestPlan(t, plansDir, "locked", "test1", plan.PlanStatusInProgress, nil)
 	lockedPlanDir := filepath.Join(plansDir, "locked-test1")
-	lockFile := filepath.Join(lockedPlanDir, ".lock")
+	lockFile := filepath.Join(lockedPlanDir, "run.lock")
 	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
 		t.Fatalf("failed to create lock file: %v", err)
 	}
@@ -696,17 +700,17 @@ func TestIsLocked(t *testing.T) {
 
 	// Test without lock file
 	if isLocked(tmpDir) {
-		t.Error("expected isLocked to return false for directory without .lock")
+		t.Error("expected isLocked to return false for directory without run.lock")
 	}
 
 	// Create lock file
-	lockFile := filepath.Join(tmpDir, ".lock")
+	lockFile := filepath.Join(tmpDir, "run.lock")
 	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
 		t.Fatalf("failed to create lock file: %v", err)
 	}
 
 	// Test with lock file
 	if !isLocked(tmpDir) {
-		t.Error("expected isLocked to return true for directory with .lock")
+		t.Error("expected isLocked to return true for directory with run.lock")
 	}
 }

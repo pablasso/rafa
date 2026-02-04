@@ -1,12 +1,12 @@
 package tui
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pablasso/rafa/internal/plan"
@@ -89,15 +89,15 @@ func createTestPlan(t *testing.T, plansDir, planID, planName, status string, tas
 	return folderPath
 }
 
-// createLockedPlan creates a plan with a .lock file to simulate it running elsewhere.
+// createLockedPlan creates a plan with a run.lock file to simulate it running elsewhere.
 func createLockedPlan(t *testing.T, plansDir, planID, planName string, tasks []plan.Task) string {
 	t.Helper()
 
 	folderPath := createTestPlan(t, plansDir, planID, planName, plan.PlanStatusInProgress, tasks)
 
-	lockPath := filepath.Join(folderPath, ".lock")
+	lockPath := filepath.Join(folderPath, "run.lock")
 	if err := os.WriteFile(lockPath, []byte("locked"), 0644); err != nil {
-		t.Fatalf("failed to create .lock file: %v", err)
+		t.Fatalf("failed to create run.lock file: %v", err)
 	}
 
 	return folderPath
@@ -116,61 +116,6 @@ func createTestModel(t *testing.T, repoRoot, rafaDir string) Model {
 	m.home.SetSize(80, 24)
 
 	return m
-}
-
-// mockAI represents a mock AI implementation for testing.
-type mockAI struct {
-	tasks []string
-	name  string
-	err   error
-}
-
-// setupMockAI sets up mock functions for plan creation.
-// Returns a function to restore the original functions.
-func setupMockAI(t *testing.T, mock mockAI) func() {
-	t.Helper()
-
-	originalExtractTasks := views.GetExtractTasksFunc()
-	originalCreatePlanFolder := views.GetCreatePlanFolderFunc()
-	originalCheckClaudeCLI := views.GetCheckClaudeCLIFunc()
-
-	// Mock CLI check to always succeed
-	views.SetCheckClaudeCLIFunc(func() error {
-		return nil
-	})
-
-	// Mock task extraction
-	views.SetExtractTasksFunc(func(ctx context.Context, content string) (*plan.TaskExtractionResult, error) {
-		if mock.err != nil {
-			return nil, mock.err
-		}
-
-		extractedTasks := make([]plan.ExtractedTask, len(mock.tasks))
-		for i, title := range mock.tasks {
-			extractedTasks[i] = plan.ExtractedTask{
-				Title:              title,
-				Description:        "Test task description",
-				AcceptanceCriteria: []string{"Test criterion"},
-			}
-		}
-
-		return &plan.TaskExtractionResult{
-			Name:        mock.name,
-			Description: "Test plan description",
-			Tasks:       extractedTasks,
-		}, nil
-	})
-
-	// Mock plan folder creation to do nothing
-	views.SetCreatePlanFolderFunc(func(p *plan.Plan) error {
-		return nil
-	})
-
-	return func() {
-		views.SetExtractTasksFunc(originalExtractTasks)
-		views.SetCreatePlanFolderFunc(originalCreatePlanFolder)
-		views.SetCheckClaudeCLIFunc(originalCheckClaudeCLI)
-	}
 }
 
 // sendKey simulates sending a key press to the model.
@@ -230,13 +175,6 @@ This is a test design document.
 1. First task
 2. Second task
 `)
-
-	// Setup mock AI
-	restore := setupMockAI(t, mockAI{
-		tasks: []string{"First task", "Second task"},
-		name:  "test-feature",
-	})
-	defer restore()
 
 	// Create model starting at Home
 	m := createTestModel(t, filepath.Dir(rafaDir), rafaDir)
@@ -393,8 +331,22 @@ func TestRunExistingPlanFlow(t *testing.T) {
 	sendWindowSize(t, &m, 100, 40)
 
 	// Simulate execution done
-	doneMsg := msgs.ExecutionDoneMsg{Success: true}
+	doneMsg := views.PlanDoneMsg{
+		Success:   true,
+		Succeeded: 2,
+		Total:     2,
+		Duration:  time.Second,
+	}
 	newModel, _ = m.Update(doneMsg)
+	m = newModel.(Model)
+
+	// Press Enter to return home
+	cmd = sendKey(t, &m, "enter")
+	if cmd == nil {
+		t.Fatal("expected command from Enter in done state")
+	}
+	msg = processCmd(cmd)
+	newModel, _ = m.Update(msg)
 	m = newModel.(Model)
 
 	// Verify returned to Home view
@@ -415,7 +367,7 @@ func TestKeyboardNavigation(t *testing.T) {
 			t.Fatalf("expected cursor at 0, got %d", m.home.Cursor())
 		}
 
-		// Navigate down through all 5 items (Define: p, d; Execute: c, r; Quit: q)
+		// Navigate down through all 3 items (Execute: c, r; Quit: q)
 		sendKey(t, &m, "down")
 		if m.home.Cursor() != 1 {
 			t.Errorf("expected cursor at 1 after down, got %d", m.home.Cursor())
@@ -426,41 +378,21 @@ func TestKeyboardNavigation(t *testing.T) {
 			t.Errorf("expected cursor at 2 after second down, got %d", m.home.Cursor())
 		}
 
+		// Navigate past end (should stay at 2 - Quit)
 		sendKey(t, &m, "down")
-		if m.home.Cursor() != 3 {
-			t.Errorf("expected cursor at 3 after third down, got %d", m.home.Cursor())
-		}
-
-		sendKey(t, &m, "down")
-		if m.home.Cursor() != 4 {
-			t.Errorf("expected cursor at 4 after fourth down, got %d", m.home.Cursor())
-		}
-
-		// Navigate past end (should stay at 4 - Quit)
-		sendKey(t, &m, "down")
-		if m.home.Cursor() != 4 {
-			t.Errorf("expected cursor to stay at 4, got %d", m.home.Cursor())
+		if m.home.Cursor() != 2 {
+			t.Errorf("expected cursor to stay at 2, got %d", m.home.Cursor())
 		}
 
 		// Navigate up through all items
 		sendKey(t, &m, "up")
-		if m.home.Cursor() != 3 {
-			t.Errorf("expected cursor at 3 after up, got %d", m.home.Cursor())
-		}
-
-		sendKey(t, &m, "up")
-		if m.home.Cursor() != 2 {
-			t.Errorf("expected cursor at 2 after second up, got %d", m.home.Cursor())
-		}
-
-		sendKey(t, &m, "up")
 		if m.home.Cursor() != 1 {
-			t.Errorf("expected cursor at 1 after third up, got %d", m.home.Cursor())
+			t.Errorf("expected cursor at 1 after up, got %d", m.home.Cursor())
 		}
 
 		sendKey(t, &m, "up")
 		if m.home.Cursor() != 0 {
-			t.Errorf("expected cursor at 0 after fourth up, got %d", m.home.Cursor())
+			t.Errorf("expected cursor at 0 after second up, got %d", m.home.Cursor())
 		}
 
 		// Navigate past beginning (should stay)
@@ -475,15 +407,19 @@ func TestKeyboardNavigation(t *testing.T) {
 		m := createTestModel(t, repoRoot, rafaDir)
 		sendWindowSize(t, &m, 80, 24)
 
-		// Press Enter on first item (Create PRD) - sends GoToConversationMsg
+		// Press Enter on first item (Create Plan) - sends GoToFilePickerMsg
 		cmd := sendKey(t, &m, "enter")
 		if cmd == nil {
 			t.Fatal("expected command from Enter")
 		}
 
 		msg := processCmd(cmd)
-		if _, ok := msg.(msgs.GoToConversationMsg); !ok {
-			t.Errorf("expected GoToConversationMsg, got %T", msg)
+		fpMsg, ok := msg.(msgs.GoToFilePickerMsg)
+		if !ok {
+			t.Errorf("expected GoToFilePickerMsg, got %T", msg)
+		}
+		if !fpMsg.ForPlanCreation {
+			t.Error("expected ForPlanCreation to be true")
 		}
 	})
 
@@ -725,7 +661,7 @@ func TestWindowResize(t *testing.T) {
 
 // TestErrorStates tests various error scenarios.
 func TestErrorStates(t *testing.T) {
-	t.Run("No .rafa directory shows init message", func(t *testing.T) {
+	t.Run("No .rafa directory still shows home menu", func(t *testing.T) {
 		// Create just a temp directory without .rafa
 		tmpDir := t.TempDir()
 
@@ -747,11 +683,11 @@ func TestErrorStates(t *testing.T) {
 
 		view := m.View()
 
-		if !strings.Contains(view, "No .rafa/ directory found") {
-			t.Error("expected view to contain 'No .rafa/ directory found'")
+		if !strings.Contains(view, "Create Plan") {
+			t.Error("expected view to contain 'Create Plan'")
 		}
-		if !strings.Contains(view, "rafa init") {
-			t.Error("expected view to contain 'rafa init' instruction")
+		if !strings.Contains(view, "Run Plan") {
+			t.Error("expected view to contain 'Run Plan'")
 		}
 	})
 

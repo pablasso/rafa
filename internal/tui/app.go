@@ -5,13 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/pablasso/rafa/internal/demo"
 	"github.com/pablasso/rafa/internal/plan"
-	"github.com/pablasso/rafa/internal/session"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 	"github.com/pablasso/rafa/internal/tui/views"
 )
@@ -32,11 +29,9 @@ type View int
 const (
 	ViewHome View = iota
 	ViewFilePicker
-	ViewCreating
 	ViewPlanCreate
 	ViewPlanList
 	ViewRunning
-	ViewConversation
 )
 
 // Model is the main Bubble Tea model that orchestrates all views.
@@ -46,41 +41,21 @@ type Model struct {
 	height      int
 
 	// Sub-models for each view
-	home         views.HomeModel
-	filePicker   views.FilePickerModel
-	creating     views.CreatingModel
-	planCreate   views.PlanCreateModel
-	planList     views.PlanListModel
-	running      views.RunningModel
-	conversation views.ConversationModel
+	home       views.HomeModel
+	filePicker views.FilePickerModel
+	planCreate views.PlanCreateModel
+	planList   views.PlanListModel
+	running    views.RunningModel
 
 	// Shared state
 	repoRoot string
 	rafaDir  string
 	err      error
-
-	// Demo mode fields
-	demoMode   bool
-	demoConfig *demo.Config
 }
 
-// Option configures the TUI application.
-type Option func(*Model)
-
-// WithDemoMode enables demo mode with simulated execution.
-func WithDemoMode(config *demo.Config) Option {
-	return func(m *Model) {
-		m.demoMode = true
-		m.demoConfig = config
-	}
-}
-
-// Run starts the TUI application with optional configuration.
-func Run(opts ...Option) error {
+// Run starts the TUI application.
+func Run() error {
 	m := initialModel()
-	for _, opt := range opts {
-		opt(&m)
-	}
 
 	Program = tea.NewProgram(
 		m,
@@ -140,18 +115,8 @@ func hasMarkdownFiles(dir string) bool {
 	return len(matches) > 0
 }
 
-// demoStartMsg is sent when we need to start demo mode after receiving window size.
-type demoStartMsg struct{}
-
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	if m.demoMode {
-		// In demo mode, we need window size before transitioning to running view.
-		// Return a command that will trigger the transition after window size is received.
-		return func() tea.Msg {
-			return demoStartMsg{}
-		}
-	}
 	return m.home.Init()
 }
 
@@ -163,16 +128,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// Propagate to current view
 		return m.propagateWindowSize(msg)
-
-	case demoStartMsg:
-		// Wait for window size to be set before transitioning
-		if m.width > 0 && m.height > 0 {
-			return m.transitionToDemoRunning()
-		}
-		// Window size not yet received, retry after a small delay to avoid busy-loop
-		return m, tea.Tick(10*time.Millisecond, func(time.Time) tea.Msg {
-			return demoStartMsg{}
-		})
 
 	case tea.KeyMsg:
 		// Global quit key only from home view
@@ -188,14 +143,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.home = views.NewHomeModel(m.rafaDir)
 		m.home.SetSize(m.width, m.height)
 		return m, m.home.Init()
-
-	case msgs.GoToConversationMsg:
-		m.currentView = ViewConversation
-		m.conversation = views.NewConversationModel(views.ConversationConfig{
-			Phase: msg.Phase,
-		})
-		m.conversation.SetSize(m.width, m.height)
-		return m, m.conversation.Init()
 
 	case msgs.GoToFilePickerMsg:
 		m.currentView = ViewFilePicker
@@ -237,11 +184,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgs.RunPlanMsg:
 		return m.transitionToRunning(msg.PlanID)
 
-	case msgs.ExecutionDoneMsg:
-		m.currentView = ViewHome
-		m.home = views.NewHomeModel(m.rafaDir)
-		m.home.SetSize(m.width, m.height)
-		return m, m.home.Init()
 	}
 
 	// Delegate all other messages to the current view
@@ -284,23 +226,6 @@ func (m Model) transitionToRunning(planID string) (tea.Model, tea.Cmd) {
 	)
 }
 
-// transitionToDemoRunning creates an in-memory demo plan and transitions to the running view.
-func (m Model) transitionToDemoRunning() (tea.Model, tea.Cmd) {
-	// Create demo plan in memory with configured task count
-	demoPlan := demo.CreateDemoPlanWithTaskCount(m.demoConfig.TaskCount)
-
-	m.currentView = ViewRunning
-	m.running = views.NewRunningModelWithDemo("DEMO", demoPlan.Name, demoPlan.Tasks, demoPlan, m.demoConfig)
-	m.running.SetSize(m.width, m.height)
-
-	// Start the executor in a background goroutine
-	// StartExecutor detects demo mode and injects DemoRunner automatically
-	return m, tea.Batch(
-		m.running.Init(),
-		m.running.StartExecutor(Program),
-	)
-}
-
 // propagateWindowSize sends the window size message to the current view.
 func (m Model) propagateWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	switch m.currentView {
@@ -313,11 +238,6 @@ func (m Model) propagateWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		m.filePicker.SetSize(msg.Width, msg.Height)
 		var cmd tea.Cmd
 		m.filePicker, cmd = m.filePicker.Update(msg)
-		return m, cmd
-	case ViewCreating:
-		m.creating.SetSize(msg.Width, msg.Height)
-		var cmd tea.Cmd
-		m.creating, cmd = m.creating.Update(msg)
 		return m, cmd
 	case ViewPlanCreate:
 		m.planCreate.SetSize(msg.Width, msg.Height)
@@ -334,11 +254,6 @@ func (m Model) propagateWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.running, cmd = m.running.Update(msg)
 		return m, cmd
-	case ViewConversation:
-		m.conversation.SetSize(msg.Width, msg.Height)
-		var cmd tea.Cmd
-		m.conversation, cmd = m.conversation.Update(msg)
-		return m, cmd
 	}
 	return m, nil
 }
@@ -354,10 +269,6 @@ func (m Model) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.filePicker, cmd = m.filePicker.Update(msg)
 		return m, cmd
-	case ViewCreating:
-		var cmd tea.Cmd
-		m.creating, cmd = m.creating.Update(msg)
-		return m, cmd
 	case ViewPlanCreate:
 		var cmd tea.Cmd
 		m.planCreate, cmd = m.planCreate.Update(msg)
@@ -369,10 +280,6 @@ func (m Model) delegateToCurrentView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ViewRunning:
 		var cmd tea.Cmd
 		m.running, cmd = m.running.Update(msg)
-		return m, cmd
-	case ViewConversation:
-		var cmd tea.Cmd
-		m.conversation, cmd = m.conversation.Update(msg)
 		return m, cmd
 	}
 	return m, nil
@@ -390,16 +297,12 @@ func (m Model) View() string {
 		return m.home.View()
 	case ViewFilePicker:
 		return m.filePicker.View()
-	case ViewCreating:
-		return m.creating.View()
 	case ViewPlanCreate:
 		return m.planCreate.View()
 	case ViewPlanList:
 		return m.planList.View()
 	case ViewRunning:
 		return m.running.View()
-	case ViewConversation:
-		return m.conversation.View()
 	}
 	return "Unknown view"
 }
@@ -416,32 +319,4 @@ func (m Model) renderTerminalTooSmall() string {
 		lipgloss.Center, lipgloss.Center,
 		msg,
 	)
-}
-
-// ConversationOpts configures launching directly into conversation mode.
-type ConversationOpts struct {
-	Phase      session.Phase
-	Name       string
-	FromDoc    string           // For design docs created from PRD
-	ResumeFrom *session.Session // For resuming existing sessions
-}
-
-// RunWithConversation starts the TUI directly in conversation mode for CLI commands.
-func RunWithConversation(opts ConversationOpts) error {
-	m := initialModel()
-	m.currentView = ViewConversation
-	m.conversation = views.NewConversationModel(views.ConversationConfig{
-		Phase:      opts.Phase,
-		Name:       opts.Name,
-		FromDoc:    opts.FromDoc,
-		ResumeFrom: opts.ResumeFrom,
-	})
-
-	Program = tea.NewProgram(
-		m,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
-	_, err := Program.Run()
-	return err
 }

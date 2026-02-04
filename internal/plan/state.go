@@ -16,7 +16,7 @@ func FindPlanFolder(name string) (string, error) {
 	entries, err := os.ReadDir(plansPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("no plans found. Run 'rafa plan create <design.md>' first")
+			return "", fmt.Errorf("no plans found. Create a plan from the TUI first")
 		}
 		return "", fmt.Errorf("failed to read plans directory: %w", err)
 	}

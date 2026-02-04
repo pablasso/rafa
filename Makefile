@@ -1,4 +1,4 @@
-.PHONY: fmt check-fmt test build clean release-dry-run release watch watch-mac dev dev-demo
+.PHONY: fmt check-fmt test build clean release-dry-run release watch watch-mac dev
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -50,7 +50,7 @@ endif
 	@echo "Release $(VERSION) pushed. GitHub Actions will handle the rest."
 
 # Hot reload for TUI development
-# Terminal 1: make dev (or make dev-demo)
+# Terminal 1: make dev
 # Terminal 2: make watch (Linux) or make watch-mac (macOS)
 # Edit .go files and save - TUI restarts automatically
 
@@ -81,17 +81,5 @@ dev:
 	while true; do \
 		./bin/rafa; \
 		echo "[dev] Restarting in 1s (Ctrl+C to stop)..."; \
-		sleep 1; \
-	done
-
-# Run demo mode in a loop (restarts when killed by watch or on crash)
-# Press Ctrl+C during the restart delay to exit
-# Usage: make dev-demo DEMO_ARGS="--speed=marathon"
-dev-demo:
-	@$(MAKE) build
-	@trap 'echo " [dev-demo] Stopping..."; exit 0' INT TERM; \
-	while true; do \
-		./bin/rafa demo $(DEMO_ARGS); \
-		echo "[dev-demo] Restarting in 1s (Ctrl+C to stop)..."; \
 		sleep 1; \
 	done

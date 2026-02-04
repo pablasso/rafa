@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/pablasso/rafa/internal/display"
 	"github.com/pablasso/rafa/internal/git"
 	"github.com/pablasso/rafa/internal/plan"
 )
@@ -21,19 +20,17 @@ type Runner interface {
 
 // Executor orchestrates the execution of plan tasks.
 type Executor struct {
-	planDir         string
-	repoRoot        string
-	plan            *plan.Plan
-	logger          *plan.ProgressLogger
-	runner          Runner
-	lock            *plan.PlanLock
-	startTime       time.Time
-	allowDirty      bool
-	skipPersistence bool   // Skip all file system operations (for demo mode)
-	saveHook        func() // Optional hook called after each plan save (for testing)
-	display         *display.Display
-	events          ExecutorEvents // nil for CLI mode
-	output          *OutputCapture // Optional external output capture (for TUI)
+	planDir    string
+	repoRoot   string
+	plan       *plan.Plan
+	logger     *plan.ProgressLogger
+	runner     Runner
+	lock       *plan.PlanLock
+	startTime  time.Time
+	allowDirty bool
+	saveHook   func()         // Optional hook called after each plan save (for testing)
+	events     ExecutorEvents // nil when no event sink is configured
+	output     *OutputCapture // Optional external output capture (for TUI)
 }
 
 // New creates a new Executor for the given plan directory and plan.
@@ -69,15 +66,9 @@ func (e *Executor) WithSaveHook(hook func()) *Executor {
 	return e
 }
 
-// WithDisplay sets the display for status updates.
-func (e *Executor) WithDisplay(d *display.Display) *Executor {
-	e.display = d
-	return e
-}
-
 // WithEvents configures event callbacks for TUI integration.
 // When events is non-nil, the executor will emit events during execution.
-// When nil (the default), the executor uses existing CLI behavior unchanged.
+// When nil (the default), the executor prints basic status to stdout.
 func (e *Executor) WithEvents(events ExecutorEvents) *Executor {
 	e.events = events
 	return e
@@ -87,17 +78,6 @@ func (e *Executor) WithEvents(events ExecutorEvents) *Executor {
 // When set, the executor will use this instead of creating its own.
 func (e *Executor) WithOutput(output *OutputCapture) *Executor {
 	e.output = output
-	return e
-}
-
-// WithSkipPersistence disables all file system operations (plan saves, logging, locks).
-// This is used for demo mode where execution is simulated without touching disk.
-// When skipPersistence is true, allowDirty is also implicitly set to skip git checks.
-func (e *Executor) WithSkipPersistence(skip bool) *Executor {
-	e.skipPersistence = skip
-	if skip {
-		e.allowDirty = true // Implicitly skip git checks in demo mode
-	}
 	return e
 }
 
@@ -111,17 +91,13 @@ func (e *Executor) notifySave() {
 // Run executes all pending tasks in the plan.
 // It acquires a lock, processes tasks sequentially, and handles retries.
 func (e *Executor) Run(ctx context.Context) error {
-	// Skip lock acquisition in demo mode (no persistence)
-	if !e.skipPersistence {
-		// Acquire lock
-		if err := e.lock.Acquire(); err != nil {
-			return err
-		}
-		defer e.lock.Release()
+	// Acquire lock
+	if err := e.lock.Acquire(); err != nil {
+		return err
 	}
+	defer e.lock.Release()
 
 	// Check workspace cleanliness before starting (excluding our lock file)
-	// Skip in demo mode (skipPersistence implies allowDirty)
 	if !e.allowDirty {
 		status, err := git.GetStatus(e.repoRoot)
 		if err != nil {
@@ -167,28 +143,24 @@ func (e *Executor) Run(ctx context.Context) error {
 	// Update plan status if not started
 	if e.plan.Status == plan.PlanStatusNotStarted {
 		e.plan.Status = plan.PlanStatusInProgress
-		if !e.skipPersistence {
-			if err := plan.SavePlan(e.planDir, e.plan); err != nil {
-				return fmt.Errorf("failed to save plan: %w", err)
-			}
-			e.notifySave()
+		if err := plan.SavePlan(e.planDir, e.plan); err != nil {
+			return fmt.Errorf("failed to save plan: %w", err)
 		}
+		e.notifySave()
 	}
 
 	// Log plan started and record start time
 	e.startTime = time.Now()
-	if !e.skipPersistence {
-		if err := e.logger.PlanStarted(e.plan.ID); err != nil {
-			return fmt.Errorf("failed to log plan started: %w", err)
-		}
+	if err := e.logger.PlanStarted(e.plan.ID); err != nil {
+		return fmt.Errorf("failed to log plan started: %w", err)
 	}
 
 	// Build plan context once
 	planContext := e.buildPlanContext()
 
-	// Use provided output capture or create our own (skip file-based capture in demo mode)
+	// Use provided output capture or create our own.
 	output := e.output
-	if output == nil && !e.skipPersistence {
+	if output == nil {
 		var err error
 		output, err = NewOutputCapture(e.planDir)
 		if err != nil {
@@ -218,34 +190,27 @@ func (e *Executor) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				// Context cancelled - reset task to pending
 				task.Status = plan.TaskStatusPending
-				if !e.skipPersistence {
-					if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
-						if e.events == nil {
-							fmt.Printf("Warning: failed to save plan after cancel: %v\n", saveErr)
-						}
-					} else {
-						e.notifySave()
+				if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
+					if e.events == nil {
+						fmt.Printf("Warning: failed to save plan after cancel: %v\n", saveErr)
 					}
-					e.logger.PlanCancelled(task.ID)
+				} else {
+					e.notifySave()
 				}
-				if e.display != nil {
-					e.display.UpdateStatus(display.StatusCancelled)
-				}
+				e.logger.PlanCancelled(task.ID)
 				return nil
 			}
 
 			// Max attempts reached - mark plan as failed
 			e.plan.Status = plan.PlanStatusFailed
-			if !e.skipPersistence {
-				if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
-					if e.events == nil {
-						fmt.Printf("Warning: failed to save plan after failure: %v\n", saveErr)
-					}
-				} else {
-					e.notifySave()
+			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
+				if e.events == nil {
+					fmt.Printf("Warning: failed to save plan after failure: %v\n", saveErr)
 				}
-				e.logger.PlanFailed(task.ID, task.Attempts)
+			} else {
+				e.notifySave()
 			}
+			e.logger.PlanFailed(task.ID, task.Attempts)
 			// Emit OnPlanFailed event for TUI integration
 			if e.events != nil {
 				e.events.OnPlanFailed(task, fmt.Sprintf("failed after %d attempts", task.Attempts))
@@ -256,17 +221,13 @@ func (e *Executor) Run(ctx context.Context) error {
 
 	// All tasks completed
 	e.plan.Status = plan.PlanStatusCompleted
-	if !e.skipPersistence {
-		if err := plan.SavePlan(e.planDir, e.plan); err != nil {
-			return fmt.Errorf("failed to save plan: %w", err)
-		}
-		e.notifySave()
+	if err := plan.SavePlan(e.planDir, e.plan); err != nil {
+		return fmt.Errorf("failed to save plan: %w", err)
 	}
+	e.notifySave()
 
 	duration := time.Since(e.startTime)
-	if !e.skipPersistence {
-		e.logger.PlanCompleted(len(e.plan.Tasks), e.countCompleted(), duration)
-	}
+	e.logger.PlanCompleted(len(e.plan.Tasks), e.countCompleted(), duration)
 
 	// Commit any remaining metadata (plan completion status)
 	// CommitAll returns nil when there's nothing to commit (e.g., agent already committed)
@@ -280,7 +241,7 @@ func (e *Executor) Run(ctx context.Context) error {
 		}
 	}
 
-	// Emit OnPlanComplete event for TUI integration, or print for CLI
+	// Emit OnPlanComplete event for TUI integration, or print to stdout
 	if e.events != nil {
 		e.events.OnPlanComplete(e.countCompleted(), len(e.plan.Tasks), duration)
 	} else {
@@ -291,12 +252,6 @@ func (e *Executor) Run(ctx context.Context) error {
 
 // executeTask runs a single task with retry logic.
 func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, planContext string, output *OutputCapture) error {
-	// Update display with task info at the start
-	if e.display != nil {
-		e.display.UpdateTask(idx+1, len(e.plan.Tasks), task.ID, task.Title)
-		e.display.UpdateStatus(display.StatusRunning)
-	}
-
 	for task.Attempts < MaxAttempts {
 		// Check for cancellation before starting
 		if ctx.Err() != nil {
@@ -306,19 +261,12 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		// Increment attempts and set in_progress
 		task.Attempts++
 		task.Status = plan.TaskStatusInProgress
-		if !e.skipPersistence {
-			if err := plan.SavePlan(e.planDir, e.plan); err != nil {
-				return fmt.Errorf("failed to save plan: %w", err)
-			}
-			e.notifySave()
+		if err := plan.SavePlan(e.planDir, e.plan); err != nil {
+			return fmt.Errorf("failed to save plan: %w", err)
 		}
+		e.notifySave()
 
-		// Update display with attempt info
-		if e.display != nil {
-			e.display.UpdateAttempt(task.Attempts, MaxAttempts)
-		}
-
-		// Emit OnTaskStart event for TUI integration, or print for CLI
+		// Emit OnTaskStart event for TUI integration, or print to stdout
 		if e.events != nil {
 			e.events.OnTaskStart(idx+1, len(e.plan.Tasks), task, task.Attempts)
 		} else {
@@ -327,10 +275,8 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		}
 
 		// Log task started
-		if !e.skipPersistence {
-			if err := e.logger.TaskStarted(task.ID, task.Attempts); err != nil {
-				return fmt.Errorf("failed to log task started: %w", err)
-			}
+		if err := e.logger.TaskStarted(task.ID, task.Attempts); err != nil {
+			return fmt.Errorf("failed to log task started: %w", err)
 		}
 
 		// Write task header to output log
@@ -343,18 +289,15 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		if err == nil {
 			// Task succeeded - update metadata and commit everything
 			task.Status = plan.TaskStatusCompleted
-			if !e.skipPersistence {
-				if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
-					return fmt.Errorf("failed to save plan: %w", saveErr)
-				}
-				e.notifySave()
-				if logErr := e.logger.TaskCompleted(task.ID); logErr != nil {
-					return fmt.Errorf("failed to log task completed: %w", logErr)
-				}
+			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
+				return fmt.Errorf("failed to save plan: %w", saveErr)
+			}
+			e.notifySave()
+			if logErr := e.logger.TaskCompleted(task.ID); logErr != nil {
+				return fmt.Errorf("failed to log task completed: %w", logErr)
 			}
 
 			// Commit all changes (implementation + metadata) unless allowDirty
-			// Note: skipPersistence implies allowDirty, so git commits are also skipped
 			if !e.allowDirty {
 				commitMsg := e.getCommitMessage(task, output)
 				if commitErr := git.CommitAll(e.repoRoot, commitMsg); commitErr != nil {
@@ -374,9 +317,6 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 			if output != nil {
 				output.WriteTaskFooter(task.ID, true)
 			}
-			if e.display != nil {
-				e.display.UpdateStatus(display.StatusCompleted)
-			}
 			// Emit OnTaskComplete event for TUI integration
 			if e.events != nil {
 				e.events.OnTaskComplete(task)
@@ -385,14 +325,12 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		}
 
 		// Task failed
-		if !e.skipPersistence {
-			if logErr := e.logger.TaskFailed(task.ID, task.Attempts); logErr != nil {
-				if e.events == nil {
-					fmt.Printf("Warning: failed to log task failed: %v\n", logErr)
-				}
+		if logErr := e.logger.TaskFailed(task.ID, task.Attempts); logErr != nil {
+			if e.events == nil {
+				fmt.Printf("Warning: failed to log task failed: %v\n", logErr)
 			}
 		}
-		// Emit OnTaskFailed event for TUI integration, or print for CLI
+		// Emit OnTaskFailed event for TUI integration, or print to stdout
 		if e.events != nil {
 			e.events.OnTaskFailed(task, task.Attempts, err)
 		} else {
@@ -405,17 +343,12 @@ func (e *Executor) executeTask(ctx context.Context, task *plan.Task, idx int, pl
 		// Check if max attempts reached
 		if task.Attempts >= MaxAttempts {
 			task.Status = plan.TaskStatusFailed
-			if !e.skipPersistence {
-				if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
-					if e.events == nil {
-						fmt.Printf("Warning: failed to save plan: %v\n", saveErr)
-					}
-				} else {
-					e.notifySave()
+			if saveErr := plan.SavePlan(e.planDir, e.plan); saveErr != nil {
+				if e.events == nil {
+					fmt.Printf("Warning: failed to save plan: %v\n", saveErr)
 				}
-			}
-			if e.display != nil {
-				e.display.UpdateStatus(display.StatusFailed)
+			} else {
+				e.notifySave()
 			}
 			return fmt.Errorf("max attempts reached")
 		}
@@ -472,7 +405,6 @@ func (e *Executor) workspaceDirtyError(files []string) error {
 		msg += fmt.Sprintf("  %s\n", f)
 	}
 	msg += "\nPlease commit or stash your changes before running the plan.\n"
-	msg += "Or use --allow-dirty to skip this check (not recommended)."
 	return fmt.Errorf("%s", msg)
 }
 

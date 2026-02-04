@@ -34,7 +34,26 @@ const (
 	PlanCreateStateError                               // Error occurred
 )
 
-// Note: Uses ActivityEntry type defined in conversation.go (same package)
+// ActivityEntry represents a single item in the activity timeline.
+type ActivityEntry struct {
+	Text      string
+	Timestamp time.Time
+	Indent    int  // Nesting level for tree display
+	IsDone    bool // Whether this activity is complete
+}
+
+// ConversationStarter interface for starting conversations (allows mocking).
+type ConversationStarter interface {
+	Start(ctx context.Context, config ai.ConversationConfig) (*ai.Conversation, <-chan ai.StreamEvent, error)
+}
+
+// DefaultConversationStarter uses the real ai.StartConversation.
+type DefaultConversationStarter struct{}
+
+// Start implements ConversationStarter.
+func (d DefaultConversationStarter) Start(ctx context.Context, config ai.ConversationConfig) (*ai.Conversation, <-chan ai.StreamEvent, error) {
+	return ai.StartConversation(ctx, config)
+}
 
 // PlanCreateModel handles the conversational plan creation UI.
 type PlanCreateModel struct {
@@ -776,7 +795,7 @@ func (m PlanCreateModel) renderCompletionMessage() string {
 	var lines []string
 	lines = append(lines, styles.SuccessStyle.Render(fmt.Sprintf("✓ Plan saved: %s", m.savedPlanID)))
 	lines = append(lines, "")
-	lines = append(lines, styles.SubtleStyle.Render("Next: Run the plan with 'rafa plan run' or press [r]"))
+	lines = append(lines, styles.SubtleStyle.Render("Next: Press [r] to run the plan"))
 	return strings.Join(lines, "\n")
 }
 
@@ -834,4 +853,73 @@ func (m PlanCreateModel) Activities() []ActivityEntry {
 // IsThinking returns whether the model is waiting for Claude.
 func (m PlanCreateModel) IsThinking() bool {
 	return m.isThinking
+}
+
+// normalizeSourcePath converts an absolute path to relative from repo root.
+func normalizeSourcePath(filePath string) string {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return filePath
+	}
+
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return filePath
+	}
+
+	relPath, err := filepath.Rel(repoRoot, absPath)
+	if err != nil {
+		return filePath
+	}
+
+	return relPath
+}
+
+// findRepoRoot walks up directories looking for .rafa/ folder.
+func findRepoRoot() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	dir := cwd
+	for {
+		rafaPath := filepath.Join(dir, ".rafa")
+		if info, err := os.Stat(rafaPath); err == nil && info.IsDir() {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf(".rafa directory not found")
+		}
+		dir = parent
+	}
+}
+
+// shortenPath truncates a path to show only the last parts if it exceeds maxLen.
+// For paths > maxLen, shows ".../last/two.go".
+func shortenPath(path string, maxLen int) string {
+	if len(path) <= maxLen {
+		return path
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) >= 2 {
+		lastTwo := strings.Join(parts[len(parts)-2:], "/")
+		shortened := ".../" + lastTwo
+		if len(shortened) <= maxLen {
+			return shortened
+		}
+		// If still too long, just truncate
+		return path[:maxLen-3] + "..."
+	}
+	return path[:maxLen-3] + "..."
+}
+
+// truncate shortens a string to max length with ellipsis.
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }

@@ -29,11 +29,22 @@ func setupTestRepo(t *testing.T) string {
 	// Configure git user for commits
 	cmd = exec.Command("git", "config", "user.email", "test@test.com")
 	cmd.Dir = tmpDir
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to set git user.email: %v", err)
+	}
 
 	cmd = exec.Command("git", "config", "user.name", "Test User")
 	cmd.Dir = tmpDir
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to set git user.name: %v", err)
+	}
+
+	// Disable GPG signing for tests to avoid environment-specific failures.
+	cmd = exec.Command("git", "config", "commit.gpgsign", "false")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to disable git commit.gpgsign: %v", err)
+	}
 
 	return tmpDir
 }

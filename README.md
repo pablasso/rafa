@@ -43,30 +43,16 @@ make install
 
 ## Getting Started
 
-### Initialize Rafa
-
-In your repository root:
-
-```bash
-rafa init
-```
-
-This creates a `.rafa/` directory to store plans and execution data.
-
 ### Launch the TUI
 
 ```bash
 rafa
 ```
 
+Note: Rafa is TUI-only in this release. Run `rafa` with no arguments.
+
 The interactive interface guides you through creating and running plans.
-
-### Or Use CLI Commands
-
-```bash
-rafa plan create docs/my-feature.md   # Create a plan
-rafa plan run my-feature               # Run the plan
-```
+Rafa will create `.rafa/` automatically when you save your first plan.
 
 ## Usage
 
@@ -89,52 +75,9 @@ The TUI allows you to:
 - `Esc` to go back
 - `Ctrl+C` to cancel or quit
 
-### CLI Commands
+### Creating a Plan
 
-For scripting and automation, CLI subcommands are available:
-
-```bash
-rafa init              # Initialize repository
-rafa plan create FILE  # Create plan from design doc
-rafa plan list         # List all plans
-rafa plan run PLAN_ID  # Execute a plan
-```
-
-### Creating a Plan (CLI)
-
-```bash
-rafa plan create <design.md> [--name <name>] [--dry-run]
-```
-
-Takes a markdown file (technical design or PRD) and uses Claude to extract discrete tasks with acceptance criteria.
-
-**Options:**
-
-- `--name` - Override the plan name (default: extracted from document or filename)
-- `--dry-run` - Preview the plan without saving
-
-**Example:**
-
-```bash
-rafa plan create docs/designs/auth-system.md --name auth-v2
-```
-
-**Output:**
-
-```
-Creating plan from: docs/designs/auth-system.md
-Extracting tasks...
-
-Plan created: abc123-auth-v2
-
-  3 tasks extracted:
-
-  t01: Implement user authentication endpoint
-  t02: Add session management
-  t03: Create login UI component
-
-Run `rafa plan run auth-v2` to start execution.
-```
+Select **Create Plan** in the TUI, pick a design document, and follow the prompts.
 
 Plans are stored in `.rafa/plans/<id>-<name>/` with:
 
@@ -144,11 +87,7 @@ Plans are stored in `.rafa/plans/<id>-<name>/` with:
 
 ### Running a Plan
 
-```bash
-rafa plan run <name>
-```
-
-Executes tasks sequentially. Each task runs in a fresh Claude Code session with the task context, description, and acceptance criteria.
+Select **Run Plan** in the TUI, pick a plan, and Rafa will execute tasks sequentially. Each task runs in a fresh Claude Code session with the task context, description, and acceptance criteria.
 
 **Behavior:**
 
@@ -157,42 +96,9 @@ Executes tasks sequentially. Each task runs in a fresh Claude Code session with 
 - Saves state after each task status change
 - Handles Ctrl+C gracefully (resets current task to pending)
 
-**Example:**
-
-```bash
-rafa plan run auth-v2
-```
-
-**Output:**
-
-```
-Task 1/3: Implement user authentication endpoint [Attempt 1/10]
-[Claude Code output streams here...]
-Task 1/3 completed.
-
-Task 2/3: Add session management [Attempt 1/10]
-[Claude Code output streams here...]
-Task 2/3 failed (attempt 1/10): claude exited with error: exit status 1
-Spinning up fresh agent for retry...
-
-Task 2/3: Add session management [Attempt 2/10]
-[Claude Code output streams here...]
-Task 2/3 completed.
-
-...
-
-Plan complete: 3/3 tasks succeeded in 01:23:45.
-```
-
 ### Resuming a Plan
 
-Just run the same command again:
-
-```bash
-rafa plan run auth-v2
-```
-
-Rafa automatically resumes from the first incomplete task. If a task previously failed (hit max attempts), it resets to pending and continues retrying.
+Select the same plan again from **Run Plan**. Rafa automatically resumes from the first incomplete task. If a task previously failed (hit max attempts), it resets to pending and continues retrying.
 
 ### Cancelling a Run
 
@@ -295,13 +201,7 @@ Remove the binary:
 rm $(which rafa)
 ```
 
-Remove Rafa from a specific repository:
-
-```bash
-rafa deinit
-```
-
-Or manually:
+Remove Rafa data from a specific repository:
 
 ```bash
 rm -rf .rafa/

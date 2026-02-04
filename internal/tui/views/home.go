@@ -1,12 +1,10 @@
 package views
 
 import (
-	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/pablasso/rafa/internal/session"
 	"github.com/pablasso/rafa/internal/tui/components"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 	"github.com/pablasso/rafa/internal/tui/styles"
@@ -27,32 +25,17 @@ type MenuSection struct {
 
 // HomeModel is the model for the home view landing screen.
 type HomeModel struct {
-	sections   []MenuSection
-	cursor     int
-	rafaExists bool
-	width      int
-	height     int
-	errorMsg   string // Temporary error message to display
+	sections []MenuSection
+	cursor   int
+	width    int
+	height   int
+	errorMsg string // Temporary error message to display
 }
 
 // NewHomeModel creates a new HomeModel, checking if rafaDir exists.
-func NewHomeModel(rafaDir string) HomeModel {
-	rafaExists := false
-	if rafaDir != "" {
-		if _, err := os.Stat(rafaDir); err == nil {
-			rafaExists = true
-		}
-	}
-
+func NewHomeModel(_ string) HomeModel {
 	return HomeModel{
 		sections: []MenuSection{
-			{
-				Title: "Define",
-				Items: []MenuItem{
-					{Label: "Create PRD", Shortcut: "p", Description: "Start a new product requirements document"},
-					{Label: "Create Design Doc", Shortcut: "d", Description: "Create a technical design from PRD"},
-				},
-			},
 			{
 				Title: "Execute",
 				Items: []MenuItem{
@@ -67,8 +50,7 @@ func NewHomeModel(rafaDir string) HomeModel {
 				},
 			},
 		},
-		cursor:     0,
-		rafaExists: rafaExists,
+		cursor: 0,
 	}
 }
 
@@ -86,21 +68,9 @@ func (m HomeModel) Update(msg tea.Msg) (HomeModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// If .rafa doesn't exist, only handle quit
-		if !m.rafaExists {
-			if msg.String() == "q" || msg.String() == "ctrl+c" {
-				return m, tea.Quit
-			}
-			return m, nil
-		}
-
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-		case "p":
-			return m, func() tea.Msg { return msgs.GoToConversationMsg{Phase: session.PhasePRD} }
-		case "d":
-			return m, func() tea.Msg { return msgs.GoToConversationMsg{Phase: session.PhaseDesign} }
 		case "c":
 			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{ForPlanCreation: true} }
 		case "r":
@@ -135,10 +105,6 @@ func (m HomeModel) selectCurrentItem() (HomeModel, tea.Cmd) {
 	// Map cursor position to shortcut
 	shortcut := m.getShortcutAtCursor()
 	switch shortcut {
-	case "p":
-		return m, func() tea.Msg { return msgs.GoToConversationMsg{Phase: session.PhasePRD} }
-	case "d":
-		return m, func() tea.Msg { return msgs.GoToConversationMsg{Phase: session.PhaseDesign} }
 	case "c":
 		return m, func() tea.Msg { return msgs.GoToFilePickerMsg{ForPlanCreation: true} }
 	case "r":
@@ -168,15 +134,7 @@ func (m HomeModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
-
-	var content string
-	if m.rafaExists {
-		content = m.renderNormalView()
-	} else {
-		content = m.renderNoRafaView()
-	}
-
-	return content
+	return m.renderNormalView()
 }
 
 // renderHeader returns the centered title and tagline.
@@ -286,64 +244,10 @@ func (m HomeModel) renderNormalView() string {
 	return b.String()
 }
 
-// renderNoRafaView renders the view when .rafa/ directory doesn't exist.
-func (m HomeModel) renderNoRafaView() string {
-	var b strings.Builder
-
-	titleLine, taglineLine := m.renderHeader()
-
-	// Warning message
-	warning1 := styles.ErrorStyle.Render("No .rafa/ directory found.")
-	warning2 := styles.SubtleStyle.Render("Run 'rafa init' first to initialize this repository.")
-
-	warning1Line := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, warning1)
-	warning2Line := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, warning2)
-
-	// Calculate vertical centering
-	statusBarHeight := 1
-	contentHeight := 6 // title + tagline + spacing + 2 warning lines
-	availableHeight := m.height - statusBarHeight
-
-	topPadding := (availableHeight - contentHeight) / 2
-	if topPadding < 0 {
-		topPadding = 0
-	}
-
-	// Build content
-	b.WriteString(strings.Repeat("\n", topPadding))
-
-	b.WriteString(titleLine)
-	b.WriteString("\n")
-	b.WriteString(taglineLine)
-	b.WriteString("\n\n")
-	b.WriteString(warning1Line)
-	b.WriteString("\n")
-	b.WriteString(warning2Line)
-
-	// Calculate remaining space for bottom padding
-	currentLines := topPadding + contentHeight
-	bottomPadding := availableHeight - currentLines
-	if bottomPadding < 0 {
-		bottomPadding = 0
-	}
-	b.WriteString(strings.Repeat("\n", bottomPadding))
-
-	// Status bar (simplified for no-rafa view)
-	statusItems := []string{"q Quit"}
-	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
-
-	return b.String()
-}
-
 // SetSize updates the model dimensions.
 func (m *HomeModel) SetSize(width, height int) {
 	m.width = width
 	m.height = height
-}
-
-// RafaExists returns whether the .rafa directory exists.
-func (m HomeModel) RafaExists() bool {
-	return m.rafaExists
 }
 
 // Cursor returns the current cursor position.

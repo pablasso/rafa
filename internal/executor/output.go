@@ -25,7 +25,7 @@ type OutputCapture struct {
 	logFile    *os.File
 	multiOut   io.Writer
 	multiErr   io.Writer
-	eventsChan chan string // For TUI consumption, nil for CLI
+	eventsChan chan string // For TUI consumption; nil when not streaming
 }
 
 // NewOutputCapture creates an output capture for the given plan directory.
@@ -156,7 +156,7 @@ type streamEvent struct {
 }
 
 // formatStreamLine parses a JSON stream line and extracts displayable text.
-// For non-JSON input (e.g., demo mode), it returns the line unchanged.
+// For non-JSON input, it returns the line unchanged.
 func formatStreamLine(line string) string {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -165,7 +165,7 @@ func formatStreamLine(line string) string {
 
 	var event streamEvent
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
-		// Not JSON - return as-is (demo mode compatibility)
+		// Not JSON - return as-is
 		return line
 	}
 
@@ -200,7 +200,7 @@ func (oc *OutputCapture) Stderr() io.Writer {
 	return oc.multiErr
 }
 
-// Close closes the log file. Safe to call when no log file is open (demo mode).
+// Close closes the log file. Safe to call when no log file is open.
 func (oc *OutputCapture) Close() error {
 	if oc.logFile != nil {
 		return oc.logFile.Close()
@@ -208,13 +208,13 @@ func (oc *OutputCapture) Close() error {
 	return nil
 }
 
-// EventsChan returns the events channel for TUI streaming, or nil for CLI mode.
+// EventsChan returns the events channel for TUI streaming, or nil if not streaming.
 func (oc *OutputCapture) EventsChan() chan string {
 	return oc.eventsChan
 }
 
 // WriteTaskHeader writes a header line to the log for a new task attempt.
-// Safe to call when no log file is open (demo mode).
+// Safe to call when no log file is open.
 func (oc *OutputCapture) WriteTaskHeader(taskID string, attempt int) {
 	if oc.logFile == nil {
 		return
@@ -225,7 +225,7 @@ func (oc *OutputCapture) WriteTaskHeader(taskID string, attempt int) {
 }
 
 // WriteTaskFooter writes a footer line to the log after task completion.
-// Safe to call when no log file is open (demo mode).
+// Safe to call when no log file is open.
 func (oc *OutputCapture) WriteTaskFooter(taskID string, success bool) {
 	if oc.logFile == nil {
 		return
@@ -243,35 +243,8 @@ const (
 	maxLinesToSearch    = 100
 )
 
-// NewOutputCaptureForDemo creates an output capture for demo mode that only streams to a channel.
-// No file is created; all output goes to the provided channel for TUI display.
-// Use this when running in demo mode where persistence is disabled.
-func NewOutputCaptureForDemo(eventsChan chan string) *OutputCapture {
-	oc := &OutputCapture{
-		logFile:    nil,
-		eventsChan: eventsChan,
-	}
-
-	// Create streaming writers that only write to the channel (no file)
-	// Demo mode uses plain text, so both stdout and stderr pass through raw
-	streamingOut := &streamingWriter{
-		underlying: io.Discard, // Discard underlying writes
-		eventsChan: eventsChan,
-		isStderr:   true, // Demo mode uses plain text, not JSON
-	}
-	streamingErr := &streamingWriter{
-		underlying: io.Discard,
-		eventsChan: eventsChan,
-		isStderr:   true,
-	}
-	oc.multiOut = streamingOut
-	oc.multiErr = streamingErr
-
-	return oc
-}
-
 // ExtractCommitMessage searches the captured output for a suggested commit message.
-// It handles both JSON stream format (from Claude CLI) and plain text format (demo mode).
+// It handles both JSON stream format and plain text format.
 // For JSON, it searches text_delta events for the commit message prefix.
 // Returns the trimmed message after the prefix, or empty string if no message is found.
 // Searches the last 100 lines for efficiency. If multiple messages exist, returns the
@@ -319,12 +292,12 @@ func (oc *OutputCapture) ExtractCommitMessage() string {
 // extractCommitMessageFromLine extracts a commit message from a single line.
 // Handles both JSON stream format and plain text format.
 func extractCommitMessageFromLine(line string) string {
-	// First, check for plain text format (demo mode, legacy)
+	// First, check for plain text format
 	if strings.HasPrefix(line, commitMessagePrefix) {
 		return strings.TrimSpace(strings.TrimPrefix(line, commitMessagePrefix))
 	}
 
-	// Try to parse as JSON (Claude CLI stream-json format)
+	// Try to parse as JSON (Claude stream-json format)
 	var event streamEvent
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
 		return ""

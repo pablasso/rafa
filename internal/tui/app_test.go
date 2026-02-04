@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/pablasso/rafa/internal/session"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
@@ -92,53 +91,6 @@ func TestModel_renderTerminalTooSmall_ShowsDimensions(t *testing.T) {
 	}
 	if !strings.Contains(view, "50x10") {
 		t.Error("expected current dimensions 50x10 to be shown")
-	}
-}
-
-func TestModel_GoToConversationMsg_TransitionsToViewConversation(t *testing.T) {
-	tests := []struct {
-		name  string
-		phase session.Phase
-	}{
-		{
-			name:  "PRD phase",
-			phase: session.PhasePRD,
-		},
-		{
-			name:  "Design phase",
-			phase: session.PhaseDesign,
-		},
-		{
-			name:  "Plan create phase",
-			phase: session.PhasePlanCreate,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := initialModel()
-			m.width = 100
-			m.height = 50
-
-			// Send GoToConversationMsg
-			msg := msgs.GoToConversationMsg{Phase: tt.phase}
-			updated, _ := m.Update(msg)
-			updatedModel := updated.(Model)
-
-			// Verify transition to ViewConversation
-			if updatedModel.currentView != ViewConversation {
-				t.Errorf("expected currentView to be ViewConversation, got %v", updatedModel.currentView)
-			}
-
-			// Verify conversation model was created with correct phase
-			sess := updatedModel.conversation.Session()
-			if sess == nil {
-				t.Fatal("expected conversation session to be non-nil")
-			}
-			if sess.Phase != tt.phase {
-				t.Errorf("expected session phase %v, got %v", tt.phase, sess.Phase)
-			}
-		})
 	}
 }
 
@@ -233,13 +185,13 @@ func TestModel_GoToFilePickerMsg_ForPlanCreation_ShowsErrorWhenNoDesignDocs(t *t
 	}
 }
 
-func TestModel_WindowSizePropagatesTo_ConversationView(t *testing.T) {
+func TestModel_WindowSizePropagatesTo_PlanListView(t *testing.T) {
 	m := initialModel()
 	m.width = 100
 	m.height = 50
 
-	// First transition to conversation view
-	goToMsg := msgs.GoToConversationMsg{Phase: session.PhasePRD}
+	// First transition to plan list view
+	goToMsg := msgs.GoToPlanListMsg{}
 	updated, _ := m.Update(goToMsg)
 	m = updated.(Model)
 
@@ -256,9 +208,9 @@ func TestModel_WindowSizePropagatesTo_ConversationView(t *testing.T) {
 		t.Errorf("expected model height 60, got %d", m.height)
 	}
 
-	// Verify conversation view is still the current view after size change
-	if m.currentView != ViewConversation {
-		t.Errorf("expected currentView to remain ViewConversation, got %v", m.currentView)
+	// Verify plan list view is still the current view after size change
+	if m.currentView != ViewPlanList {
+		t.Errorf("expected currentView to remain ViewPlanList, got %v", m.currentView)
 	}
 }
 

@@ -1,5 +1,7 @@
 # PRD: Rafa Workflow Orchestration
 
+> **Status (February 3, 2026):** This workflow was implemented experimentally, then rolled back for the current release. Rafa now focuses on the core TUI flow only: create plans from existing design docs and run those plans. The PRD/design conversation phases and CLI entrypoints described below are deferred.
+
 ## Problem
 
 Rafa currently handles the execution phase of AI-assisted development—running plans with retry logic and progress tracking. But the workflow leading up to execution is manual: developers create PRDs and design docs outside Rafa, then feed them into `rafa plan create`.
