@@ -21,10 +21,10 @@ type Dataset struct {
 
 // TaskAttempt captures the output events for a single task attempt.
 type TaskAttempt struct {
-	TaskID  string
-	Attempt int
-	Success bool
-	Events  []Event
+	TaskID  string  `json:"taskID"`
+	Attempt int     `json:"attempt"`
+	Success bool    `json:"success"`
+	Events  []Event `json:"events"`
 }
 
 // EventType identifies demo playback event kinds.
@@ -39,26 +39,19 @@ const (
 
 // Event represents a single output or activity event in the demo playback.
 type Event struct {
-	Type         EventType
-	Text         string
-	ToolName     string
-	ToolTarget   string
-	InputTokens  int64
-	OutputTokens int64
-	CostUSD      float64
+	Type         EventType `json:"type"`
+	Text         string    `json:"text,omitempty"`
+	ToolName     string    `json:"toolName,omitempty"`
+	ToolTarget   string    `json:"toolTarget,omitempty"`
+	InputTokens  int64     `json:"inputTokens,omitempty"`
+	OutputTokens int64     `json:"outputTokens,omitempty"`
+	CostUSD      float64   `json:"costUSD,omitempty"`
 }
 
 var (
 	headerPattern = regexp.MustCompile(`^=== Task ([^,]+), Attempt ([0-9]+) ===$`)
 	footerPattern = regexp.MustCompile(`^=== Task ([^:]+): (SUCCESS|FAILED) ===$`)
 )
-
-// LoadDefaultDataset loads the default demo plan/output from the repo.
-func LoadDefaultDataset(repoRoot string) (*Dataset, error) {
-	planPath := filepath.Join(repoRoot, ".rafa", "plans", "KG8JBy-rafa-workflow-orchestration", "plan.json")
-	outputPath := filepath.Join(repoRoot, ".rafa", "plans", "KG8JBy-rafa-workflow-orchestration", "output.log")
-	return LoadDataset(planPath, outputPath)
-}
 
 // LoadDataset loads the plan and output log into a demo dataset.
 func LoadDataset(planPath, outputPath string) (*Dataset, error) {
@@ -121,7 +114,11 @@ func parseOutputLog(path string) ([]TaskAttempt, error) {
 			continue
 		}
 
-		current.Events = append(current.Events, parseOutputLine(line)...)
+		events, result := parseOutputLine(line)
+		current.Events = append(current.Events, events...)
+		if result != nil {
+			current.Success = *result
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -139,7 +136,7 @@ func parseOutputLog(path string) ([]TaskAttempt, error) {
 	return attempts, nil
 }
 
-func parseOutputLine(line string) []Event {
+func parseOutputLine(line string) ([]Event, *bool) {
 	var events []Event
 
 	if text := executor.FormatStreamLine(line); text != "" {
@@ -151,7 +148,7 @@ func parseOutputLine(line string) []Event {
 
 	var raw logLine
 	if err := json.Unmarshal([]byte(line), &raw); err != nil {
-		return events
+		return events, nil
 	}
 
 	if toolName, toolTarget, ok := raw.toolUse(); ok {
@@ -175,12 +172,27 @@ func parseOutputLine(line string) []Event {
 		})
 	}
 
-	return events
+	if raw.Type == "result" && (raw.Subtype != "" || raw.IsError) {
+		success := raw.Subtype == "success" && !raw.IsError
+		return events, &success
+	}
+
+	return events, nil
+}
+
+// ParseOutputLine parses a single line from output.log into demo events.
+// It also returns a non-nil success value when the line contains a "result" event.
+//
+// This is primarily intended for fixture generation.
+func ParseOutputLine(line string) ([]Event, *bool) {
+	return parseOutputLine(line)
 }
 
 type logLine struct {
-	Type  string `json:"type"`
-	Event *struct {
+	Type    string `json:"type"`
+	Subtype string `json:"subtype,omitempty"`
+	IsError bool   `json:"is_error,omitempty"`
+	Event   *struct {
 		Type         string `json:"type"`
 		ContentBlock *struct {
 			Type  string                 `json:"type"`

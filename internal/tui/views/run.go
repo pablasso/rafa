@@ -76,6 +76,7 @@ type RunningModel struct {
 
 	// Demo mode indicator
 	demoMode bool
+	warning  string
 
 	width  int
 	height int
@@ -178,9 +179,10 @@ func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string,
 }
 
 // NewRunningModelForDemo creates a running model for demo playback.
-func NewRunningModelForDemo(planID, planName string, tasks []plan.Task, p *plan.Plan) RunningModel {
+func NewRunningModelForDemo(planID, planName string, tasks []plan.Task, p *plan.Plan, warning string) RunningModel {
 	model := NewRunningModel(planID, planName, tasks, "", p)
 	model.demoMode = true
+	model.warning = warning
 	return model
 }
 
@@ -494,6 +496,9 @@ func (m RunningModel) renderRunning() string {
 	statusItems := []string{"Running...", "Ctrl+C Cancel"}
 	if m.demoMode {
 		statusItems = append([]string{"[DEMO]"}, statusItems...)
+		if m.warning != "" {
+			statusItems = append([]string{m.warning}, statusItems...)
+		}
 	}
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 

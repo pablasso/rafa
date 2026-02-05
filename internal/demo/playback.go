@@ -3,6 +3,7 @@ package demo
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,7 +20,7 @@ type Playback struct {
 // NewPlayback creates a demo playback from a dataset and config.
 func NewPlayback(dataset *Dataset, config Config) *Playback {
 	return &Playback{
-		Config:  config.WithDefaults(),
+		Config:  config,
 		Dataset: dataset,
 	}
 }
@@ -44,43 +45,63 @@ func (p *Playback) Run(ctx context.Context, program *tea.Program, output chan<- 
 	for idx := 0; idx < taskLimit; idx++ {
 		task := p.Dataset.Plan.Tasks[idx]
 		attempts := attemptsByTask[task.ID]
-		attempt := firstAttempt(attempts)
-		if attempt == nil {
-			attempt = &TaskAttempt{
-				TaskID:  task.ID,
-				Attempt: 1,
-				Success: true,
-				Events: []Event{
-					{Type: EventOutput, Text: fmt.Sprintf("Starting task %s...", task.Title)},
+
+		if len(attempts) == 0 {
+			attempts = []TaskAttempt{
+				{
+					TaskID:  task.ID,
+					Attempt: 1,
+					Success: true,
+					Events: []Event{
+						{Type: EventOutput, Text: fmt.Sprintf("Starting task %s...", task.Title)},
+					},
 				},
 			}
 		}
 
-		program.Send(views.TaskStartedMsg{
-			TaskNum: idx + 1,
-			Total:   taskLimit,
-			TaskID:  task.ID,
-			Title:   task.Title,
-			Attempt: attempt.Attempt,
+		sort.Slice(attempts, func(i, j int) bool {
+			return attempts[i].Attempt < attempts[j].Attempt
 		})
 
-		p.streamEvents(ctx, program, output, attempt.Events)
+		taskSucceeded := false
+		for _, attempt := range attempts {
+			program.Send(views.TaskStartedMsg{
+				TaskNum: idx + 1,
+				Total:   taskLimit,
+				TaskID:  task.ID,
+				Title:   task.Title,
+				Attempt: attempt.Attempt,
+			})
 
-		if attempt.Success {
-			program.Send(views.TaskCompletedMsg{TaskID: task.ID})
-			completed++
-		} else {
-			success = false
+			p.streamEvents(ctx, program, output, attempt.Events)
+
+			if attempt.Success {
+				program.Send(views.TaskCompletedMsg{TaskID: task.ID})
+				completed++
+				taskSucceeded = true
+				break
+			}
+
 			program.Send(views.TaskFailedMsg{
 				TaskID:  task.ID,
 				Attempt: attempt.Attempt,
 				Err:     fmt.Errorf("demo failure"),
 			})
+
+			if !p.wait(ctx, p.Config.LineDelay*10) {
+				return
+			}
+		}
+
+		if !taskSucceeded {
+			success = false
 			break
 		}
 
-		if !p.wait(ctx, p.Config.TaskDelay) {
-			return
+		if idx < taskLimit-1 {
+			if !p.wait(ctx, p.Config.TaskDelay) {
+				return
+			}
 		}
 	}
 
@@ -158,10 +179,25 @@ func groupAttempts(attempts []TaskAttempt) map[string][]TaskAttempt {
 	return result
 }
 
-func firstAttempt(attempts []TaskAttempt) *TaskAttempt {
+func bestAttempt(attempts []TaskAttempt) *TaskAttempt {
 	if len(attempts) == 0 {
 		return nil
 	}
+
+	// Prefer the latest successful attempt.
+	bestIndex := -1
+	bestAttemptNum := -1
+	for i := range attempts {
+		if attempts[i].Success && attempts[i].Attempt > bestAttemptNum {
+			bestIndex = i
+			bestAttemptNum = attempts[i].Attempt
+		}
+	}
+	if bestIndex >= 0 {
+		return &attempts[bestIndex]
+	}
+
+	// Otherwise prefer attempt 1.
 	for i := range attempts {
 		if attempts[i].Attempt == 1 {
 			return &attempts[i]
@@ -173,8 +209,8 @@ func firstAttempt(attempts []TaskAttempt) *TaskAttempt {
 // FallbackDataset provides a small in-memory dataset when real data is missing.
 func FallbackDataset() *Dataset {
 	p := &plan.Plan{
-		ID:          "demo",
-		Name:        "demo-run",
+		ID:          "DEMO",
+		Name:        "demo",
 		Description: "Fallback demo plan",
 		Tasks: []plan.Task{
 			{ID: "t01", Title: "Load demo data", Status: plan.TaskStatusPending},

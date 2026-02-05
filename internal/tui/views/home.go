@@ -41,7 +41,6 @@ func NewHomeModel(_ string) HomeModel {
 				Items: []MenuItem{
 					{Label: "Create Plan", Shortcut: "c", Description: "Generate execution plan from design"},
 					{Label: "Run Plan", Shortcut: "r", Description: "Execute an existing plan"},
-					{Label: "Demo Mode", Shortcut: "d", Description: "Replay a real execution run"},
 				},
 			},
 			{
@@ -76,8 +75,6 @@ func (m HomeModel) Update(msg tea.Msg) (HomeModel, tea.Cmd) {
 			return m, func() tea.Msg { return msgs.GoToFilePickerMsg{ForPlanCreation: true} }
 		case "r":
 			return m, func() tea.Msg { return msgs.GoToPlanListMsg{} }
-		case "d":
-			return m, func() tea.Msg { return msgs.RunDemoMsg{} }
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
@@ -112,8 +109,6 @@ func (m HomeModel) selectCurrentItem() (HomeModel, tea.Cmd) {
 		return m, func() tea.Msg { return msgs.GoToFilePickerMsg{ForPlanCreation: true} }
 	case "r":
 		return m, func() tea.Msg { return msgs.GoToPlanListMsg{} }
-	case "d":
-		return m, func() tea.Msg { return msgs.RunDemoMsg{} }
 	case "q":
 		return m, tea.Quit
 	}

@@ -22,13 +22,17 @@ func main() {
 		os.Exit(1)
 	}()
 
-	// TUI-only release: CLI entrypoints are disabled.
-	if len(os.Args) > 1 {
-		fmt.Fprintln(os.Stderr, "Rafa is TUI-only in this release. Run `rafa` with no arguments.")
+	parsed, err := parseArgs(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(2)
 	}
+	if parsed.ShowHelp {
+		fmt.Fprintln(os.Stdout, parsed.HelpText)
+		os.Exit(0)
+	}
 
-	if err := tui.Run(); err != nil {
+	if err := tui.Run(parsed.Options); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

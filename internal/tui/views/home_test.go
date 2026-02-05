@@ -14,10 +14,10 @@ func TestNewHomeModel_MenuItems(t *testing.T) {
 	if m.Cursor() != 0 {
 		t.Errorf("expected cursor to be 0, got %d", m.Cursor())
 	}
-	// Execute(3) + Quit(1) = 4 total items
+	// Execute(2) + Quit(1) = 3 total items
 	totalItems := m.totalMenuItems()
-	if totalItems != 4 {
-		t.Errorf("expected 4 menu items, got %d", totalItems)
+	if totalItems != 3 {
+		t.Errorf("expected 3 menu items, got %d", totalItems)
 	}
 }
 
@@ -50,7 +50,7 @@ func TestHomeModel_Update_WindowSizeMsg(t *testing.T) {
 func TestHomeModel_Update_NavigateDown(t *testing.T) {
 	m := NewHomeModel("")
 
-	// Navigate down through all 4 items
+	// Navigate down through all 3 items
 	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if newM.cursor != 1 {
 		t.Errorf("expected cursor to be 1 after down, got %d", newM.cursor)
@@ -61,42 +61,32 @@ func TestHomeModel_Update_NavigateDown(t *testing.T) {
 		t.Errorf("expected cursor to be 2 after second down, got %d", newM.cursor)
 	}
 
+	// Try to navigate past the end (3 items, cursor 2 is last)
 	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if newM.cursor != 3 {
-		t.Errorf("expected cursor to be 3 after third down, got %d", newM.cursor)
-	}
-
-	// Try to navigate past the end (4 items, cursor 3 is last)
-	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if newM.cursor != 3 {
-		t.Errorf("expected cursor to stay at 3, got %d", newM.cursor)
+	if newM.cursor != 2 {
+		t.Errorf("expected cursor to stay at 2, got %d", newM.cursor)
 	}
 }
 
 func TestHomeModel_Update_NavigateUp(t *testing.T) {
 	m := NewHomeModel("")
 
-	// Move cursor to the end (4 items, so cursor 3)
-	m.cursor = 3
+	// Move cursor to the end (3 items, so cursor 2)
+	m.cursor = 2
 
 	// Navigate up
 	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if newM.cursor != 2 {
-		t.Errorf("expected cursor to be 2 after up, got %d", newM.cursor)
+	if newM.cursor != 1 {
+		t.Errorf("expected cursor to be 1 after up, got %d", newM.cursor)
 	}
 
 	// Navigate up again
 	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if newM.cursor != 1 {
-		t.Errorf("expected cursor to be 1 after second up, got %d", newM.cursor)
+	if newM.cursor != 0 {
+		t.Errorf("expected cursor to be 0 after second up, got %d", newM.cursor)
 	}
 
 	// Try to navigate past the beginning
-	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if newM.cursor != 0 {
-		t.Errorf("expected cursor to be 0 after third up, got %d", newM.cursor)
-	}
-
 	newM, _ = newM.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if newM.cursor != 0 {
 		t.Errorf("expected cursor to stay at 0, got %d", newM.cursor)
@@ -153,21 +143,6 @@ func TestHomeModel_Update_ShortcutR(t *testing.T) {
 	}
 }
 
-func TestHomeModel_Update_ShortcutD(t *testing.T) {
-	m := NewHomeModel("")
-
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-
-	if cmd == nil {
-		t.Fatal("expected command from 'd' shortcut")
-	}
-
-	msg := cmd()
-	if _, ok := msg.(msgs.RunDemoMsg); !ok {
-		t.Errorf("expected msgs.RunDemoMsg, got %T", msg)
-	}
-}
-
 func TestHomeModel_Update_ShortcutQ(t *testing.T) {
 	m := NewHomeModel("")
 
@@ -215,8 +190,5 @@ func TestHomeModel_View_RendersMenu(t *testing.T) {
 	}
 	if !strings.Contains(view, "Run Plan") {
 		t.Errorf("expected view to contain Run Plan, got: %s", view)
-	}
-	if !strings.Contains(view, "Demo Mode") {
-		t.Errorf("expected view to contain Demo Mode, got: %s", view)
 	}
 }

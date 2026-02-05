@@ -49,18 +49,28 @@ To exit, close the terminal tab/pane.
 
 ### Demo Mode (TUI)
 
-Demo mode replays a recorded plan execution inside the TUI. It is TUI-only (no CLI command).
+Demo mode replays a recorded plan execution inside the TUI. It is opt-in via flags on the TUI entrypoint.
 
 1. Build or run the dev loop:
    ```bash
    make build
-   ./bin/rafa
+   ./bin/rafa --demo
    ```
    You can also use `make dev` for hot reload.
-2. On the home screen, select **Demo Mode** or press `d`.
-3. The status bar shows `[DEMO]`, and playback starts immediately in the running view.
+2. Playback auto-starts immediately in the running view and the status bar shows `[DEMO]`.
 
-Demo data comes from `.rafa/plans/KG8JBy-rafa-workflow-orchestration/plan.json` and `output.log` in the repo. If those files are missing or invalid, the TUI falls back to a small in-memory dataset.
+Optional flags:
+
+- `--demo-preset=quick|medium|slow` (default: `medium`)
+- `--demo-scenario=success|flaky|fail` (default: `success`)
+
+Demo data is loaded from an embedded fixture (`internal/demo/fixtures/default.v1.json`). If the fixture is missing or invalid, the TUI falls back to a small in-memory dataset and shows a warning in the status bar.
+
+To refresh the fixture from a real run (developer-only):
+
+```bash
+go run ./scripts/gen_demo_fixture.go
+```
 
 ### Code Formatting
 

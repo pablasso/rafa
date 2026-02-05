@@ -42,6 +42,8 @@ type Model struct {
 	width       int
 	height      int
 
+	initCmd tea.Cmd
+
 	// Sub-models for each view
 	home       views.HomeModel
 	filePicker views.FilePickerModel
@@ -56,8 +58,8 @@ type Model struct {
 }
 
 // Run starts the TUI application.
-func Run() error {
-	m := initialModel()
+func Run(opts Options) error {
+	m := initialModelWithOptions(opts)
 
 	Program = tea.NewProgram(
 		m,
@@ -69,6 +71,10 @@ func Run() error {
 }
 
 func initialModel() Model {
+	return initialModelWithOptions(Options{})
+}
+
+func initialModelWithOptions(opts Options) Model {
 	m := Model{
 		currentView: ViewHome,
 	}
@@ -87,6 +93,10 @@ func initialModel() Model {
 
 	// Initialize the home view
 	m.home = views.NewHomeModel(m.rafaDir)
+
+	if opts.Demo != nil {
+		m = m.withDemoStartup(*opts.Demo)
+	}
 
 	return m
 }
@@ -119,7 +129,27 @@ func hasMarkdownFiles(dir string) bool {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return m.home.Init()
+	var base tea.Cmd
+	switch m.currentView {
+	case ViewHome:
+		base = m.home.Init()
+	case ViewFilePicker:
+		base = m.filePicker.Init()
+	case ViewPlanCreate:
+		base = m.planCreate.Init()
+	case ViewPlanList:
+		base = m.planList.Init()
+	case ViewRunning:
+		base = m.running.Init()
+	}
+
+	if m.initCmd == nil {
+		return base
+	}
+	if base == nil {
+		return m.initCmd
+	}
+	return tea.Batch(base, m.initCmd)
 }
 
 // Update implements tea.Model.
@@ -186,29 +216,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgs.RunPlanMsg:
 		return m.transitionToRunning(msg.PlanID)
 
-	case msgs.RunDemoMsg:
-		return m.transitionToDemoRunning()
-
 	}
 
 	// Delegate all other messages to the current view
 	return m.delegateToCurrentView(msg)
 }
 
-func (m Model) transitionToDemoRunning() (tea.Model, tea.Cmd) {
-	dataset, err := demo.LoadDefaultDataset(m.repoRoot)
+func (m Model) withDemoStartup(opts DemoOptions) Model {
+	warning := ""
+
+	baseDataset, err := demo.LoadDefaultDataset()
 	if err != nil {
-		dataset = demo.FallbackDataset()
+		warning = fmt.Sprintf("Warning: using fallback demo data (%v)", err)
+		baseDataset = demo.FallbackDataset()
+	}
+
+	maxTasks, err := demo.MaxTasksForPreset(opts.Preset)
+	if err != nil {
+		warning = fmt.Sprintf("Warning: %v", err)
+		maxTasks = 0
+	}
+
+	dataset, err := demo.ApplyScenario(baseDataset, opts.Scenario, maxTasks)
+	if err != nil {
+		warning = fmt.Sprintf("Warning: %v", err)
+		dataset = baseDataset
+	}
+
+	config, err := demo.NewConfig(opts.Preset, dataset)
+	if err != nil {
+		warning = fmt.Sprintf("Warning: %v", err)
+		config = demo.Config{Preset: opts.Preset}
 	}
 
 	m.currentView = ViewRunning
-	m.running = views.NewRunningModelForDemo("DEMO", dataset.Plan.Name, dataset.Plan.Tasks, dataset.Plan)
+	m.running = views.NewRunningModelForDemo("DEMO", dataset.Plan.Name, dataset.Plan.Tasks, dataset.Plan, warning)
 	m.running.SetSize(m.width, m.height)
 
-	playback := demo.NewPlayback(dataset, demo.DefaultConfig())
+	playback := demo.NewPlayback(dataset, config)
 	runner := &m.running
 
-	cmd := func() tea.Msg {
+	m.initCmd = func() tea.Msg {
 		if Program == nil {
 			return nil
 		}
@@ -218,10 +266,7 @@ func (m Model) transitionToDemoRunning() (tea.Model, tea.Cmd) {
 		return nil
 	}
 
-	return m, tea.Batch(
-		m.running.Init(),
-		cmd,
-	)
+	return m
 }
 
 // transitionToRunning loads the plan and transitions to the running view.

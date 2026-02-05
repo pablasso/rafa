@@ -755,6 +755,11 @@ func setupTestGitRepo(t *testing.T) (string, string) {
 	cmd.Dir = tmpDir
 	cmd.Run()
 
+	// Ensure commits work in environments with global signing enabled.
+	cmd = exec.Command("git", "config", "commit.gpgsign", "false")
+	cmd.Dir = tmpDir
+	cmd.Run()
+
 	// Create .rafa/plans/<id>-<name>/ structure
 	planDir := filepath.Join(tmpDir, ".rafa", "plans", "test-plan-id-test")
 	if err := os.MkdirAll(planDir, 0755); err != nil {
