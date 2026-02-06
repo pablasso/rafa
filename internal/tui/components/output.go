@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const defaultMaxLines = 1000
@@ -42,12 +43,18 @@ func NewOutputViewport(width, height, maxLines int) OutputViewport {
 
 // AddLine appends a line to the buffer, dropping the oldest if buffer is full.
 func (o *OutputViewport) AddLine(line string) {
-	// Add line to buffer
-	if len(o.lines) >= o.maxLines {
-		// Drop oldest line (ring buffer behavior)
-		o.lines = o.lines[1:]
+	wrapped := line
+	if o.width > 0 {
+		wrapped = ansi.Wrap(line, o.width, "/")
 	}
-	o.lines = append(o.lines, line)
+	for _, l := range strings.Split(wrapped, "\n") {
+		// Add line to buffer
+		if len(o.lines) >= o.maxLines {
+			// Drop oldest line (ring buffer behavior)
+			o.lines = o.lines[1:]
+		}
+		o.lines = append(o.lines, l)
+	}
 
 	// Update viewport content
 	o.viewport.SetContent(strings.Join(o.lines, "\n"))

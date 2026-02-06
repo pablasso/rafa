@@ -45,6 +45,26 @@ func TestOutputViewport_AddLine(t *testing.T) {
 	}
 }
 
+func TestOutputViewport_AddLine_WrapsLongLines(t *testing.T) {
+	ov := NewOutputViewport(20, 10, 100)
+
+	ov.AddLine("Hello world! This is a long line that should wrap across multiple lines.")
+
+	// Should have multiple lines after wrapping (not 1 truncated line)
+	if ov.LineCount() <= 1 {
+		t.Errorf("expected multiple lines after wrapping, got %d", ov.LineCount())
+	}
+
+	// View should contain text from both beginning AND end (not truncated)
+	view := ov.View()
+	if !strings.Contains(view, "Hello") {
+		t.Error("expected view to contain beginning of text")
+	}
+	if !strings.Contains(view, "lines.") {
+		t.Error("expected view to contain end of text (proves not truncated)")
+	}
+}
+
 func TestOutputViewport_RingBuffer(t *testing.T) {
 	// Create viewport with small buffer
 	ov := NewOutputViewport(80, 24, 5)
