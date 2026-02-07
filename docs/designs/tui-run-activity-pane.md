@@ -1,14 +1,14 @@
-# Technical Design: Scrollable Panes with Scrollbars (Run View)
+# Technical Design: Scrollable Panes with Scrollbars (Run + Plan Create)
 
 ## Overview
 
-In the plan execution **Run** TUI view (`internal/tui/views/run.go`), the **Activity** timeline is currently rendered as a section inside the left progress panel, and the **Output** and **Tasks** areas don’t expose scroll position (no scrollbar). This makes it hard to:
+In the plan execution **Run** TUI view (`internal/tui/views/run.go`), the **Activity** timeline is currently rendered as a section inside the left progress panel, and the **Output** and **Tasks** areas don’t expose scroll position (no scrollbar). In the **Plan Create** view (`internal/tui/views/plancreate.go`), the **Response** content uses `components.OutputViewport` but the view does not forward scroll key/mouse events to it, and the left-side Activity list is not scrollable. This makes it hard to:
 
 - Visually scan Activity as a distinct surface (it competes with Usage + Tasks for vertical space).
 - Inspect older Activity entries (it only shows the most recent lines).
 - Understand scroll position (no scrollbar).
 
-This change introduces consistent, scrollable panes with visible scrollbars in the Run view:
+This change introduces consistent, scrollable panes with visible scrollbars across the Run and Plan Create views:
 
 - **Activity** becomes its own bordered pane in the left column, positioned **below Progress**, aligned with the main Output pane.
 - **Activity is plan-wide** (not per-task) and includes clear separators between tasks/attempts.
@@ -27,6 +27,10 @@ This change introduces consistent, scrollable panes with visible scrollbars in t
 - Render scrollbars for Activity, Output, and Tasks list that reflect scroll position and content length.
 - Keep Output pane keyboard behavior compatible (default focus remains Output; existing scroll keys still work).
 - Enable mouse wheel scrolling for all scrollable panes (Activity/Tasks/Output).
+- Bring Plan Create scrolling behavior in line with Run:
+  - Response pane scrolls (keys + mouse) and shows a scrollbar.
+  - Activity pane scrolls (keys + mouse) and shows a scrollbar.
+  - Same auto-scroll semantics as Run (follow while at end; pause when user scrolls up).
 
 ## Non-Goals
 
@@ -34,10 +38,11 @@ This change introduces consistent, scrollable panes with visible scrollbars in t
 - Redesigning the **Create Plan** view (it already has a dedicated Activity pane).
 - Adding horizontal scrolling.
 - Adding task selection, filtering, or search in the Tasks list (scroll-only for now).
+- Redesigning Plan Create’s overall layout beyond making its panes scrollable and adding scrollbars.
 
 ## Architecture
 
-### New Layout (Run View)
+### Layout: Run View
 
 Current:
 
@@ -61,6 +66,10 @@ Proposed:
 
 Within the **Progress** pane, the **Tasks** section becomes its own scrollable sub-region with a scrollbar (so the header + usage remain visible).
 
+### Layout: Plan Create View
+
+Plan Create already has a left Activity panel and a right Response panel. This design updates those panels to be scrollable and to show scrollbars, using the same scroll components and input routing approach as Run.
+
 ### Key Components
 
 - **Run view layout**: `internal/tui/views/run.go`
@@ -76,6 +85,11 @@ Within the **Progress** pane, the **Tasks** section becomes its own scrollable s
     - Tracks `autoScroll` state consistently across panes.
     - Renders a visible vertical scrollbar.
   - Update `components.OutputViewport` to render a scrollbar (using the shared helper).
+  - Note: `components.OutputViewport` is also used by the Plan Create screen (`internal/tui/views/plancreate.go`), so changes to rendering (e.g., scrollbar width) can affect that view as well.
+
+- **Plan Create view input routing + scrollability**: `internal/tui/views/plancreate.go`
+  - Route scroll keys and mouse wheel events into the appropriate pane (Activity or Response).
+  - Add a `ScrollViewport` for Plan Create Activity (source line remains static above it).
 
 ## Technical Details
 
@@ -250,6 +264,22 @@ In `renderProgressPane(...)`:
 - **Running**: Activity, Tasks, and Output are all scrollable and show scrollbars.
 - **Done/Cancelled**: keep panes scrollable (useful for inspection) while status bar options remain `Enter Home` / `q Quit`.
 
+### Plan Create: Scrolling + Scrollbars
+
+Plan Create (`internal/tui/views/plancreate.go`) should follow the same interaction rules:
+
+- Response pane: keep using `components.OutputViewport`, but forward scroll keys and mouse wheel events to `responseView.Update(...)` so the user can scroll.
+- Activity pane: use `components.ScrollViewport` to render the activity list with a scrollbar.
+  - Keep the existing static header lines (e.g., “Activity”, “Source: …”) above the scrollable region, similar to how Run keeps header/usage static above the Tasks viewport.
+- Focus:
+  - Default focus remains Response.
+  - `tab` toggles focus between Response and Activity.
+  - Mouse wheel under cursor scrolls the pane under the cursor and sets focus.
+- Auto-scroll:
+  - Response follows bottom while at end during streaming.
+  - Activity follows bottom while at end as new entries arrive.
+  - User scroll interaction pauses auto-scroll; returning to end re-enables it.
+
 ## Security
 
 - No new external I/O or permissions changes.
@@ -292,11 +322,18 @@ In `renderProgressPane(...)`:
   - Mouse wheel events (with coordinates) scroll the pane under the cursor (or fall back to focus).
   - Narrow-width fallback produces the single-column layout.
 
+- **Plan Create view tests** (`internal/tui/views/plancreate_test.go`):
+  - Response pane becomes scrollable via keys (and shows a scrollbar if enabled for `OutputViewport`).
+  - Activity pane is scrollable and shows a scrollbar.
+  - Focus toggles between Response and Activity, routing scroll keys appropriately.
+  - Mouse wheel routing under cursor scrolls the correct pane (or falls back to focus).
+
 ## Rollout
 
 - Ship as a UI-only refactor.
 - No flags required; risk is localized to TUI rendering and shared viewport components.
-- If `OutputViewport` scrollbar is enabled globally, verify other usages (e.g., PlanCreate “Response” pane) still render correctly; otherwise gate the scrollbar behind an option.
+- If `OutputViewport` scrollbar is enabled globally, verify other usages (especially Plan Create “Response” pane) still render correctly.
+  - Plan Create should be updated in the same change so its Response pane actually scrolls (otherwise a scrollbar would be misleading).
 - Keep a temporary constant to force the legacy Run layout (single left progress panel with embedded Activity section) and/or disable scrollbars for quick rollback during early testing.
 
 ## Rollback / Recovery
@@ -340,6 +377,7 @@ In `renderProgressPane(...)`:
 
 - Should Output’s scrollbar be enabled everywhere `OutputViewport` is used, or only in the Run view?
   - Recommendation: make it an option and enable it in Run first to reduce blast radius.
+  - Note: If enabled in Run, Plan Create should also be updated to route scroll events so behavior is consistent.
 - For Tasks auto-follow: should the current task be centered, top-aligned, or just “kept visible” with minimal movement?
   - Recommendation: “kept visible” (only scroll when the current task leaves the viewport) to reduce jumpiness.
 - Should Activity separators be inserted on every attempt or only when the task number changes?
@@ -374,14 +412,25 @@ Yes — decisions are captured:
   - [ ] Add focus state + `tab` cycling across Output/Activity/Tasks; route scroll keys to the focused region.
   - [ ] Route mouse wheel events to the region under the cursor (and set focus), falling back to focused region when ambiguous.
   - [ ] Update layout sizing logic and keep the narrow-width fallback (single-column layout).
+- [ ] Update `internal/tui/views/plancreate.go` to match the new scroll UX:
+  - [ ] Add an Activity `ScrollViewport` (scrollable region below the static “Source” line, with scrollbar).
+  - [ ] Route scroll keys to the focused pane (Response via `responseView.Update`, or Activity via `activityView.Update`).
+  - [ ] Add focus state + `tab` toggling between Response and Activity; default focus remains Response.
+  - [ ] Route mouse wheel events to the pane under the cursor (and set focus), falling back to focused pane when ambiguous.
+  - [ ] Ensure Plan Create’s Response scrollbar behavior is consistent with Run (either enable `OutputViewport` scrollbar there too, or gate it with an option).
 - [ ] Add focused-pane border styling in `internal/tui/styles/styles.go` (or derive from `styles.SelectedStyle`) and update the Run view to use it.
 - [ ] Update `internal/tui/views/run_test.go`:
   - [ ] Assert Activity separators exist and Activity is not cleared between tasks.
   - [ ] Assert focus cycling and scroll routing across Output/Activity/Tasks.
   - [ ] Assert mouse wheel routing under cursor works (or falls back to focus).
   - [ ] Assert narrow-width fallback renders the single-column layout.
+- [ ] Update `internal/tui/views/plancreate_test.go`:
+  - [ ] Assert Response scroll routing works (keys + mouse) and scrollbar presence matches configuration.
+  - [ ] Assert Activity is scrollable with a scrollbar.
+  - [ ] Assert focus toggling between Response and Activity routes scroll keys.
 - [ ] Manually validate in a real terminal:
   - [ ] Activity scrolls (keys + mouse), shows scrollbar, and auto-scrolls only at end.
   - [ ] Output scrolls (keys + mouse), shows scrollbar, and preserves existing auto-scroll behavior.
   - [ ] Tasks list scrolls (keys + mouse), shows scrollbar, and follows current task unless user scrolls away.
+  - [ ] Plan Create Activity + Response scroll (keys + mouse) with the same semantics.
   - [ ] Layout remains readable at common terminal sizes (e.g., 100x30, 140x40).
