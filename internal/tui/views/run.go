@@ -510,11 +510,17 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 	var lines []string
 
 	// Header: Task N/M, Attempt, Elapsed
+	taskLine := fmt.Sprintf("Task 0/%d", m.totalTasks)
 	if m.currentTask > 0 && m.currentTask <= len(m.tasks) {
-		lines = append(lines, fmt.Sprintf("Task %d/%d", m.currentTask, m.totalTasks))
-	} else {
-		lines = append(lines, fmt.Sprintf("Task 0/%d", m.totalTasks))
+		title := strings.TrimSpace(m.tasks[m.currentTask-1].Title)
+		if title != "" {
+			taskLine = fmt.Sprintf("Task %d/%d: %s", m.currentTask, m.totalTasks, title)
+		} else {
+			taskLine = fmt.Sprintf("Task %d/%d", m.currentTask, m.totalTasks)
+		}
 	}
+	taskLine = truncateWithEllipsis(taskLine, width)
+	lines = append(lines, taskLine)
 
 	if m.attempt > 0 {
 		lines = append(lines, fmt.Sprintf("Attempt %d/%d", m.attempt, m.maxAttempts))
@@ -524,15 +530,50 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 	lines = append(lines, m.formatDuration(elapsed))
 	lines = append(lines, "")
 
+	attemptLineCount := 0
+	if m.attempt > 0 {
+		attemptLineCount = 1
+	}
+
+	const fixedLinesWithoutAttempt = 14 // Everything except activity entries + task list entries.
+	fixedLines := fixedLinesWithoutAttempt + attemptLineCount
+	dynamicBudget := height - fixedLines
+	if dynamicBudget < 0 {
+		dynamicBudget = 0
+	}
+
+	tasksDesiredLines := len(m.tasks)
+	if tasksDesiredLines > 7 {
+		tasksDesiredLines = 7
+	}
+	minActivityLines := 3
+	if dynamicBudget < minActivityLines {
+		minActivityLines = dynamicBudget
+	}
+	maxTaskLinesAllowed := dynamicBudget - minActivityLines
+	if maxTaskLinesAllowed < 0 {
+		maxTaskLinesAllowed = 0
+	}
+	targetTaskLines := dynamicBudget / 2
+	if targetTaskLines < 1 && maxTaskLinesAllowed > 0 {
+		targetTaskLines = 1
+	}
+	taskListMaxLines := targetTaskLines
+	if taskListMaxLines > tasksDesiredLines {
+		taskListMaxLines = tasksDesiredLines
+	}
+	if taskListMaxLines > maxTaskLinesAllowed {
+		taskListMaxLines = maxTaskLinesAllowed
+	}
+
 	// Activity timeline section
 	lines = append(lines, styles.SubtleStyle.Render("Activity"))
 	lines = append(lines, "─────")
 
 	// Calculate how many activity lines we can show
-	// Reserve space for: header(4) + usage(5) + tasks(3) + padding
-	activityMaxLines := height - 15
-	if activityMaxLines < 3 {
-		activityMaxLines = 3
+	activityMaxLines := dynamicBudget - taskListMaxLines
+	if activityMaxLines < 0 {
+		activityMaxLines = 0
 	}
 
 	// Show activity entries with scrolling (show most recent)
@@ -541,24 +582,26 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 		activityStartIdx = len(m.activities) - activityMaxLines
 	}
 
-	for i := activityStartIdx; i < len(m.activities); i++ {
-		entry := m.activities[i]
-		indicator := "├─"
-		if entry.IsDone {
-			indicator = styles.SuccessStyle.Render("✓")
-		} else if i == len(m.activities)-1 && m.state == stateRunning {
-			indicator = m.spinner.View()
-		}
+	if activityMaxLines > 0 {
+		for i := activityStartIdx; i < len(m.activities); i++ {
+			entry := m.activities[i]
+			indicator := "├─"
+			if entry.IsDone {
+				indicator = styles.SuccessStyle.Render("✓")
+			} else if i == len(m.activities)-1 && m.state == stateRunning {
+				indicator = m.spinner.View()
+			}
 
-		activityLine := fmt.Sprintf("%s %s", indicator, entry.Text)
-		if len(activityLine) > width {
-			activityLine = activityLine[:width-3] + "..."
+			activityLine := fmt.Sprintf("%s %s", indicator, entry.Text)
+			if len(activityLine) > width {
+				activityLine = activityLine[:width-3] + "..."
+			}
+			lines = append(lines, activityLine)
 		}
-		lines = append(lines, activityLine)
 	}
 
 	// If no activities, show placeholder
-	if len(m.activities) == 0 {
+	if len(m.activities) == 0 && activityMaxLines > 0 {
 		lines = append(lines, styles.SubtleStyle.Render("  (waiting...)"))
 	}
 	lines = append(lines, "")
@@ -571,10 +614,10 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 	lines = append(lines, fmt.Sprintf("Cost:  $%.2f", m.estimatedCost))
 	lines = append(lines, "")
 
-	// Compact task list with status indicators
+	// Task list with titles and status indicators
 	lines = append(lines, styles.SubtleStyle.Render("Tasks"))
 	lines = append(lines, "─────")
-	lines = append(lines, m.renderCompactTaskList(width))
+	lines = append(lines, m.renderTaskList(width, taskListMaxLines)...)
 
 	// Join lines and pad to height
 	content := strings.Join(lines, "\n")
@@ -586,33 +629,60 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 	return content
 }
 
-// renderCompactTaskList shows tasks in a compact format with status indicators.
-func (m RunningModel) renderCompactTaskList(width int) string {
-	var parts []string
-	for i, task := range m.tasks {
-		var indicator string
-		switch task.Status {
-		case "completed":
-			indicator = styles.SuccessStyle.Render("✓")
-		case "running":
-			if i+1 == m.currentTask {
-				indicator = "▶"
-			} else {
-				indicator = "○"
-			}
-		case "failed":
-			indicator = styles.ErrorStyle.Render("✗")
-		default:
-			indicator = "○"
-		}
-		parts = append(parts, indicator)
+func (m RunningModel) renderTaskList(width, maxLines int) []string {
+	if width <= 0 || maxLines <= 0 || len(m.tasks) == 0 {
+		return nil
 	}
 
-	result := strings.Join(parts, " ")
-	if len(result) > width {
-		result = result[:width-3] + "..."
+	if maxLines > len(m.tasks) {
+		maxLines = len(m.tasks)
 	}
-	return result
+
+	currentIdx := m.currentTask - 1
+	if currentIdx < 0 {
+		currentIdx = 0
+	}
+	if currentIdx >= len(m.tasks) {
+		currentIdx = len(m.tasks) - 1
+	}
+
+	start := currentIdx - (maxLines / 2)
+	if start < 0 {
+		start = 0
+	}
+	if start > len(m.tasks)-maxLines {
+		start = len(m.tasks) - maxLines
+	}
+	end := start + maxLines
+
+	var lines []string
+	for i := start; i < end; i++ {
+		task := m.tasks[i]
+		title := strings.TrimSpace(task.Title)
+		if title == "" {
+			title = "(untitled)"
+		}
+
+		isCurrent := i+1 == m.currentTask
+		indicator := m.getTaskIndicator(task.Status, isCurrent)
+
+		prefix := fmt.Sprintf("%s %d. ", indicator, i+1)
+		prefixWidth := lipgloss.Width(prefix)
+		if prefixWidth >= width {
+			lines = append(lines, truncateWithEllipsis(prefix, width))
+			continue
+		}
+
+		availableTitleWidth := width - prefixWidth
+		if availableTitleWidth < 0 {
+			availableTitleWidth = 0
+		}
+		title = truncateWithEllipsis(title, availableTitleWidth)
+
+		lines = append(lines, prefix+title)
+	}
+
+	return lines
 }
 
 // renderRightPanel renders the output panel.
@@ -647,7 +717,7 @@ func (m RunningModel) getTaskIndicator(status string, isCurrent bool) string {
 		return styles.ErrorStyle.Render("✗")
 	case "running":
 		if isCurrent {
-			return m.spinner.View()
+			return styles.SelectedStyle.Render("▶")
 		}
 		return "⣾"
 	default: // pending
@@ -822,6 +892,19 @@ func shortenPathForActivity(path string, maxLen int) string {
 		}
 	}
 	return path[:maxLen-3] + "..."
+}
+
+func truncateWithEllipsis(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
 }
 
 // formatDuration formats a duration as MM:SS or HH:MM:SS.

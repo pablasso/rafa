@@ -1386,7 +1386,7 @@ func TestRunningModel_View_RendersUsageSection(t *testing.T) {
 	}
 }
 
-func TestRunningModel_View_RendersCompactTaskList(t *testing.T) {
+func TestRunningModel_View_RendersTaskList(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
 		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusInProgress},
@@ -1403,15 +1403,23 @@ func TestRunningModel_View_RendersCompactTaskList(t *testing.T) {
 	if !strings.Contains(view, "Tasks") {
 		t.Error("expected view to contain 'Tasks' header")
 	}
-	// Should contain check mark for completed
+	// Should contain task titles in the list
+	if !strings.Contains(view, "1. Task One") {
+		t.Error("expected view to contain '1. Task One'")
+	}
+	if !strings.Contains(view, "2. Task Two") {
+		t.Error("expected view to contain '2. Task Two'")
+	}
+	if !strings.Contains(view, "3. Task Three") {
+		t.Error("expected view to contain '3. Task Three'")
+	}
+	// Should contain status indicators
 	if !strings.Contains(view, "✓") {
 		t.Error("expected view to contain checkmark for completed task")
 	}
-	// Should contain play indicator for running
 	if !strings.Contains(view, "▶") {
 		t.Error("expected view to contain play indicator for running task")
 	}
-	// Should contain circle for pending
 	if !strings.Contains(view, "○") {
 		t.Error("expected view to contain circle for pending task")
 	}
@@ -1570,9 +1578,9 @@ func TestUsageMsg_Structure(t *testing.T) {
 	}
 }
 
-// renderCompactTaskList Tests
+// renderTaskList Tests
 
-func TestRenderCompactTaskList(t *testing.T) {
+func TestRenderTaskList(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
 		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusInProgress},
@@ -1582,22 +1590,22 @@ func TestRenderCompactTaskList(t *testing.T) {
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.currentTask = 2
 
-	result := m.renderCompactTaskList(50)
+	result := strings.Join(m.renderTaskList(50, 10), "\n")
 
 	// Should contain checkmark for completed
 	if !strings.Contains(result, "✓") {
-		t.Error("expected compact list to contain checkmark")
+		t.Error("expected task list to contain checkmark")
 	}
 	// Should contain play indicator for current running task
 	if !strings.Contains(result, "▶") {
-		t.Error("expected compact list to contain play indicator")
+		t.Error("expected task list to contain play indicator")
 	}
 	// Should contain X for failed
 	if !strings.Contains(result, "✗") {
-		t.Error("expected compact list to contain X for failed")
+		t.Error("expected task list to contain X for failed")
 	}
 	// Should contain circle for pending
 	if !strings.Contains(result, "○") {
-		t.Error("expected compact list to contain circle for pending")
+		t.Error("expected task list to contain circle for pending")
 	}
 }

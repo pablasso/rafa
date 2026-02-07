@@ -134,6 +134,25 @@ func TestOutputViewport_SetSize(t *testing.T) {
 	}
 }
 
+func TestOutputViewport_SetSize_RewrapsExistingLines(t *testing.T) {
+	ov := NewOutputViewport(80, 10, 100)
+
+	ov.AddLine("Hello world! This is a long line that should wrap when the viewport is narrowed.")
+	if ov.LineCount() != 1 {
+		t.Fatalf("expected 1 line before narrowing, got %d", ov.LineCount())
+	}
+
+	ov.SetSize(20, 10)
+	if ov.LineCount() <= 1 {
+		t.Fatalf("expected multiple lines after narrowing, got %d", ov.LineCount())
+	}
+
+	ov.SetSize(80, 10)
+	if ov.LineCount() != 1 {
+		t.Fatalf("expected 1 line after widening, got %d", ov.LineCount())
+	}
+}
+
 func TestOutputViewport_View(t *testing.T) {
 	ov := NewOutputViewport(80, 24, 100)
 
