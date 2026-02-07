@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/pablasso/rafa/internal/ai"
@@ -26,12 +25,10 @@ import (
 type PlanCreateState int
 
 const (
-	PlanCreateStateInstructions PlanCreateState = iota // Initial state: user can enter instructions
-	PlanCreateStateExtracting                          // Claude is extracting tasks
-	PlanCreateStateConversing                          // User can refine tasks
-	PlanCreateStateCompleted                           // Plan saved successfully
-	PlanCreateStateCancelled                           // User cancelled
-	PlanCreateStateError                               // Error occurred
+	PlanCreateStateExtracting PlanCreateState = iota // Claude is extracting tasks
+	PlanCreateStateCompleted                         // Plan saved successfully
+	PlanCreateStateCancelled                         // User cancelled
+	PlanCreateStateError                             // Error occurred
 )
 
 // ActivityEntry represents a single item in the activity timeline.
@@ -70,10 +67,6 @@ type PlanCreateModel struct {
 	responseText *strings.Builder
 	responseView components.OutputViewport
 
-	// Input field
-	input      textarea.Model
-	inputFocus bool
-
 	// UI state
 	spinner    spinner.Model
 	isThinking bool
@@ -105,30 +98,19 @@ func NewPlanCreateModel(sourceFile string) PlanCreateModel {
 	s.Spinner = spinner.Dot
 	s.Style = styles.SelectedStyle
 
-	ta := textarea.New()
-	ta.Placeholder = "Optional: Enter any instructions or constraints for task extraction..."
-	ta.SetHeight(3)
-	ta.ShowLineNumbers = false
-	ta.Prompt = ""
-	ta.FocusedStyle.Base = lipgloss.NewStyle()
-	ta.BlurredStyle.Base = lipgloss.NewStyle()
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	ta.BlurredStyle.CursorLine = lipgloss.NewStyle()
-	ta.Focus()
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return PlanCreateModel{
 		sourceFile:          sourceFile,
-		state:               PlanCreateStateInstructions,
+		state:               PlanCreateStateExtracting,
 		spinner:             s,
-		input:               ta,
-		inputFocus:          true,
+		isThinking:          true,
 		eventChan:           make(chan ai.StreamEvent, 100),
 		ctx:                 ctx,
 		cancel:              cancel,
 		responseText:        &strings.Builder{},
 		responseView:        components.NewOutputViewport(80, 20, 0),
+		activities:          []ActivityEntry{{Text: "Starting task extraction...", Timestamp: time.Now(), Indent: 0, IsDone: false}},
 		conversationStarter: DefaultConversationStarter{},
 	}
 }
@@ -142,12 +124,9 @@ func (m *PlanCreateModel) SetConversationStarter(cs ConversationStarter) {
 func (m PlanCreateModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		textarea.Blink,
+		m.startExtraction(),
 	)
 }
-
-// PlanCreateStartMsg signals the extraction should begin.
-type PlanCreateStartMsg struct{}
 
 // PlanCreateConversationStartedMsg indicates the conversation started.
 type PlanCreateConversationStartedMsg struct {
@@ -170,8 +149,8 @@ type PlanCreateSavedMsg struct {
 	Tasks  []string
 }
 
-// startExtraction begins the conversational extraction.
-func (m *PlanCreateModel) startExtraction(instructions string) tea.Cmd {
+// startExtraction begins the extraction conversation.
+func (m *PlanCreateModel) startExtraction() tea.Cmd {
 	return func() tea.Msg {
 		// Read the design document
 		content, err := os.ReadFile(m.sourceFile)
@@ -179,7 +158,7 @@ func (m *PlanCreateModel) startExtraction(instructions string) tea.Cmd {
 			return PlanCreateErrorMsg{Err: fmt.Errorf("failed to read design file: %w", err)}
 		}
 
-		prompt := m.buildExtractionPrompt(string(content), instructions)
+		prompt := m.buildExtractionPrompt(string(content))
 
 		config := ai.ConversationConfig{
 			InitialPrompt: prompt,
@@ -198,7 +177,7 @@ func (m *PlanCreateModel) startExtraction(instructions string) tea.Cmd {
 }
 
 // buildExtractionPrompt creates the prompt for task extraction.
-func (m *PlanCreateModel) buildExtractionPrompt(designContent, instructions string) string {
+func (m *PlanCreateModel) buildExtractionPrompt(designContent string) string {
 	var sb strings.Builder
 	sb.WriteString(`You are helping create an execution plan from a technical design document.
 
@@ -208,13 +187,7 @@ DESIGN DOCUMENT:
 	sb.WriteString(`
 
 `)
-	if instructions != "" {
-		sb.WriteString("USER INSTRUCTIONS:\n")
-		sb.WriteString(instructions)
-		sb.WriteString("\n\n")
-	}
-
-	sb.WriteString(`Extract discrete implementation tasks from this design document and present them to the user.
+	sb.WriteString(`Extract discrete implementation tasks from this design document.
 
 For each task, show:
 1. Task number and title
@@ -223,13 +196,7 @@ For each task, show:
 
 Present the tasks in implementation order. Size each task to be completable by an AI agent in a single session (roughly 50-60% of context window).
 
-After presenting the tasks, ask the user if they want to:
-- Approve the plan as-is
-- Modify any tasks (split, merge, add, remove, or edit)
-- Add more acceptance criteria
-- Reorder tasks
-
-Be conversational and helpful. When the user says they approve or are satisfied, respond with ONLY the following JSON (no other text):
+Respond with ONLY the following JSON payload prefixed by PLAN_APPROVED_JSON: (no additional text):
 
 PLAN_APPROVED_JSON:
 {
@@ -244,24 +211,42 @@ PLAN_APPROVED_JSON:
   ]
 }
 
-Do not include the JSON until the user explicitly approves.`)
+Requirements:
+- The response must include PLAN_APPROVED_JSON:
+- Return valid JSON only after the marker
+- Include at least one task
+- Every task must include non-empty title and at least one acceptance criterion`)
 
 	return sb.String()
 }
 
 // forwardEvents reads from a response channel and forwards to the main event channel.
 func (m *PlanCreateModel) forwardEvents(events <-chan ai.StreamEvent) {
-	for event := range events {
-		// Critical events must not be dropped
-		if event.Type == "init" || event.Type == "done" {
-			m.eventChan <- event
-			continue
-		}
-
-		// Non-critical events: drop if buffer full
+	for {
 		select {
-		case m.eventChan <- event:
-		default:
+		case <-m.ctx.Done():
+			return
+		case event, ok := <-events:
+			if !ok {
+				return
+			}
+			// Critical events must not be dropped while active, but should not block after cancellation.
+			if event.Type == "init" || event.Type == "done" {
+				select {
+				case m.eventChan <- event:
+				case <-m.ctx.Done():
+					return
+				}
+				continue
+			}
+
+			// Non-critical events: drop if buffer full.
+			select {
+			case m.eventChan <- event:
+			case <-m.ctx.Done():
+				return
+			default:
+			}
 		}
 	}
 }
@@ -320,20 +305,16 @@ func (m PlanCreateModel) Update(msg tea.Msg) (PlanCreateModel, tea.Cmd) {
 		m.state = PlanCreateStateCompleted
 		m.savedPlanID = msg.PlanID
 		m.addActivity(fmt.Sprintf("✓ Plan saved: %s", msg.PlanID), 0)
+		m.addActivity("Starting plan execution...", 0)
+		m.stopExtractionSession()
+		return m, func() tea.Msg { return msgs.RunPlanMsg{PlanID: msg.PlanID} }
 
 	case tea.KeyMsg:
 		newModel, cmd, handled := m.handleKeyPress(msg)
 		if handled {
 			return newModel, cmd
 		}
-		m = newModel
-		// Pass unhandled keys to textarea
-		if m.inputFocus && !m.isThinking && (m.state == PlanCreateStateInstructions || m.state == PlanCreateStateConversing) {
-			var inputCmd tea.Cmd
-			m.input, inputCmd = m.input.Update(msg)
-			return m, inputCmd
-		}
-		return m, nil
+		return newModel, nil
 	}
 
 	return m, tea.Batch(cmds...)
@@ -371,10 +352,10 @@ func (m *PlanCreateModel) handleStreamEvent(event ai.StreamEvent) tea.Cmd {
 
 	case "done":
 		m.isThinking = false
-		if m.state == PlanCreateStateExtracting {
-			m.state = PlanCreateStateConversing
-			m.input.Placeholder = "Type to refine tasks, or say 'approve' when ready..."
-			m.addActivity("Tasks extracted", 0)
+		if m.state == PlanCreateStateExtracting && m.savedPlanID == "" && m.extractedPlan == nil {
+			m.state = PlanCreateStateError
+			m.errorMsg = "Extraction finished without a valid plan JSON. Press 'r' to retry."
+			m.addActivity("Extraction failed: no valid plan JSON", 0)
 		}
 	}
 	return nil
@@ -509,48 +490,18 @@ func (m *PlanCreateModel) savePlan() tea.Cmd {
 }
 
 // handleKeyPress processes keyboard input.
-// Returns (model, cmd, handled) - if handled is false, the key should be passed to textarea.
+// Returns (model, cmd, handled).
 func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cmd, bool) {
 	switch msg.String() {
 	case "ctrl+c":
-		if m.conversation != nil {
-			m.conversation.Stop()
-		}
-		m.cancel()
+		m.stopExtractionSession()
 		m.state = PlanCreateStateCancelled
 		return m, nil, true
 
-	case "enter":
-		switch m.state {
-		case PlanCreateStateInstructions:
-			// Start extraction with optional instructions
-			instructions := m.input.Value()
-			m.state = PlanCreateStateExtracting
-			m.isThinking = true
-			m.addActivity("Starting task extraction...", 0)
-			if instructions != "" {
-				m.addActivity(fmt.Sprintf("Instructions: %s", truncate(instructions, 40)), 1)
-			}
-			m.input.Reset()
-			m.input.Placeholder = "Type to refine tasks, or say 'approve' when ready..."
-			return m, m.startExtraction(instructions), true
-
-		case PlanCreateStateConversing:
-			if !m.isThinking && m.input.Value() != "" {
-				model, cmd := m.sendMessage()
-				return model, cmd, true
-			}
-		}
-
-	case "shift+enter", "ctrl+j":
-		if m.state == PlanCreateStateConversing {
-			m.input.InsertString("\n")
-			return m, nil, true
-		}
-
 	case "r":
-		if m.state == PlanCreateStateCompleted && m.savedPlanID != "" {
-			return m, func() tea.Msg { return msgs.RunPlanMsg{PlanID: m.savedPlanID} }, true
+		if m.state == PlanCreateStateError {
+			m.resetForRetry()
+			return m, m.startExtraction(), true
 		}
 
 	case "h", "m":
@@ -565,34 +516,32 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 		}
 	}
 
-	// Key not handled by us - let textarea process it
+	// Key not handled by us.
 	return m, nil, false
 }
 
-// sendMessage sends user input to Claude for task refinement.
-func (m PlanCreateModel) sendMessage() (PlanCreateModel, tea.Cmd) {
-	if m.conversation == nil {
-		return m, nil
+// stopExtractionSession stops any active conversation and cancels extraction context.
+func (m *PlanCreateModel) stopExtractionSession() {
+	if m.conversation != nil {
+		_ = m.conversation.Stop()
+		m.conversation = nil
 	}
+	m.cancel()
+	m.isThinking = false
+}
 
-	message := m.input.Value()
-	m.input.Reset()
-
-	m.addActivity(fmt.Sprintf("You: %s", truncate(message, 40)), 0)
+// resetForRetry clears extraction state and prepares for another attempt.
+func (m *PlanCreateModel) resetForRetry() {
+	m.stopExtractionSession()
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+	m.state = PlanCreateStateExtracting
+	m.errorMsg = ""
 	m.isThinking = true
-
-	// Clear response view for new response
+	m.extractedPlan = nil
+	m.savedPlanID = ""
 	m.responseText.Reset()
 	m.responseView.Clear()
-
-	return m, func() tea.Msg {
-		events, err := m.conversation.SendMessage(message)
-		if err != nil {
-			return PlanCreateErrorMsg{Err: err}
-		}
-		go m.forwardEvents(events)
-		return nil
-	}
+	m.addActivity("Retrying task extraction...", 0)
 }
 
 // addActivity adds an entry to the activity timeline.
@@ -624,8 +573,8 @@ func (m *PlanCreateModel) updateLayout() {
 
 	rightWidth := (m.width * 75 / 100) - 2
 
-	// Height: total - title(2) - input(5) - action bar(1) - borders
-	panelHeight := m.height - 10
+	// Height: total - title(2) - status(1) - action bar(1) - spacing/borders
+	panelHeight := m.height - 6
 	if panelHeight < 5 {
 		panelHeight = 5
 	}
@@ -646,8 +595,6 @@ func (m *PlanCreateModel) updateLayout() {
 	}
 
 	m.responseView.SetSize(viewportWidth, viewportHeight)
-	// Account for InputStyle border (2) + padding (2) = 4 extra chars
-	m.input.SetWidth(m.width - 8)
 }
 
 // View implements tea.Model.
@@ -666,7 +613,7 @@ func (m PlanCreateModel) View() string {
 	// Calculate panel dimensions
 	leftWidth := (m.width * 25 / 100) - 2
 	rightWidth := (m.width * 75 / 100) - 2
-	panelHeight := m.height - 10
+	panelHeight := m.height - 6
 	if panelHeight < 5 {
 		panelHeight = 5
 	}
@@ -692,8 +639,8 @@ func (m PlanCreateModel) View() string {
 	b.WriteString(panels)
 	b.WriteString("\n")
 
-	// Input field
-	b.WriteString(m.renderInput())
+	// Status line
+	b.WriteString(m.renderStatusLine())
 	b.WriteString("\n")
 
 	// Action bar
@@ -760,22 +707,11 @@ func (m PlanCreateModel) renderResponsePanel(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderInput returns the input field.
-func (m PlanCreateModel) renderInput() string {
-	inputStyle := styles.InputStyle.Copy().Width(m.width - 4)
-
+// renderStatusLine returns current flow status.
+func (m PlanCreateModel) renderStatusLine() string {
 	switch m.state {
-	case PlanCreateStateInstructions:
-		return inputStyle.Render(m.input.View()) + "\n" + styles.SubtleStyle.Render("Press Enter to start extraction (or type instructions first)")
-
 	case PlanCreateStateExtracting:
 		return styles.SubtleStyle.Render("Extracting tasks from design document...")
-
-	case PlanCreateStateConversing:
-		if m.isThinking {
-			return styles.SubtleStyle.Render("Waiting for Claude...")
-		}
-		return inputStyle.Render(m.input.View())
 
 	case PlanCreateStateCompleted:
 		return m.renderCompletionMessage()
@@ -794,8 +730,7 @@ func (m PlanCreateModel) renderInput() string {
 func (m PlanCreateModel) renderCompletionMessage() string {
 	var lines []string
 	lines = append(lines, styles.SuccessStyle.Render(fmt.Sprintf("✓ Plan saved: %s", m.savedPlanID)))
-	lines = append(lines, "")
-	lines = append(lines, styles.SubtleStyle.Render("Next: Press [r] to run the plan"))
+	lines = append(lines, styles.SubtleStyle.Render("Starting execution..."))
 	return strings.Join(lines, "\n")
 }
 
@@ -804,16 +739,14 @@ func (m PlanCreateModel) renderActionBar() string {
 	var items []string
 
 	switch m.state {
-	case PlanCreateStateInstructions:
-		items = []string{"Enter Start", "Ctrl+C Cancel"}
 	case PlanCreateStateExtracting:
 		items = []string{"Extracting...", "Ctrl+C Cancel"}
-	case PlanCreateStateConversing:
-		items = []string{"Enter Send", "Ctrl+C Cancel"}
 	case PlanCreateStateCompleted:
-		items = []string{"✓ Complete", "[r] Run", "[h] Home", "[q] Quit"}
-	case PlanCreateStateCancelled, PlanCreateStateError:
+		items = []string{"✓ Complete", "Starting execution...", "[h] Home", "[q] Quit"}
+	case PlanCreateStateCancelled:
 		items = []string{"[h] Home", "[q] Quit"}
+	case PlanCreateStateError:
+		items = []string{"[r] Retry", "[h] Home", "[q] Quit"}
 	}
 
 	return components.NewStatusBar().Render(m.width, items)
@@ -914,12 +847,4 @@ func shortenPath(path string, maxLen int) string {
 		return path[:maxLen-3] + "..."
 	}
 	return path[:maxLen-3] + "..."
-}
-
-// truncate shortens a string to max length with ellipsis.
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-3] + "..."
 }

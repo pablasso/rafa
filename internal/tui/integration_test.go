@@ -220,31 +220,27 @@ This is a test design document.
 	sendWindowSize(t, &m, 80, 24)
 
 	// Simulate successful plan save (using the new message type)
+	plansDir := filepath.Join(rafaDir, "plans")
+	createTestPlan(t, plansDir, "abc123", "test-feature", plan.PlanStatusNotStarted, []plan.Task{
+		{ID: "t01", Title: "First task", Status: plan.TaskStatusPending},
+		{ID: "t02", Title: "Second task", Status: plan.TaskStatusPending},
+	})
+
 	planSavedMsg := views.PlanCreateSavedMsg{
 		PlanID: "abc123-test-feature",
 		Tasks:  []string{"First task", "Second task"},
 	}
-	newModel, _ = m.Update(planSavedMsg)
+	newModel, cmd = m.Update(planSavedMsg)
 	m = newModel.(Model)
 
-	// View should still be PlanCreate but in completed state
+	// View should still be PlanCreate (briefly) but return RunPlanMsg immediately
 	if m.currentView != ViewPlanCreate {
 		t.Fatalf("expected ViewPlanCreate after success, got %d", m.currentView)
 	}
-
-	// Verify success view renders correctly
-	view := m.View()
-	if !strings.Contains(view, "Plan saved") {
-		t.Error("expected view to contain 'Plan saved'")
-	}
-
-	// Press 'r' to run the plan
-	cmd = sendKey(t, &m, "r")
 	if cmd == nil {
-		t.Fatal("expected command from 'r' key in success state")
+		t.Fatal("expected command from PlanCreateSavedMsg")
 	}
 
-	// Process the RunPlanMsg
 	msg = processCmd(cmd)
 	runMsg, ok := msg.(msgs.RunPlanMsg)
 	if !ok {
@@ -252,6 +248,13 @@ This is a test design document.
 	}
 	if runMsg.PlanID != "abc123-test-feature" {
 		t.Errorf("expected plan ID abc123-test-feature, got %s", runMsg.PlanID)
+	}
+
+	// Process run plan transition to Running view
+	newModel, _ = m.Update(msg)
+	m = newModel.(Model)
+	if m.currentView != ViewRunning {
+		t.Fatalf("expected ViewRunning after auto-run, got %d", m.currentView)
 	}
 }
 
@@ -743,6 +746,9 @@ func TestErrorStates(t *testing.T) {
 
 		if !strings.Contains(view, "Error") {
 			t.Error("expected view to contain error message")
+		}
+		if !strings.Contains(view, "Retry") {
+			t.Error("expected view to contain 'Retry' option")
 		}
 		if !strings.Contains(view, "Home") {
 			t.Error("expected view to contain 'Home' option")
