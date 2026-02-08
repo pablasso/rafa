@@ -279,7 +279,7 @@ func TestRunningModel_Update_OutputLineMsg_MarkerChunkSeparatesFollowingOutput(t
 	m, _ = m.Update(OutputLineMsg{Line: "Now let me inspect the file."})
 
 	view := m.output.View()
-	re := regexp.MustCompile(`All checks pass\.[ \t]*\n[ \t]*\nNow let me inspect the file\.`)
+	re := regexp.MustCompile(`All checks pass\.[^\n]*\n[^\n]*\nNow let me inspect the file\.`)
 	if !re.MatchString(view) {
 		t.Fatalf("expected newline separator after marker chunk, got %q", view)
 	}
@@ -295,7 +295,7 @@ func TestRunningModel_Update_OutputLineMsg_AssistantBoundaryChunkSeparatesFollow
 	m, _ = m.Update(OutputLineMsg{Line: "Second assistant message."})
 
 	view := m.output.View()
-	re := regexp.MustCompile(`First assistant message\.[ \t]*\n[ \t]*\nSecond assistant message\.`)
+	re := regexp.MustCompile(`First assistant message\.[^\n]*\n[^\n]*\nSecond assistant message\.`)
 	if !re.MatchString(view) {
 		t.Fatalf("expected blank-line separation across assistant boundary chunk, got %q", view)
 	}
@@ -311,7 +311,7 @@ func TestRunningModel_Update_AssistantBoundarySeparatesFollowingOutput(t *testin
 	m, _ = m.Update(OutputLineMsg{Line: "Second assistant message."})
 
 	view := m.output.View()
-	re := regexp.MustCompile(`First assistant message\.[ \t]*\n[ \t]*\nSecond assistant message\.`)
+	re := regexp.MustCompile(`First assistant message\.[^\n]*\n[^\n]*\nSecond assistant message\.`)
 	if !re.MatchString(view) {
 		t.Fatalf("expected blank-line separation across assistant boundary, got %q", view)
 	}
@@ -1459,7 +1459,7 @@ func TestRunningModel_View_OutputThinkingIndicator_ShownOnlyWhileToolRunning(t *
 	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
 	rightDuring := m.renderRightPanel(56, 20)
 
-	inlineSpinner := regexp.MustCompile(regexp.QuoteMeta("Now let me verify") + `[^\n]*\n[ \t]*\n` + regexp.QuoteMeta(m.spinner.View()))
+	inlineSpinner := regexp.MustCompile(regexp.QuoteMeta("Now let me verify") + `[^\n]*\n[^\n]*\n` + regexp.QuoteMeta(m.spinner.View()))
 	if !inlineSpinner.MatchString(rightDuring) {
 		t.Fatalf("expected spinner after output text with a blank separator, got %q", rightDuring)
 	}

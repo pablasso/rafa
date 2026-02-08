@@ -166,9 +166,18 @@ func (o *OutputViewport) Update(msg tea.Msg) (OutputViewport, tea.Cmd) {
 	return *o, cmd
 }
 
-// View returns the rendered viewport, optionally with a scrollbar column.
-func (o OutputViewport) View() string {
-	content := o.viewport.View()
+// ViewContent returns the raw viewport content without the scrollbar column.
+// Use this when you need to post-process the content before rendering
+// the final output with ComposeWithScrollbar.
+func (o OutputViewport) ViewContent() string {
+	return o.viewport.View()
+}
+
+// ComposeWithScrollbar combines the given content string with a scrollbar column.
+// This is useful when the caller needs to modify the viewport content (e.g., insert
+// a spinner) before the scrollbar is appended. If the scrollbar is disabled, the
+// content is returned unchanged.
+func (o OutputViewport) ComposeWithScrollbar(content string) string {
 	if !o.showScrollbar {
 		return content
 	}
@@ -205,6 +214,11 @@ func (o OutputViewport) View() string {
 	}
 
 	return b.String()
+}
+
+// View returns the rendered viewport, optionally with a scrollbar column.
+func (o OutputViewport) View() string {
+	return o.ComposeWithScrollbar(o.viewport.View())
 }
 
 // SetSize updates the viewport dimensions.

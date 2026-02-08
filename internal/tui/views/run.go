@@ -190,6 +190,9 @@ func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string,
 		}
 	}
 
+	output := components.NewOutputViewport(80, 20, 0) // Will be resized
+	output.SetShowScrollbar(true)
+
 	return RunningModel{
 		state:           stateRunning,
 		planID:          planID,
@@ -201,9 +204,9 @@ func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string,
 		maxAttempts:     executor.MaxAttempts,
 		startTime:       time.Now(),
 		spinner:         s,
-		output:          components.NewOutputViewport(80, 20, 0), // Will be resized
-		activityView:    components.NewScrollViewport(20, 6, 0),  // Will be resized
-		tasksView:       components.NewScrollViewport(20, 4, 0),  // Will be resized
+		output:          output,
+		activityView:    components.NewScrollViewport(20, 6, 0), // Will be resized
+		tasksView:       components.NewScrollViewport(20, 4, 0), // Will be resized
 		tasksAutoFollow: true,
 		outputChan:      make(chan string, 100), // Buffered channel
 		planDir:         planDir,
@@ -997,11 +1000,13 @@ func (m RunningModel) renderRightPanel(width, height int) string {
 	lines = append(lines, styles.SubtleStyle.Render("Output"))
 	lines = append(lines, "")
 
-	// Render output viewport
-	outputView := m.output.View()
+	// Get raw viewport content (without scrollbar) so we can apply the
+	// inline spinner before the scrollbar column is appended.
+	outputView := m.output.ViewContent()
 	if m.state == stateRunning && m.isToolRunning() {
 		outputView = insertInlineSpinner(outputView, m.spinner.View())
 	}
+	outputView = m.output.ComposeWithScrollbar(outputView)
 
 	// Add output content
 	lines = append(lines, outputView)
