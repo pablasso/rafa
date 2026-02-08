@@ -101,11 +101,15 @@ func (m PlanListModel) loadPlansGrouped() []PlanSummary {
 	return groupAndSortPlanSummaries(summaries)
 }
 
-// isLocked checks if a plan directory has a run.lock file indicating it's running elsewhere.
+// isLocked checks if a plan has a live lock holder.
+// Stale/invalid lock files are cleaned up automatically.
 func isLocked(planDir string) bool {
-	lockFile := filepath.Join(planDir, "run.lock")
-	_, err := os.Stat(lockFile)
-	return err == nil
+	locked, err := plan.NewPlanLock(planDir).IsLocked()
+	if err != nil {
+		// Be conservative on lock read errors to avoid concurrent execution.
+		return true
+	}
+	return locked
 }
 
 func groupAndSortPlanSummaries(summaries []PlanSummary) []PlanSummary {

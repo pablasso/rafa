@@ -21,6 +21,7 @@ type runState int
 
 const (
 	stateRunning runState = iota
+	stateCancelling
 	stateDone
 	stateCancelled
 )
@@ -118,6 +119,9 @@ type PlanDoneMsg struct {
 	Total     int
 	Duration  time.Duration
 }
+
+// PlanCancelledMsg signals that cancellation completed and cleanup finished.
+type PlanCancelledMsg struct{}
 
 // ToolUseMsg indicates a tool is being used during task execution.
 type ToolUseMsg struct {
@@ -264,6 +268,12 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 						Message: err.Error(),
 					})
 				}
+				return
+			}
+
+			// Executor exited cleanly after cancellation.
+			if ctx.Err() != nil {
+				program.Send(PlanCancelledMsg{})
 			}
 		}()
 
@@ -281,7 +291,7 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		return m, nil
 
 	case spinner.TickMsg:
-		if m.state == stateRunning {
+		if m.state == stateRunning || m.state == stateCancelling {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
@@ -289,7 +299,7 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		if m.state == stateRunning {
+		if m.state == stateRunning || m.state == stateCancelling {
 			return m, m.tickCmd()
 		}
 		return m, nil
@@ -365,6 +375,12 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		}
 		return m, nil
 
+	case PlanCancelledMsg:
+		m.state = stateCancelled
+		m.finalMessage = fmt.Sprintf("Stopped. Completed %d/%d tasks.",
+			m.countCompleted(), m.totalTasks)
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
 	}
@@ -384,13 +400,27 @@ func (m RunningModel) handleKeyPress(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
 			// Trigger graceful stop - cancels the executor context
 			if m.cancel != nil {
 				m.cancel()
+				m.cancel = nil
+				m.state = stateCancelling
+				m.finalMessage = "Stopping... waiting for cleanup."
+				return m, nil
 			}
+			// Fallback for tests or startup failures where cancel was never wired.
 			m.state = stateCancelled
 			m.finalMessage = fmt.Sprintf("Stopped. Completed %d/%d tasks.",
 				m.countCompleted(), m.totalTasks)
 			return m, nil
 		case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":
 			// Pass scroll keys to output viewport
+			var cmd tea.Cmd
+			m.output, cmd = m.output.Update(msg)
+			return m, cmd
+		}
+
+	case stateCancelling:
+		switch msg.String() {
+		case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":
+			// Allow output scrolling while waiting for cancellation cleanup.
 			var cmd tea.Cmd
 			m.output, cmd = m.output.Update(msg)
 			return m, cmd
@@ -438,6 +468,8 @@ func (m RunningModel) View() string {
 
 	switch m.state {
 	case stateRunning:
+		return m.renderRunning()
+	case stateCancelling:
 		return m.renderRunning()
 	case stateDone:
 		return m.renderDone()
@@ -494,6 +526,9 @@ func (m RunningModel) renderRunning() string {
 
 	// Status bar
 	statusItems := []string{"Running...", "Ctrl+C Cancel"}
+	if m.state == stateCancelling {
+		statusItems = []string{"Stopping...", "Waiting for cleanup"}
+	}
 	if m.demoMode {
 		statusItems = append([]string{"[DEMO]"}, statusItems...)
 		if m.warning != "" {

@@ -215,3 +215,75 @@ func TestPlanLock_AcquireAfterRelease(t *testing.T) {
 		t.Fatalf("failed to re-acquire lock after release: %v", err)
 	}
 }
+
+func TestPlanLock_IsLocked_NoFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	lock := NewPlanLock(tmpDir)
+
+	locked, err := lock.IsLocked()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if locked {
+		t.Fatal("expected lock to be unlocked")
+	}
+}
+
+func TestPlanLock_IsLocked_LiveProcess(t *testing.T) {
+	tmpDir := t.TempDir()
+	lockPath := filepath.Join(tmpDir, lockFileName)
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	lock := NewPlanLock(tmpDir)
+	locked, err := lock.IsLocked()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !locked {
+		t.Fatal("expected lock to be reported as locked")
+	}
+}
+
+func TestPlanLock_IsLocked_StaleLockRemoved(t *testing.T) {
+	tmpDir := t.TempDir()
+	lockPath := filepath.Join(tmpDir, lockFileName)
+	if err := os.WriteFile(lockPath, []byte("99999999"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	lock := NewPlanLock(tmpDir)
+	locked, err := lock.IsLocked()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if locked {
+		t.Fatal("expected stale lock to be reported as unlocked")
+	}
+
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatal("expected stale lock file to be removed")
+	}
+}
+
+func TestPlanLock_IsLocked_InvalidLockRemoved(t *testing.T) {
+	tmpDir := t.TempDir()
+	lockPath := filepath.Join(tmpDir, lockFileName)
+	if err := os.WriteFile(lockPath, []byte("invalid-pid"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	lock := NewPlanLock(tmpDir)
+	locked, err := lock.IsLocked()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if locked {
+		t.Fatal("expected invalid lock to be reported as unlocked")
+	}
+
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatal("expected invalid lock file to be removed")
+	}
+}

@@ -4,7 +4,7 @@
   "description": "Add scrollable panes with visible scrollbars and consistent auto-scroll semantics to the Run and Plan Create TUI views.",
   "sourceFile": "docs/designs/tui-run-activity-pane.md",
   "createdAt": "2026-02-08T12:05:27.310281-06:00",
-  "status": "not_started",
+  "status": "in_progress",
   "tasks": [
     {
       "id": "t01",
@@ -23,8 +23,8 @@
         "make test succeeds",
         "make fmt produces no changes"
       ],
-      "status": "pending",
-      "attempts": 0
+      "status": "completed",
+      "attempts": 1
     },
     {
       "id": "t02",

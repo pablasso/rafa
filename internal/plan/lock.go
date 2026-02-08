@@ -104,6 +104,40 @@ func (l *PlanLock) Release() error {
 	return nil
 }
 
+// IsLocked reports whether the lock is currently held by a live process.
+// If the lock file is stale or invalid, it is removed and false is returned.
+func (l *PlanLock) IsLocked() (bool, error) {
+	data, err := os.ReadFile(l.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to read existing lock file: %w", err)
+	}
+
+	pidStr := strings.TrimSpace(string(data))
+	pid, parseErr := strconv.Atoi(pidStr)
+	if parseErr != nil {
+		// Invalid PID in lock file - treat as stale
+		if removeErr := os.Remove(l.path); removeErr != nil && !os.IsNotExist(removeErr) {
+			return false, fmt.Errorf("failed to remove invalid lock file: %w", removeErr)
+		}
+		return false, nil
+	}
+
+	// Process is still running.
+	if processExists(pid) {
+		return true, nil
+	}
+
+	// Process is dead - remove stale lock.
+	if removeErr := os.Remove(l.path); removeErr != nil && !os.IsNotExist(removeErr) {
+		return false, fmt.Errorf("failed to remove stale lock file: %w", removeErr)
+	}
+
+	return false, nil
+}
+
 // processExists checks if a process with the given PID is running.
 // Uses kill with signal 0, which checks for process existence without sending a signal.
 func processExists(pid int) bool {
