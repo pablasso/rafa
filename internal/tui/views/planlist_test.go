@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -37,6 +38,13 @@ func createTestPlan(t *testing.T, plansDir, planID, planName, status string, tas
 	planPath := filepath.Join(folderPath, "plan.json")
 	if err := os.WriteFile(planPath, data, 0644); err != nil {
 		t.Fatalf("failed to write plan.json: %v", err)
+	}
+}
+
+func writeLiveLockFile(t *testing.T, lockFile string) {
+	t.Helper()
+	if err := os.WriteFile(lockFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
 	}
 }
 
@@ -126,9 +134,7 @@ func TestNewPlanListModel_StartsCursorOnFirstRunnablePlan(t *testing.T) {
 	createTestPlan(t, plansDir, "locked", "alpha", plan.PlanStatusInProgress, nil)
 	lockedPlanDir := filepath.Join(plansDir, "locked-alpha")
 	lockFile := filepath.Join(lockedPlanDir, "run.lock")
-	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
-		t.Fatalf("failed to create lock file: %v", err)
-	}
+	writeLiveLockFile(t, lockFile)
 
 	// Create an unlocked not-started plan.
 	createTestPlan(t, plansDir, "open", "beta", plan.PlanStatusNotStarted, nil)
@@ -163,9 +169,7 @@ func TestNewPlanListModel_GroupsAndSortsPlans(t *testing.T) {
 	createTestPlan(t, plansDir, "lc1", "locked-completed", plan.PlanStatusCompleted, nil)
 	lockedPlanDir := filepath.Join(plansDir, "lc1-locked-completed")
 	lockFile := filepath.Join(lockedPlanDir, "run.lock")
-	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
-		t.Fatalf("failed to create lock file: %v", err)
-	}
+	writeLiveLockFile(t, lockFile)
 
 	// Unlocked completed should stay in completed section.
 	createTestPlan(t, plansDir, "cp1", "done", plan.PlanStatusCompleted, nil)
@@ -703,9 +707,7 @@ func TestPlanListModel_LockedPlan_Detection(t *testing.T) {
 	createTestPlan(t, plansDir, "locked", "test2", plan.PlanStatusInProgress, nil)
 	lockedPlanDir := filepath.Join(plansDir, "locked-test2")
 	lockFile := filepath.Join(lockedPlanDir, "run.lock")
-	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
-		t.Fatalf("failed to create lock file: %v", err)
-	}
+	writeLiveLockFile(t, lockFile)
 
 	m := NewPlanListModel(rafaDir)
 
@@ -749,9 +751,7 @@ func TestPlanListModel_LockedPlan_CannotSelect(t *testing.T) {
 	createTestPlan(t, plansDir, "locked", "test", plan.PlanStatusInProgress, nil)
 	lockedPlanDir := filepath.Join(plansDir, "locked-test")
 	lockFile := filepath.Join(lockedPlanDir, "run.lock")
-	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
-		t.Fatalf("failed to create lock file: %v", err)
-	}
+	writeLiveLockFile(t, lockFile)
 
 	m := NewPlanListModel(rafaDir)
 	m.SetSize(80, 24)
@@ -785,9 +785,7 @@ func TestPlanListModel_LockedPlan_ShowsLockIndicator(t *testing.T) {
 	createTestPlan(t, plansDir, "locked", "test", plan.PlanStatusInProgress, nil)
 	lockedPlanDir := filepath.Join(plansDir, "locked-test")
 	lockFile := filepath.Join(lockedPlanDir, "run.lock")
-	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
-		t.Fatalf("failed to create lock file: %v", err)
-	}
+	writeLiveLockFile(t, lockFile)
 
 	m := NewPlanListModel(rafaDir)
 	m.SetSize(80, 24)
@@ -812,9 +810,7 @@ func TestPlanListModel_LockedPlan_ErrMsgClearedOnNavigation(t *testing.T) {
 	createTestPlan(t, plansDir, "locked", "test1", plan.PlanStatusInProgress, nil)
 	lockedPlanDir := filepath.Join(plansDir, "locked-test1")
 	lockFile := filepath.Join(lockedPlanDir, "run.lock")
-	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
-		t.Fatalf("failed to create lock file: %v", err)
-	}
+	writeLiveLockFile(t, lockFile)
 
 	createTestPlan(t, plansDir, "unlocked", "test2", plan.PlanStatusNotStarted, nil)
 
@@ -849,12 +845,42 @@ func TestIsLocked(t *testing.T) {
 
 	// Create lock file
 	lockFile := filepath.Join(tmpDir, "run.lock")
-	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
-		t.Fatalf("failed to create lock file: %v", err)
-	}
+	writeLiveLockFile(t, lockFile)
 
 	// Test with lock file
 	if !isLocked(tmpDir) {
 		t.Error("expected isLocked to return true for directory with run.lock")
+	}
+}
+
+func TestIsLocked_RemovesStaleLock(t *testing.T) {
+	tmpDir := t.TempDir()
+	lockFile := filepath.Join(tmpDir, "run.lock")
+	if err := os.WriteFile(lockFile, []byte("99999999"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	if isLocked(tmpDir) {
+		t.Fatal("expected stale lock to be treated as unlocked")
+	}
+
+	if _, err := os.Stat(lockFile); !os.IsNotExist(err) {
+		t.Fatal("expected stale lock file to be removed")
+	}
+}
+
+func TestIsLocked_RemovesInvalidLock(t *testing.T) {
+	tmpDir := t.TempDir()
+	lockFile := filepath.Join(tmpDir, "run.lock")
+	if err := os.WriteFile(lockFile, []byte("invalid"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	if isLocked(tmpDir) {
+		t.Fatal("expected invalid lock to be treated as unlocked")
+	}
+
+	if _, err := os.Stat(lockFile); !os.IsNotExist(err) {
+		t.Fatal("expected invalid lock file to be removed")
 	}
 }

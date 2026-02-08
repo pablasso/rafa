@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -96,7 +97,7 @@ func createLockedPlan(t *testing.T, plansDir, planID, planName string, tasks []p
 	folderPath := createTestPlan(t, plansDir, planID, planName, plan.PlanStatusInProgress, tasks)
 
 	lockPath := filepath.Join(folderPath, "run.lock")
-	if err := os.WriteFile(lockPath, []byte("locked"), 0644); err != nil {
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
 		t.Fatalf("failed to create run.lock file: %v", err)
 	}
 
@@ -870,10 +871,19 @@ func TestCancellation(t *testing.T) {
 		// Press Ctrl+C
 		sendKey(t, &m, "ctrl+c")
 
-		// Should show cancelled state
+		// Should show cancelling state first.
 		view := m.View()
+		if !strings.Contains(view, "Stopping") {
+			t.Error("expected view to show stopping state")
+		}
+
+		// Simulate executor shutdown acknowledgement.
+		newModel, _ = m.Update(views.PlanCancelledMsg{})
+		m = newModel.(Model)
+
+		view = m.View()
 		if !strings.Contains(view, "Cancelled") && !strings.Contains(view, "Stopped") {
-			t.Error("expected view to show cancelled/stopped state")
+			t.Error("expected view to show cancelled/stopped state after cancellation completes")
 		}
 
 		// Should show task summary

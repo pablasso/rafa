@@ -282,14 +282,14 @@ func TestRunningModel_Update_CtrlC_DuringRunning(t *testing.T) {
 	if cmd != nil {
 		t.Error("expected no command from Ctrl+C")
 	}
-	if newM.State() != stateCancelled {
-		t.Errorf("expected state to be stateCancelled, got %d", newM.State())
+	if newM.State() != stateCancelling {
+		t.Errorf("expected state to be stateCancelling, got %d", newM.State())
 	}
 	if !cancelled {
 		t.Error("expected cancel function to be called")
 	}
-	if !strings.Contains(newM.FinalMessage(), "Stopped") {
-		t.Errorf("expected finalMessage to contain 'Stopped', got %s", newM.FinalMessage())
+	if !strings.Contains(newM.FinalMessage(), "Stopping") {
+		t.Errorf("expected finalMessage to contain 'Stopping', got %s", newM.FinalMessage())
 	}
 }
 
@@ -341,6 +341,60 @@ func TestRunningModel_Update_H_AfterCancelled(t *testing.T) {
 	msg := cmd()
 	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
 		t.Errorf("expected msgs.GoToHomeMsg, got %T", msg)
+	}
+}
+
+func TestRunningModel_Update_PlanCancelledMsg(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
+		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.tasks[0].Status = "completed"
+	m.state = stateCancelling
+
+	newM, cmd := m.Update(PlanCancelledMsg{})
+
+	if cmd != nil {
+		t.Error("expected no command from PlanCancelledMsg")
+	}
+	if newM.State() != stateCancelled {
+		t.Errorf("expected state to be stateCancelled, got %d", newM.State())
+	}
+	if !strings.Contains(newM.FinalMessage(), "Stopped") {
+		t.Errorf("expected finalMessage to contain 'Stopped', got %s", newM.FinalMessage())
+	}
+}
+
+func TestRunningModel_Update_ExecutorStartedMsg_SetsCancel(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	cancel := func() {}
+	newM, cmd := m.Update(ExecutorStartedMsg{Cancel: cancel})
+
+	if cmd != nil {
+		t.Error("expected no command from ExecutorStartedMsg")
+	}
+	if newM.cancel == nil {
+		t.Error("expected cancel function to be set")
+	}
+}
+
+func TestRunningModel_Update_ExecutorStartedMsg_CancelsWhenAlreadyCancelling(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.state = stateCancelling
+
+	cancelled := false
+	cancel := func() { cancelled = true }
+	newM, _ := m.Update(ExecutorStartedMsg{Cancel: cancel})
+
+	if !cancelled {
+		t.Error("expected cancel function to be called immediately")
+	}
+	if newM.cancel != nil {
+		t.Error("expected cancel function to be cleared after cancellation")
 	}
 }
 
@@ -605,8 +659,22 @@ func TestRunningModel_SetCancel(t *testing.T) {
 	if !called {
 		t.Error("expected cancel function to be called")
 	}
-	if newM.State() != stateCancelled {
-		t.Errorf("expected state to be stateCancelled, got %d", newM.State())
+	if newM.State() != stateCancelling {
+		t.Errorf("expected state to be stateCancelling, got %d", newM.State())
+	}
+}
+
+func TestRunningModel_CtrlCWithoutCancel_StaysCancelling(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	if newM.State() != stateCancelling {
+		t.Errorf("expected state to be stateCancelling, got %d", newM.State())
+	}
+	if !strings.Contains(newM.FinalMessage(), "Stopping") {
+		t.Errorf("expected finalMessage to contain 'Stopping', got %s", newM.FinalMessage())
 	}
 }
 

@@ -2,6 +2,7 @@ package components
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,15 +21,16 @@ const (
 
 // OutputViewport wraps bubbles/viewport with auto-scroll behavior.
 type OutputViewport struct {
-	viewport   viewport.Model
-	autoScroll bool     // true = scroll to bottom on new content
-	rawLines   []string // buffered raw lines (unwrapped)
-	rawContent string   // raw content when using SetContent
-	lines      []string // buffered lines
-	maxLines   int      // ring buffer size
-	width      int
-	height     int
-	mode       outputMode
+	viewport      viewport.Model
+	autoScroll    bool     // true = scroll to bottom on new content
+	rawLines      []string // buffered raw lines (unwrapped)
+	rawContent    string   // raw content when using SetContent
+	lines         []string // buffered lines
+	maxLines      int      // ring buffer size
+	width         int
+	height        int
+	mode          outputMode
+	showScrollbar bool // when true, reserve 1 column for a scrollbar
 }
 
 // NewOutputViewport creates a new OutputViewport with the given dimensions.
@@ -53,6 +55,40 @@ func NewOutputViewport(width, height, maxLines int) OutputViewport {
 	}
 }
 
+// SetShowScrollbar enables or disables the scrollbar. When enabled, 1 column
+// is reserved for the scrollbar and the content/wrapping width is reduced
+// accordingly. Existing content is rewrapped after the change.
+func (o *OutputViewport) SetShowScrollbar(enabled bool) {
+	if o.showScrollbar == enabled {
+		return
+	}
+	o.showScrollbar = enabled
+	// Update viewport width and rewrap.
+	cw := o.contentWidth()
+	o.viewport.Width = cw
+	o.rewrap()
+	if o.autoScroll {
+		o.viewport.GotoBottom()
+	}
+}
+
+// ShowScrollbar returns whether the scrollbar is enabled.
+func (o OutputViewport) ShowScrollbar() bool {
+	return o.showScrollbar
+}
+
+// contentWidth returns the width available for content (minus scrollbar if enabled).
+func (o OutputViewport) contentWidth() int {
+	if o.showScrollbar {
+		w := o.width - 1
+		if w < 0 {
+			return 0
+		}
+		return w
+	}
+	return o.width
+}
+
 // AddLine appends a line to the buffer, dropping the oldest if buffer is full.
 func (o *OutputViewport) AddLine(line string) {
 	o.mode = outputModeLines
@@ -63,9 +99,10 @@ func (o *OutputViewport) AddLine(line string) {
 	}
 	o.rawLines = append(o.rawLines, line)
 
+	cw := o.contentWidth()
 	wrapped := line
-	if o.width > 0 {
-		wrapped = ansi.Wrap(line, o.width, "/")
+	if cw > 0 {
+		wrapped = ansi.Wrap(line, cw, "/")
 	}
 	for _, l := range strings.Split(wrapped, "\n") {
 		// Add line to buffer
@@ -115,9 +152,45 @@ func (o *OutputViewport) Update(msg tea.Msg) (OutputViewport, tea.Cmd) {
 	return *o, cmd
 }
 
-// View returns the rendered viewport.
+// View returns the rendered viewport, optionally with a scrollbar column.
 func (o OutputViewport) View() string {
-	return o.viewport.View()
+	content := o.viewport.View()
+	if !o.showScrollbar {
+		return content
+	}
+
+	scrollbar := RenderScrollbar(o.height, len(o.lines), o.viewport.YOffset)
+
+	contentLines := strings.Split(content, "\n")
+	scrollbarLines := strings.Split(scrollbar, "\n")
+
+	cw := o.contentWidth()
+
+	var b strings.Builder
+	for i := 0; i < o.height; i++ {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+
+		cl := ""
+		if i < len(contentLines) {
+			cl = contentLines[i]
+		}
+		sl := ""
+		if i < len(scrollbarLines) {
+			sl = scrollbarLines[i]
+		}
+
+		b.WriteString(cl)
+		// Pad content to fill the content width so the scrollbar aligns.
+		padding := cw - utf8.RuneCountInString(cl)
+		if padding > 0 {
+			b.WriteString(strings.Repeat(" ", padding))
+		}
+		b.WriteString(sl)
+	}
+
+	return b.String()
 }
 
 // SetSize updates the viewport dimensions.
@@ -133,7 +206,7 @@ func (o *OutputViewport) SetSize(width, height int) {
 
 	o.width = width
 	o.height = height
-	o.viewport.Width = width
+	o.viewport.Width = o.contentWidth()
 	o.viewport.Height = height
 
 	if width != oldWidth {
@@ -192,11 +265,12 @@ func (o *OutputViewport) SetContent(content string) {
 	o.rawContent = content
 	o.rawLines = o.rawLines[:0]
 
+	cw := o.contentWidth()
 	wrapped := content
-	if o.width > 0 {
-		// Word-wrap the content at viewport width.
+	if cw > 0 {
+		// Word-wrap the content at content width.
 		// lipgloss.NewStyle().Width(w).Render() performs word-wrapping.
-		wrapped = lipgloss.NewStyle().Width(o.width).Render(content)
+		wrapped = lipgloss.NewStyle().Width(cw).Render(content)
 	}
 
 	// Store the wrapped content (now has newlines from wrapping)
@@ -230,11 +304,12 @@ func (o *OutputViewport) rewrapLines() {
 		return
 	}
 
+	cw := o.contentWidth()
 	var wrappedLines []string
 	for _, raw := range o.rawLines {
 		wrapped := raw
-		if o.width > 0 {
-			wrapped = ansi.Wrap(raw, o.width, "/")
+		if cw > 0 {
+			wrapped = ansi.Wrap(raw, cw, "/")
 		}
 		wrappedLines = append(wrappedLines, strings.Split(wrapped, "\n")...)
 	}
@@ -248,9 +323,10 @@ func (o *OutputViewport) rewrapLines() {
 }
 
 func (o *OutputViewport) rewrapContent() {
+	cw := o.contentWidth()
 	wrapped := o.rawContent
-	if o.width > 0 {
-		wrapped = lipgloss.NewStyle().Width(o.width).Render(o.rawContent)
+	if cw > 0 {
+		wrapped = lipgloss.NewStyle().Width(cw).Render(o.rawContent)
 	}
 
 	lines := strings.Split(wrapped, "\n")

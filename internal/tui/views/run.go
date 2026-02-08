@@ -120,6 +120,11 @@ type PlanDoneMsg struct {
 	Duration  time.Duration
 }
 
+// ExecutorStartedMsg signals that the executor has started and provides a cancel handle.
+type ExecutorStartedMsg struct {
+	Cancel context.CancelFunc
+}
+
 // PlanCancelledMsg signals that cancellation completed and cleanup finished.
 type PlanCancelledMsg struct{}
 
@@ -237,7 +242,6 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
-		m.cancel = cancel
 
 		// Create events handler to send messages to TUI
 		events := NewRunningModelEvents(program)
@@ -277,7 +281,7 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 			}
 		}()
 
-		return nil
+		return ExecutorStartedMsg{Cancel: cancel}
 	}
 }
 
@@ -375,6 +379,14 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		}
 		return m, nil
 
+	case ExecutorStartedMsg:
+		m.cancel = msg.Cancel
+		if m.state == stateCancelling && m.cancel != nil {
+			m.cancel()
+			m.cancel = nil
+		}
+		return m, nil
+
 	case PlanCancelledMsg:
 		m.state = stateCancelled
 		m.finalMessage = fmt.Sprintf("Stopped. Completed %d/%d tasks.",
@@ -397,18 +409,14 @@ func (m RunningModel) handleKeyPress(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
 	case stateRunning:
 		switch msg.String() {
 		case "ctrl+c":
-			// Trigger graceful stop - cancels the executor context
+			// Trigger graceful stop. If the executor isn't wired yet, stay in
+			// cancelling state and cancel as soon as ExecutorStartedMsg arrives.
+			m.state = stateCancelling
+			m.finalMessage = "Stopping... waiting for cleanup."
 			if m.cancel != nil {
 				m.cancel()
 				m.cancel = nil
-				m.state = stateCancelling
-				m.finalMessage = "Stopping... waiting for cleanup."
-				return m, nil
 			}
-			// Fallback for tests or startup failures where cancel was never wired.
-			m.state = stateCancelled
-			m.finalMessage = fmt.Sprintf("Stopped. Completed %d/%d tasks.",
-				m.countCompleted(), m.totalTasks)
 			return m, nil
 		case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":
 			// Pass scroll keys to output viewport
