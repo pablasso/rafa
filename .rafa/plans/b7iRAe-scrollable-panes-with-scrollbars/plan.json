@@ -41,8 +41,8 @@
         "make test succeeds",
         "make fmt produces no changes"
       ],
-      "status": "pending",
-      "attempts": 3
+      "status": "completed",
+      "attempts": 4
     },
     {
       "id": "t03",
