@@ -274,16 +274,20 @@ func (m Model) withDemoRunStartup(opts DemoOptions) Model {
 	m.running.SetSize(m.width, m.height)
 
 	playback := demo.NewPlayback(dataset, config)
-	runner := &m.running
+	outputChan := m.running.OutputChan()
 
 	m.initCmd = func() tea.Msg {
 		if Program == nil {
 			return nil
 		}
 		ctx, cancel := context.WithCancel(context.Background())
-		runner.SetCancel(cancel)
-		playback.Run(ctx, Program, runner.OutputChan())
-		return nil
+		go func() {
+			playback.Run(ctx, Program, outputChan)
+			if ctx.Err() != nil {
+				Program.Send(views.PlanCancelledMsg{})
+			}
+		}()
+		return views.ExecutorStartedMsg{Cancel: cancel}
 	}
 
 	return m
