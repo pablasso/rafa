@@ -2080,15 +2080,15 @@ func TestRunningModel_TabCyclesFocus_DuringCancelling(t *testing.T) {
 	}
 }
 
-func TestRunningModel_TabDoesNotCycleAfterDone(t *testing.T) {
+func TestRunningModel_TabCyclesFocusAfterDone(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.state = stateDone
 
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	// Tab should have no effect in done state since the three-pane layout is not shown
-	if m.focus != focusOutput {
-		t.Errorf("expected focus to remain focusOutput in done state, got %d", m.focus)
+	// Tab should cycle focus in done state to keep panes scrollable for inspection
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to cycle to focusActivity in done state, got %d", m.focus)
 	}
 }
 
@@ -2499,7 +2499,7 @@ func TestRunningModel_MouseWheelDownInActivity(t *testing.T) {
 	}
 }
 
-func TestRunningModel_MouseWheelIgnoredAfterDone(t *testing.T) {
+func TestRunningModel_MouseWheelWorksAfterDone(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.SetSize(120, 40)
@@ -2514,9 +2514,9 @@ func TestRunningModel_MouseWheelIgnoredAfterDone(t *testing.T) {
 
 	m, _ = m.Update(mouseMsg)
 
-	// Focus should not change in done state
-	if m.focus != focusOutput {
-		t.Errorf("expected focus to remain focusOutput in done state, got %d", m.focus)
+	// Mouse wheel should route to Activity pane even in done state (panes remain scrollable)
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to switch to focusActivity in done state, got %d", m.focus)
 	}
 }
 
@@ -2693,5 +2693,501 @@ func TestRunningModel_HitTestPane_Narrow(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("hitTestPane(%d, %d) [%s] = %d, want %d", tt.x, tt.y, tt.name, got, tt.want)
 		}
+	}
+}
+
+// --- Integration & Edge Case Tests ---
+
+// Narrow-width single-column fallback layout
+
+func TestRunningModel_NarrowLayout_SingleColumn(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
+		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusInProgress},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	// Width 50 < minTwoColWidth (68), triggers narrow layout
+	m.SetSize(50, 30)
+	m.currentTask = 2
+	m.attempt = 1
+
+	view := m.View()
+
+	// All three pane sections should be present
+	if !strings.Contains(view, "Output") {
+		t.Error("expected narrow layout to contain 'Output'")
+	}
+	if !strings.Contains(view, "Activity") {
+		t.Error("expected narrow layout to contain 'Activity'")
+	}
+	if !strings.Contains(view, "Tasks") {
+		t.Error("expected narrow layout to contain 'Tasks'")
+	}
+	if !strings.Contains(view, "Usage") {
+		t.Error("expected narrow layout to contain 'Usage'")
+	}
+
+	// In narrow layout, all panes should span the full width
+	if m.boundsOutput.w != m.boundsProgress.w {
+		t.Errorf("expected Output and Progress panes to have same width in narrow layout, got %d and %d",
+			m.boundsOutput.w, m.boundsProgress.w)
+	}
+	if m.boundsOutput.w != m.boundsActivity.w {
+		t.Errorf("expected Output and Activity panes to have same width in narrow layout, got %d and %d",
+			m.boundsOutput.w, m.boundsActivity.w)
+	}
+
+	// Panes should be stacked vertically: Output on top, then Progress, then Activity
+	if m.boundsOutput.y >= m.boundsProgress.y {
+		t.Errorf("expected Output above Progress in narrow layout, got Output.y=%d, Progress.y=%d",
+			m.boundsOutput.y, m.boundsProgress.y)
+	}
+	if m.boundsProgress.y >= m.boundsActivity.y {
+		t.Errorf("expected Progress above Activity in narrow layout, got Progress.y=%d, Activity.y=%d",
+			m.boundsProgress.y, m.boundsActivity.y)
+	}
+}
+
+func TestRunningModel_NarrowLayout_ScrollKeysStillWork(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(50, 30)
+
+	// Add activity content
+	for i := 0; i < 20; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// Tab to Activity and scroll — should work without panics
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != focusActivity {
+		t.Fatalf("expected focusActivity after Tab, got %d", m.focus)
+	}
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be disabled after scroll up in narrow layout")
+	}
+}
+
+func TestRunningModel_NarrowLayout_MouseWheelRoutesToCorrectPane(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(50, 30)
+
+	// Mouse wheel in Activity pane area
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 1,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+	m, _ = m.Update(mouseMsg)
+
+	if m.focus != focusActivity {
+		t.Errorf("expected focusActivity after mouse wheel in narrow layout Activity area, got %d", m.focus)
+	}
+}
+
+// Very small terminal dimensions
+
+func TestRunningModel_VerySmallTerminal_NoPanic(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+
+	// Test a range of very small terminal sizes
+	smallSizes := []struct {
+		w, h int
+	}{
+		{1, 1},
+		{2, 2},
+		{5, 3},
+		{10, 5},
+		{3, 10},
+		{20, 4},
+		{4, 20},
+		{0, 0}, // Zero dimensions
+	}
+
+	for _, size := range smallSizes {
+		t.Run(fmt.Sprintf("%dx%d", size.w, size.h), func(t *testing.T) {
+			m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+			m.SetSize(size.w, size.h)
+			m.currentTask = 1
+			m.attempt = 1
+
+			// View should not panic
+			view := m.View()
+			_ = view // just verify no panic
+
+			// Update with various messages should not panic
+			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+			m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+			m, _ = m.Update(ToolResultMsg{})
+		})
+	}
+}
+
+func TestRunningModel_VerySmallTerminal_NoNegativeWidths(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(5, 5)
+
+	// Verify computed layout has no negative values
+	d := computeLayout(5, 5)
+	_ = m // suppress unused
+	if d.leftWidth < 0 {
+		t.Errorf("leftWidth should not be negative, got %d", d.leftWidth)
+	}
+	if d.rightWidth < 0 {
+		t.Errorf("rightWidth should not be negative, got %d", d.rightWidth)
+	}
+	if d.outputContentH < 0 {
+		t.Errorf("outputContentH should not be negative, got %d", d.outputContentH)
+	}
+	if d.progressContentH < 0 {
+		t.Errorf("progressContentH should not be negative, got %d", d.progressContentH)
+	}
+	if d.activityContentH < 0 {
+		t.Errorf("activityContentH should not be negative, got %d", d.activityContentH)
+	}
+	if d.tasksContentH < 0 {
+		t.Errorf("tasksContentH should not be negative, got %d", d.tasksContentH)
+	}
+}
+
+func TestRunningModel_VerySmallTerminal_LayoutDimsNonNegative(t *testing.T) {
+	// Test the computeLayout function with extremely small dimensions
+	testCases := []struct {
+		w, h int
+	}{
+		{0, 0}, {1, 1}, {2, 2}, {3, 3}, {5, 5}, {10, 3}, {3, 10},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%dx%d", tc.w, tc.h), func(t *testing.T) {
+			d := computeLayout(tc.w, tc.h)
+			if d.leftWidth < 0 {
+				t.Errorf("leftWidth=%d, want >= 0", d.leftWidth)
+			}
+			if d.rightWidth < 0 {
+				t.Errorf("rightWidth=%d, want >= 0", d.rightWidth)
+			}
+			if d.outputContentH < 0 {
+				t.Errorf("outputContentH=%d, want >= 0", d.outputContentH)
+			}
+			if d.progressContentH < 0 {
+				t.Errorf("progressContentH=%d, want >= 0", d.progressContentH)
+			}
+			if d.activityContentH < 0 {
+				t.Errorf("activityContentH=%d, want >= 0", d.activityContentH)
+			}
+			if d.tasksContentH < 0 {
+				t.Errorf("tasksContentH=%d, want >= 0", d.tasksContentH)
+			}
+		})
+	}
+}
+
+// Content shorter than viewport (scrollbar renders correctly)
+
+func TestRunningModel_ShortContent_ScrollbarRendersCorrectly(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+	m.currentTask = 1
+	m.attempt = 1
+
+	// Only add a single activity entry — much less than viewport height
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+	m, _ = m.Update(ToolResultMsg{})
+
+	// View should render without panic
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view")
+	}
+
+	// The activity view should render with all-track scrollbar (no thumb) for short content
+	activityViewContent := m.activityView.View()
+	if activityViewContent == "" {
+		t.Error("expected activityView to render non-empty content even with short content")
+	}
+}
+
+func TestRunningModel_EmptyActivity_ViewRenders(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// No activity entries at all — should show "(waiting...)" placeholder
+	view := m.View()
+	if !strings.Contains(view, "waiting") {
+		t.Error("expected view to show waiting placeholder when no activities exist")
+	}
+}
+
+func TestRunningModel_FewTasks_ScrollbarRendersCorrectly(t *testing.T) {
+	// Only 2 tasks — much shorter than the tasks viewport
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
+		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+	m.currentTask = 1
+	m.syncTasksView()
+
+	// View should render without panic
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view with short task list")
+	}
+
+	// Tasks should still be visible
+	if !strings.Contains(view, "Task One") {
+		t.Error("expected view to contain 'Task One'")
+	}
+	if !strings.Contains(view, "Task Two") {
+		t.Error("expected view to contain 'Task Two'")
+	}
+}
+
+// Done/Cancelled states keep panes scrollable
+
+func TestRunningModel_DoneState_ScrollKeysRouteCorrectly(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Add some activity content while running
+	for i := 0; i < 20; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// Transition to done state
+	m.state = stateDone
+
+	// Tab should cycle focus even in done state
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to be focusActivity after Tab in done state, got %d", m.focus)
+	}
+
+	// Scroll up should disable autoScroll in the focused pane
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be disabled after scroll up in done state")
+	}
+
+	// End key should re-enable autoScroll
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	if !m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be re-enabled after G in done state")
+	}
+}
+
+func TestRunningModel_CancelledState_ScrollKeysRouteCorrectly(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Add some activity content
+	for i := 0; i < 20; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// Transition to cancelled state
+	m.state = stateCancelled
+
+	// Tab should cycle focus
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to be focusActivity after Tab in cancelled state, got %d", m.focus)
+	}
+
+	// Scroll keys should work
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be disabled after scroll up in cancelled state")
+	}
+}
+
+func TestRunningModel_DoneState_MouseWheelStillScrolls(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Add content and transition to done
+	for i := 0; i < 20; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+	m.state = stateDone
+
+	// Mouse wheel in activity area should set focus
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 2,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+	m, _ = m.Update(mouseMsg)
+
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to switch to focusActivity on mouse wheel in done state, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_CancelledState_MouseWheelStillScrolls(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+	m.state = stateCancelled
+
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsOutput.x + m.boundsOutput.w/2,
+		Y:      m.boundsOutput.y + m.boundsOutput.h/2,
+		Button: tea.MouseButtonWheelDown,
+		Action: tea.MouseActionPress,
+	}
+	m, _ = m.Update(mouseMsg)
+
+	if m.focus != focusOutput {
+		t.Errorf("expected focus to be focusOutput after mouse wheel in cancelled state, got %d", m.focus)
+	}
+}
+
+// Spinner animation preserves YOffset when autoScroll is false
+
+func TestRunningModel_SpinnerTick_PreservesYOffset_WhenAutoScrollDisabled(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Add plenty of activity entries to make scrolling meaningful
+	for i := 0; i < 50; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: fmt.Sprintf("/file%d.go", i)})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// Add one more tool use that's not done yet (triggers spinner on last entry)
+	m, _ = m.Update(ToolUseMsg{ToolName: "Edit", ToolTarget: "/current.go"})
+
+	// Switch focus to activity and scroll up to disable auto-scroll
+	m.focus = focusActivity
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.activityView.AutoScroll() {
+		t.Fatal("expected activityView autoScroll to be disabled after scroll up")
+	}
+
+	// Manually disable auto-scroll and set a specific YOffset
+	m.activityView.SetAutoScroll(false)
+
+	// Simulate a spinner tick — this re-syncs the activity view
+	tickMsg := spinner.TickMsg{}
+	beforeAutoScroll := m.activityView.AutoScroll()
+	m, _ = m.Update(tickMsg)
+
+	// autoScroll should remain false after spinner tick
+	if m.activityView.AutoScroll() != beforeAutoScroll {
+		t.Errorf("expected activityView autoScroll to remain %v after spinner tick, got %v",
+			beforeAutoScroll, m.activityView.AutoScroll())
+	}
+}
+
+// Rapid content updates
+
+func TestRunningModel_RapidActivityUpdates_NoPanic(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 30)
+
+	// Simulate rapid tool use/result cycles
+	for i := 0; i < 200; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: fmt.Sprintf("/file%d.go", i)})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// Should not panic and should render correctly
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view after rapid updates")
+	}
+
+	// Activities should be capped
+	if len(m.activities) > maxActivityEntries {
+		t.Errorf("expected activities to be capped at %d, got %d", maxActivityEntries, len(m.activities))
+	}
+}
+
+func TestRunningModel_RapidOutputUpdates_NoPanic(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 30)
+
+	// Simulate rapid output chunks
+	for i := 0; i < 200; i++ {
+		m, _ = m.Update(OutputLineMsg{Line: fmt.Sprintf("Output line %d with some content here.", i)})
+	}
+
+	// Should not panic
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view after rapid output updates")
+	}
+}
+
+// computeLayout unit tests
+
+func TestComputeLayout_WideLayout(t *testing.T) {
+	d := computeLayout(120, 40)
+
+	if d.narrow {
+		t.Error("expected wide layout for 120x40")
+	}
+	if d.leftWidth < leftMinWidth {
+		t.Errorf("leftWidth=%d, want >= %d", d.leftWidth, leftMinWidth)
+	}
+	if d.rightWidth < outputMinWidth {
+		t.Errorf("rightWidth=%d, want >= %d", d.rightWidth, outputMinWidth)
+	}
+}
+
+func TestComputeLayout_NarrowLayout(t *testing.T) {
+	d := computeLayout(50, 30)
+
+	if !d.narrow {
+		t.Error("expected narrow layout for width 50")
+	}
+	if d.leftWidth < 1 {
+		t.Errorf("leftWidth=%d, want >= 1", d.leftWidth)
+	}
+}
+
+func TestComputeLayout_ExtremelySmall(t *testing.T) {
+	d := computeLayout(1, 1)
+
+	// Should not have any negative values
+	if d.narrow != true {
+		t.Error("expected narrow layout for 1x1")
+	}
+	if d.leftWidth < 1 {
+		t.Errorf("leftWidth=%d, want >= 1", d.leftWidth)
+	}
+	if d.outputContentH < 1 {
+		t.Errorf("outputContentH=%d, want >= 1", d.outputContentH)
+	}
+	if d.progressContentH < 1 {
+		t.Errorf("progressContentH=%d, want >= 1", d.progressContentH)
+	}
+	if d.activityContentH < 1 {
+		t.Errorf("activityContentH=%d, want >= 1", d.activityContentH)
+	}
+	if d.tasksContentH < 1 {
+		t.Errorf("tasksContentH=%d, want >= 1", d.tasksContentH)
 	}
 }

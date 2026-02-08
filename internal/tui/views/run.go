@@ -537,12 +537,23 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 	return m, cmd
 }
 
+// isScrollKey returns true if the key string is a recognized scroll key.
+func isScrollKey(key string) bool {
+	switch key {
+	case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":
+		return true
+	}
+	return false
+}
+
 // handleKeyPress handles keyboard input based on current state.
 func (m RunningModel) handleKeyPress(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
+	key := msg.String()
+
 	switch m.state {
 	case stateRunning:
-		switch msg.String() {
-		case "ctrl+c":
+		switch {
+		case key == "ctrl+c":
 			// Trigger graceful stop. If the executor isn't wired yet, stay in
 			// cancelling state and cancel as soon as ExecutorStartedMsg arrives.
 			m.state = stateCancelling
@@ -552,28 +563,33 @@ func (m RunningModel) handleKeyPress(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
 				m.cancel = nil
 			}
 			return m, nil
-		case "tab":
+		case key == "tab":
 			m.focus = m.nextFocus()
 			return m, nil
-		case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":
+		case isScrollKey(key):
 			return m.routeScrollKey(msg)
 		}
 
 	case stateCancelling:
-		switch msg.String() {
-		case "tab":
+		switch {
+		case key == "tab":
 			m.focus = m.nextFocus()
 			return m, nil
-		case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":
+		case isScrollKey(key):
 			return m.routeScrollKey(msg)
 		}
 
 	case stateDone, stateCancelled:
-		switch msg.String() {
-		case "enter", "h":
+		switch {
+		case key == "enter" || key == "h":
 			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }
-		case "q", "ctrl+c":
+		case key == "q" || key == "ctrl+c":
 			return m, tea.Quit
+		case key == "tab":
+			m.focus = m.nextFocus()
+			return m, nil
+		case isScrollKey(key):
+			return m.routeScrollKey(msg)
 		}
 	}
 
@@ -615,7 +631,11 @@ func (m RunningModel) routeScrollKey(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
 // setting focus to that pane. Non-wheel events are ignored. Falls back to
 // the currently focused pane when coordinates don't match any pane.
 func (m RunningModel) handleMouseMsg(msg tea.MouseMsg) (RunningModel, tea.Cmd) {
-	if m.state != stateRunning && m.state != stateCancelling {
+	// Allow mouse wheel scrolling in all run states to keep panes inspectable.
+	switch m.state {
+	case stateRunning, stateCancelling, stateDone, stateCancelled:
+		// proceed
+	default:
 		return m, nil
 	}
 
@@ -717,11 +737,17 @@ func computeLayout(width, height int) layoutDims {
 	if width < minTwoColWidth {
 		d.narrow = true
 		d.leftWidth = width - panelChrome
-		d.rightWidth = width - panelChrome
+		if d.leftWidth < 1 {
+			d.leftWidth = 1
+		}
+		d.rightWidth = d.leftWidth
 		d.leftOuterW = width
 		d.rightOuterW = width
 
 		availableHeight := height - 2 // title + status bar
+		if availableHeight < 3 {
+			availableHeight = 3
+		}
 		contentBudget := availableHeight - 3*borderPerPane
 		if contentBudget < 3 {
 			contentBudget = 3
@@ -732,6 +758,16 @@ func computeLayout(width, height int) layoutDims {
 			d.outputContentH = 3
 		}
 		remaining := contentBudget - d.outputContentH
+		if remaining < 2 {
+			remaining = 2
+			// Reconcile: shrink output so total stays within budget when possible.
+			if d.outputContentH+remaining > contentBudget {
+				d.outputContentH = contentBudget - remaining
+				if d.outputContentH < 1 {
+					d.outputContentH = 1
+				}
+			}
+		}
 		d.progressContentH = remaining * narrowFallbackProgressPct / 100
 		if d.progressContentH < 1 {
 			d.progressContentH = 1
@@ -761,9 +797,18 @@ func computeLayout(width, height int) layoutDims {
 
 		d.leftOuterW = d.leftWidth + panelChrome
 		d.rightOuterW = width - d.leftOuterW
+		if d.rightOuterW < 1 {
+			d.rightOuterW = 1
+		}
 
 		availableHeight := height - 2
+		if availableHeight < 4 {
+			availableHeight = 4
+		}
 		d.outputContentH = availableHeight - 2 - 2 // borders + header lines
+		if d.outputContentH < 1 {
+			d.outputContentH = 1
+		}
 
 		contentBudget := availableHeight - 2*borderPerPane
 		if contentBudget < 2 {

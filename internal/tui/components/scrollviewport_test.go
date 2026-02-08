@@ -516,3 +516,184 @@ func TestScrollViewport_View_WidthAccountsForScrollbar(t *testing.T) {
 		}
 	}
 }
+
+// --- Edge Case Tests ---
+
+func TestNewScrollViewport_ZeroWidth(t *testing.T) {
+	// Zero width should not panic
+	sv := NewScrollViewport(0, 10, 100)
+	if sv.ContentWidth() != 0 {
+		t.Errorf("expected content width 0 for zero width, got %d", sv.ContentWidth())
+	}
+
+	sv.SetLines([]string{"a", "b"})
+	view := sv.View()
+	_ = view // just verify no panic
+}
+
+func TestNewScrollViewport_NegativeWidth(t *testing.T) {
+	// Negative width should clamp to 0 content width
+	sv := NewScrollViewport(-1, 10, 100)
+	if sv.ContentWidth() != 0 {
+		t.Errorf("expected content width 0 for negative width, got %d", sv.ContentWidth())
+	}
+}
+
+func TestNewScrollViewport_ZeroHeight(t *testing.T) {
+	sv := NewScrollViewport(80, 0, 100)
+	sv.SetLines([]string{"a", "b"})
+	view := sv.View()
+	if view != "" {
+		t.Errorf("expected empty view for zero height, got %q", view)
+	}
+}
+
+func TestNewScrollViewport_OneByOne(t *testing.T) {
+	// Minimal dimensions: width 1 means content width 0 (scrollbar takes 1 col)
+	sv := NewScrollViewport(1, 1, 100)
+	sv.SetLines([]string{"a"})
+	view := sv.View()
+	// Should render without panic
+	_ = view
+}
+
+func TestScrollViewport_SetSize_VerySmall(t *testing.T) {
+	sv := NewScrollViewport(80, 24, 100)
+	sv.SetLines([]string{"a", "b", "c"})
+
+	// Resize to very small — should not panic
+	sv.SetSize(1, 1)
+	view := sv.View()
+	_ = view
+}
+
+func TestScrollViewport_SetSize_ZeroWidth(t *testing.T) {
+	sv := NewScrollViewport(80, 24, 100)
+	sv.SetLines([]string{"a", "b", "c"})
+
+	sv.SetSize(0, 10)
+	if sv.ContentWidth() != 0 {
+		t.Errorf("expected content width 0, got %d", sv.ContentWidth())
+	}
+}
+
+func TestScrollViewport_SetLines_Empty(t *testing.T) {
+	sv := NewScrollViewport(80, 10, 100)
+	sv.SetLines([]string{})
+
+	if len(sv.lines) != 0 {
+		t.Errorf("expected 0 lines, got %d", len(sv.lines))
+	}
+
+	view := sv.View()
+	_ = view // should not panic
+}
+
+func TestScrollViewport_ContentShorterThanViewport_ScrollbarAllTrack(t *testing.T) {
+	sv := NewScrollViewport(20, 10, 100)
+
+	// Only 3 lines in a 10-line viewport
+	sv.SetLines([]string{"one", "two", "three"})
+
+	view := sv.View()
+	viewLines := strings.Split(view, "\n")
+
+	if len(viewLines) != 10 {
+		t.Fatalf("expected 10 view lines, got %d", len(viewLines))
+	}
+
+	// All scrollbar characters should be track (│), not thumb (█)
+	for i, line := range viewLines {
+		if strings.HasSuffix(line, "█") {
+			t.Errorf("line %d: expected track-only scrollbar for short content, got line ending with thumb: %q", i, line)
+		}
+	}
+}
+
+func TestScrollViewport_SetLines_PreservesAutoScroll_WhenNewContentAdded(t *testing.T) {
+	sv := NewScrollViewport(80, 5, 100)
+
+	// Set initial content and verify at bottom
+	initial := make([]string, 10)
+	for i := range initial {
+		initial[i] = "line"
+	}
+	sv.SetLines(initial)
+
+	if !sv.AutoScroll() {
+		t.Error("expected autoScroll to be true initially")
+	}
+
+	// Add more content — should still auto-scroll to bottom
+	updated := make([]string, 20)
+	for i := range updated {
+		updated[i] = "updated"
+	}
+	sv.SetLines(updated)
+
+	if !sv.AutoScroll() {
+		t.Error("expected autoScroll to remain true when content grows")
+	}
+	if !sv.AtBottom() {
+		t.Error("expected viewport to be at bottom after autoScroll content update")
+	}
+}
+
+func TestScrollViewport_MouseWheel_AutoScrollBehavior(t *testing.T) {
+	sv := NewScrollViewport(80, 5, 100)
+
+	lines := make([]string, 20)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	sv.SetLines(lines)
+
+	if !sv.AutoScroll() {
+		t.Fatal("expected autoScroll true initially")
+	}
+
+	// Simulate mouse wheel up
+	sv, _ = sv.Update(tea.MouseMsg{
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	})
+
+	// After scrolling up, should not be at bottom anymore → autoScroll false
+	if sv.AutoScroll() {
+		t.Error("expected autoScroll to be disabled after mouse wheel up")
+	}
+}
+
+func TestRenderScrollbar_NegativeHeight(t *testing.T) {
+	result := RenderScrollbar(-1, 100, 0)
+	if result != "" {
+		t.Errorf("expected empty string for negative height, got %q", result)
+	}
+}
+
+func TestRenderScrollbar_ZeroContent(t *testing.T) {
+	result := RenderScrollbar(10, 0, 0)
+	lines := strings.Split(result, "\n")
+	if len(lines) != 10 {
+		t.Fatalf("expected 10 lines, got %d", len(lines))
+	}
+	// All should be track
+	for i, line := range lines {
+		if line != "│" {
+			t.Errorf("line %d: expected track, got %q", i, line)
+		}
+	}
+}
+
+func TestRenderScrollbar_NegativeOffset(t *testing.T) {
+	// Negative offset should be clamped to 0
+	result := RenderScrollbar(10, 100, -5)
+	lines := strings.Split(result, "\n")
+	if len(lines) != 10 {
+		t.Fatalf("expected 10 lines, got %d", len(lines))
+	}
+	// Thumb should be at top
+	if lines[0] != "█" {
+		t.Errorf("expected thumb at line 0 for negative offset, got %q", lines[0])
+	}
+}
