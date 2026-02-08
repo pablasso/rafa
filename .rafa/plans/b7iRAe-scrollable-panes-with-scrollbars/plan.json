@@ -1,0 +1,201 @@
+{
+  "id": "b7iRAe",
+  "name": "scrollable-panes-with-scrollbars",
+  "description": "Add scrollable panes with visible scrollbars and consistent auto-scroll semantics to the Run and Plan Create TUI views.",
+  "sourceFile": "docs/designs/tui-run-activity-pane.md",
+  "createdAt": "2026-02-08T12:05:27.310281-06:00",
+  "status": "not_started",
+  "tasks": [
+    {
+      "id": "t01",
+      "title": "Add scrollbar helper and ScrollViewport component",
+      "description": "Create a shared scrollbar rendering helper in internal/tui/components/ that renders a 1-column vertical scrollbar with track (│) and thumb (█) characters positioned proportionally. Then implement ScrollViewport in internal/tui/components/scrollviewport.go wrapping bubbles/viewport.Model with auto-scroll tracking, ring buffer for line capping, SetLines/SetSize/Update/View methods, and scrollbar rendering. The View() output should append the scrollbar column to the right of the viewport content. Include EnsureVisible(lineIndex, center) and AtBottom() helpers. Add comprehensive unit tests.",
+      "acceptanceCriteria": [
+        "internal/tui/components/scrollbar.go exists with a RenderScrollbar(viewHeight, contentHeight, yOffset int) string function",
+        "internal/tui/components/scrollviewport.go exists implementing ScrollViewport with NewScrollViewport, SetSize, SetLines, Update, View, AtBottom, SetAutoScroll, EnsureVisible",
+        "ScrollViewport wraps viewport.Model and manages autoScroll state: starts true, disables on user upward scroll, re-enables when user returns to bottom",
+        "ScrollViewport caps stored lines to a configurable maxLines (ring buffer behavior)",
+        "View() renders content with a 1-column scrollbar on the right, subtracting scrollbar width from content area",
+        "Scrollbar thumb size is proportional to visible fraction, thumb position reflects scroll offset",
+        "When content fits entirely in viewport, scrollbar renders empty track or minimal indicator",
+        "Unit tests in scrollviewport_test.go cover: auto-scroll toggle on up/down keys, SetLines preserving YOffset when autoScroll=false, EnsureVisible scrolling to make a line visible, scrollbar thumb positioning at top/middle/bottom, short-content edge case",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t02",
+      "title": "Add scrollbar to OutputViewport component",
+      "description": "Update internal/tui/components/output.go to optionally render a vertical scrollbar alongside the viewport content using the shared scrollbar helper. Add a ShowScrollbar option (defaulting to false for backward compatibility). When enabled, subtract 1 from the content/wrapping width to make room for the scrollbar column. Ensure existing auto-scroll behavior (pause on user scroll up, resume at bottom) and wrapping/ring buffer behavior are preserved. Update output_test.go with tests for scrollbar rendering and width adjustment.",
+      "acceptanceCriteria": [
+        "OutputViewport has a ShowScrollbar bool field or constructor option",
+        "When ShowScrollbar is true, View() renders a 1-column scrollbar on the right using the shared scrollbar helper",
+        "Content wrapping width is reduced by 1 when scrollbar is enabled, so text does not collide with the scrollbar",
+        "Existing auto-scroll semantics are unchanged (pause on scroll up, resume at bottom)",
+        "Existing ring buffer and wrapping behavior are unchanged",
+        "output_test.go includes tests for: scrollbar appears when enabled, wrapping width adjusts correctly, auto-scroll still works with scrollbar enabled",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t03",
+      "title": "Refactor Run view layout: split left panel into Progress and Activity panes",
+      "description": "Refactor internal/tui/views/run.go to split the existing left panel into two vertically stacked bordered panes: Progress (top, containing header + usage + tasks list) and Activity (bottom). Add renderProgressPane and renderActivityPane helper methods. Update the layout sizing logic so the left column takes ~30% width and the right column (Output) takes ~70%, with minimum widths enforced. The Activity pane should initially render the same activity content as before but in its own bordered box. Add the narrow-width single-column fallback layout. Do NOT yet add ScrollViewport or scrollbars — this task focuses purely on the layout split.",
+      "acceptanceCriteria": [
+        "The Run view renders two bordered panes in the left column: Progress (top) and Activity (bottom)",
+        "Progress pane contains: header (task N/M, attempt, elapsed), usage section, and tasks list",
+        "Activity pane contains the activity timeline entries (same content as before, just in its own bordered box)",
+        "Output pane remains the right column with ~70% width share",
+        "Left column gets ~30% width share with a minimum width (e.g., 24 cols)",
+        "Progress pane gets ~35-45% of left column height, Activity gets the remainder, both with minimum heights",
+        "Narrow terminal width (\u003cleftMin+outputMin) falls back to single-column layout: Output top, Progress middle, Activity bottom",
+        "renderProgressPane and renderActivityPane are separate methods/functions",
+        "Existing Run view behavior (task progression, output display, activity updates) is unchanged",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t04",
+      "title": "Make Activity plan-wide with task/attempt separators",
+      "description": "Update internal/tui/views/run.go so that Activity history is kept for the entire plan rather than being cleared on each task start. On TaskStartedMsg, append a separator line (e.g., '── Task 3/10: Implement session management (Attempt 2/5) ──') instead of clearing activities. Separate the per-task usage counter reset from the activity clearing — replace clearActivities() with a resetTaskUsage()-style helper that only resets counters. Cap the in-memory activity entries to 2000 to prevent unbounded growth. Update run_test.go to assert that activities persist across tasks and separators are present.",
+      "acceptanceCriteria": [
+        "Activity entries are NOT cleared on TaskStartedMsg — they accumulate across the entire plan",
+        "A separator line is appended on each TaskStartedMsg containing the task number, task title, and attempt number",
+        "Per-task usage counters (tokens, cost, etc.) are still reset on task start without clearing activity history",
+        "In-memory activity entries are capped at 2000 (oldest entries are dropped when cap is exceeded)",
+        "run_test.go includes a test asserting activities are not cleared between tasks",
+        "run_test.go includes a test asserting separator lines are present after TaskStartedMsg",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t05",
+      "title": "Wire ScrollViewport into Activity and Tasks panes in Run view",
+      "description": "Integrate ScrollViewport into the Run view for both the Activity pane and the Tasks list within the Progress pane. Add activityView and tasksView ScrollViewport fields to RunningModel. Wire sizing updates on WindowSizeMsg. Convert activity entries and task list items to []string lines and feed them into the respective ScrollViewports. Render both with scrollbars. For Tasks, implement 'auto-follow current task' using EnsureVisible. Keep header + usage static in the Progress pane, allocating remaining height to the Tasks viewport.",
+      "acceptanceCriteria": [
+        "RunningModel has activityView and tasksView fields of type ScrollViewport",
+        "Activity pane renders via activityView.View() with a visible scrollbar",
+        "Tasks list renders via tasksView.View() with a visible scrollbar, below the static header + usage in the Progress pane",
+        "Activity auto-scrolls to bottom when at end, pauses when user scrolls up",
+        "Tasks auto-follows the current task using EnsureVisible (only scrolls when current task leaves viewport)",
+        "User scroll interaction on Tasks disables auto-follow until user returns to end",
+        "Viewport sizes update correctly on WindowSizeMsg",
+        "Header + usage remain static (not scrolled) in Progress pane",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t06",
+      "title": "Enable scrollbar on Output pane in Run view",
+      "description": "Enable the ShowScrollbar option on the OutputViewport used in the Run view so Output displays a scrollbar. Ensure the wrapping width is properly adjusted (subtract 1 for scrollbar). Verify that existing auto-scroll behavior works correctly with the scrollbar enabled. If OutputViewport is also used in Plan Create, ensure the scrollbar is configurable per-instance (do not force it on Plan Create yet).",
+      "acceptanceCriteria": [
+        "The Run view Output pane shows a visible scrollbar",
+        "Output content wrapping width accounts for the scrollbar column",
+        "Auto-scroll behavior is unchanged (pause on user scroll up, resume at bottom)",
+        "Other usages of OutputViewport (e.g., Plan Create) are not affected unless explicitly opted in",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t07",
+      "title": "Add focus state and keyboard scroll routing in Run view",
+      "description": "Add a focusPane state to RunningModel with values focusOutput, focusActivity, focusTasks. Default focus is focusOutput. Implement Tab key to cycle focus across the three scrollable regions. Route scroll keys (up/down, pgup/pgdown, home/end, g/G, ctrl+u/ctrl+d) to the focused region's viewport Update method. Add focused-pane border styling in internal/tui/styles/ and apply it to highlight the currently focused pane's border. Add status bar hints showing current focus and scroll key instructions. Update run_test.go with tests for focus cycling and scroll key routing.",
+      "acceptanceCriteria": [
+        "RunningModel has a focusPane field defaulting to focusOutput",
+        "Tab key cycles focus: Output → Activity → Tasks → Output",
+        "Scroll keys are routed to the focused region's viewport",
+        "The focused pane's border is visually highlighted (distinct border color/style)",
+        "Status bar shows current focus indicator and scroll key hints",
+        "Default focus on Output preserves existing keyboard behavior",
+        "run_test.go includes tests for focus cycling (Tab key changes focus)",
+        "run_test.go includes tests for scroll key routing to the focused pane",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t08",
+      "title": "Add mouse wheel scroll routing in Run view",
+      "description": "Implement mouse wheel event routing in the Run view. Track pane bounding boxes (Activity, Progress/Tasks, Output) in screen coordinates, recomputing on WindowSizeMsg and layout changes. On tea.MouseMsg with wheel events, hit-test the mouse coordinates against pane bounds and route the scroll to the correct viewport. Set focus to the scrolled pane. Fall back to the currently focused pane when coordinates are ambiguous. Update run_test.go with tests for mouse wheel routing.",
+      "acceptanceCriteria": [
+        "Pane bounding boxes are tracked and updated on WindowSizeMsg",
+        "Mouse wheel up/down events scroll the pane under the cursor",
+        "Focus is set to the pane that receives the mouse wheel event",
+        "When mouse coordinates are ambiguous or outside all panes, scroll falls back to the focused pane",
+        "Mouse wheel scrolling works for Activity, Tasks, and Output panes",
+        "run_test.go includes tests for mouse wheel routing with coordinates inside each pane",
+        "run_test.go includes test for fallback to focused pane on ambiguous coordinates",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t09",
+      "title": "Update Plan Create view with scrollable panes and scrollbars",
+      "description": "Update internal/tui/views/plancreate.go to add scrollable behavior and scrollbars to both the Activity and Response panes. Add an Activity ScrollViewport for the activity list (below the static 'Source' header line). Enable scrollbar on the Response OutputViewport. Add focus state with Tab toggling between Response and Activity (default focus: Response). Route scroll keys to the focused pane. Route mouse wheel events to the pane under the cursor with hit-testing. Apply the same focused-pane border styling as Run view. Ensure auto-scroll semantics match Run (follow bottom during streaming, pause on user scroll up). Update plancreate_test.go.",
+      "acceptanceCriteria": [
+        "Plan Create Activity pane uses ScrollViewport with scrollbar, below the static Source header line",
+        "Plan Create Response pane has scrollbar enabled on OutputViewport",
+        "Scroll keys are routed to the focused pane's viewport",
+        "Tab toggles focus between Response and Activity (default: Response)",
+        "Mouse wheel events are routed to the pane under the cursor and set focus",
+        "Auto-scroll on Response follows bottom during streaming, pauses on user scroll up",
+        "Auto-scroll on Activity follows bottom as new entries arrive, pauses on user scroll up",
+        "Focused pane border is visually highlighted (same styling as Run view)",
+        "plancreate_test.go includes tests for scroll routing (keys), focus toggling, and scrollbar presence",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    },
+    {
+      "id": "t10",
+      "title": "Integration testing and edge case handling",
+      "description": "Add comprehensive tests and handle edge cases across both views. Test narrow-width fallback layout in Run view. Test very small terminal heights. Test edge cases: content shorter than viewport (scrollbar renders correctly), rapid content updates, spinner animation in last activity line not causing jitter. Verify that Done/Cancelled states keep panes scrollable. Ensure all existing tests still pass and add any missing test coverage for the new scrollable pane behaviors.",
+      "acceptanceCriteria": [
+        "run_test.go includes test for narrow-width single-column fallback layout",
+        "Tests cover very small terminal dimensions (no panics, no negative widths/heights)",
+        "Tests cover content shorter than viewport (scrollbar renders empty track or minimal thumb)",
+        "Done/Cancelled run states keep all panes scrollable",
+        "Spinner animation in last activity line preserves YOffset when autoScroll is false",
+        "All existing tests continue to pass",
+        "make build succeeds",
+        "make test succeeds",
+        "make fmt produces no changes"
+      ],
+      "status": "pending",
+      "attempts": 0
+    }
+  ]
+}
