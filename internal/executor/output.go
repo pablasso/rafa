@@ -22,6 +22,18 @@ type OutputWriter interface {
 	Stderr() io.Writer
 }
 
+// StreamHooks provides callbacks for structured stream events.
+// All callbacks are optional.
+type StreamHooks struct {
+	OnToolUse    func(toolName, toolTarget string)
+	OnToolResult func()
+	OnUsage      func(inputTokens, outputTokens int64, costUSD float64)
+}
+
+func (h StreamHooks) hasCallbacks() bool {
+	return h.OnToolUse != nil || h.OnToolResult != nil || h.OnUsage != nil
+}
+
 // OutputCapture manages output to both terminal and log file.
 type OutputCapture struct {
 	logFile    *os.File
@@ -40,6 +52,12 @@ func NewOutputCapture(planDir string) (*OutputCapture, error) {
 // When eventsChan is non-nil, output is streamed to the channel for TUI integration.
 // The channel should be buffered to avoid blocking; if the buffer is full, data is dropped.
 func NewOutputCaptureWithEvents(planDir string, eventsChan chan string) (*OutputCapture, error) {
+	return NewOutputCaptureWithEventsAndHooks(planDir, eventsChan, StreamHooks{})
+}
+
+// NewOutputCaptureWithEventsAndHooks creates an output capture with optional
+// event streaming and structured stream callbacks.
+func NewOutputCaptureWithEventsAndHooks(planDir string, eventsChan chan string, hooks StreamHooks) (*OutputCapture, error) {
 	logPath := filepath.Join(planDir, outputLogFileName)
 
 	// Open in append mode - preserves history when re-running failed plans
@@ -57,19 +75,32 @@ func NewOutputCaptureWithEvents(planDir string, eventsChan chan string) (*Output
 	// When eventsChan is set, use streamingWriter for TUI integration
 	// In TUI mode, we only write to the log file and stream to the channel
 	// (not to stdout/stderr, which would corrupt the TUI display)
-	if eventsChan != nil {
+	if eventsChan != nil || hooks.hasCallbacks() {
+		stdoutUnderlying := io.Writer(f)
+		stderrUnderlying := io.Writer(f)
+		if eventsChan == nil {
+			stdoutUnderlying = io.MultiWriter(os.Stdout, f)
+			stderrUnderlying = io.MultiWriter(os.Stderr, f)
+		}
+
 		streamingOut := &streamingWriter{
-			underlying: f, // Only write to log file in TUI mode
+			underlying: stdoutUnderlying,
 			eventsChan: eventsChan,
+			hooks:      hooks,
 			isStderr:   false,
 		}
-		streamingErr := &streamingWriter{
-			underlying: f, // Only write to log file in TUI mode
-			eventsChan: eventsChan,
-			isStderr:   true, // Pass through raw stderr for error messages
-		}
 		oc.multiOut = streamingOut
-		oc.multiErr = streamingErr
+
+		if eventsChan != nil {
+			streamingErr := &streamingWriter{
+				underlying: stderrUnderlying,
+				eventsChan: eventsChan,
+				isStderr:   true, // Pass through raw stderr for error messages
+			}
+			oc.multiErr = streamingErr
+		} else {
+			oc.multiErr = stderrUnderlying
+		}
 	} else {
 		oc.multiOut = io.MultiWriter(os.Stdout, f)
 		oc.multiErr = io.MultiWriter(os.Stderr, f)
@@ -85,7 +116,8 @@ type streamingWriter struct {
 	eventsChan chan string
 	lineBuf    strings.Builder // Buffer for partial lines
 	outputBuf  strings.Builder // Buffer for coalescing tiny text deltas
-	isStderr   bool            // If true, pass through raw (no JSON parsing)
+	hooks      StreamHooks
+	isStderr   bool // If true, pass through raw (no JSON parsing)
 }
 
 // Write writes to the underlying writer and sends parsed output to eventsChan.
@@ -95,8 +127,8 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 	// Always write raw data to underlying writer (log file)
 	n, err = s.underlying.Write(p)
 
-	// Send to TUI if channel exists (non-blocking)
-	if s.eventsChan == nil {
+	// If no stream consumers are active, no extra processing is needed.
+	if s.eventsChan == nil && !s.hooks.hasCallbacks() {
 		return
 	}
 
@@ -122,22 +154,24 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 		line := content[:idx]
 		content = content[idx+1:]
 
-		// Parse JSON and extract displayable text plus flush boundaries.
-		formatted, shouldFlush := parseStreamLine(line)
-		if formatted != "" {
-			// Tool markers should be emitted as standalone lines.
-			if strings.HasPrefix(formatted, "\n[Tool: ") {
+		// Parse JSON and extract displayable text plus structured events.
+		parsed := parseStreamLineDetails(line)
+		if parsed.ToolUse != nil {
+			s.emitToolUse(parsed.ToolUse.Name, parsed.ToolUse.Target)
+		}
+		if parsed.ToolResult {
+			s.emitToolResult()
+		}
+		if parsed.Usage != nil {
+			s.emitUsage(parsed.Usage.InputTokens, parsed.Usage.OutputTokens, parsed.Usage.CostUSD)
+		}
+		if parsed.Text != "" {
+			s.outputBuf.WriteString(parsed.Text)
+			if strings.Contains(parsed.Text, "\n") || s.outputBuf.Len() >= streamChunkFlushBytes {
 				s.flushOutput()
-				s.emit(formatted)
-			} else {
-				s.outputBuf.WriteString(formatted)
-				if strings.Contains(formatted, "\n") || s.outputBuf.Len() >= streamChunkFlushBytes {
-					s.flushOutput()
-				}
 			}
 		}
-
-		if shouldFlush {
+		if parsed.Flush {
 			s.flushOutput()
 		}
 	}
@@ -148,7 +182,7 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 }
 
 func (s *streamingWriter) emit(text string) {
-	if text == "" {
+	if text == "" || s.eventsChan == nil {
 		return
 	}
 	select {
@@ -166,24 +200,79 @@ func (s *streamingWriter) flushOutput() {
 	s.outputBuf.Reset()
 }
 
+func (s *streamingWriter) emitToolUse(toolName, toolTarget string) {
+	if s.hooks.OnToolUse != nil {
+		s.hooks.OnToolUse(toolName, toolTarget)
+	}
+}
+
+func (s *streamingWriter) emitToolResult() {
+	if s.hooks.OnToolResult != nil {
+		s.hooks.OnToolResult()
+	}
+}
+
+func (s *streamingWriter) emitUsage(inputTokens, outputTokens int64, costUSD float64) {
+	if s.hooks.OnUsage != nil {
+		s.hooks.OnUsage(inputTokens, outputTokens, costUSD)
+	}
+}
+
+type parsedStreamLine struct {
+	Text       string
+	Flush      bool
+	ToolUse    *toolUseEvent
+	ToolResult bool
+	Usage      *usageEvent
+}
+
+type toolUseEvent struct {
+	Name   string
+	Target string
+}
+
+type usageEvent struct {
+	InputTokens  int64
+	OutputTokens int64
+	CostUSD      float64
+}
+
 // streamEvent represents the JSON structure from Claude's stream-json output.
 type streamEvent struct {
 	Type    string `json:"type"`
 	Subtype string `json:"subtype,omitempty"`
+	IsError bool   `json:"is_error,omitempty"`
 	Event   *struct {
-		Type  string `json:"type"`
-		Delta *struct {
-			Type string `json:"type"`
-			Text string `json:"text,omitempty"`
-		} `json:"delta,omitempty"`
+		Type         string `json:"type"`
+		Delta        *streamDelta
+		ContentBlock *streamContentBlock `json:"content_block,omitempty"`
 	} `json:"event,omitempty"`
 	Message *struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text,omitempty"`
-			Name string `json:"name,omitempty"`
-		} `json:"content"`
+		Content []streamContent `json:"content"`
 	} `json:"message,omitempty"`
+	Usage *struct {
+		InputTokens  int64 `json:"input_tokens"`
+		OutputTokens int64 `json:"output_tokens"`
+	} `json:"usage,omitempty"`
+	TotalCostUSD float64 `json:"total_cost_usd,omitempty"`
+}
+
+type streamDelta struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+type streamContentBlock struct {
+	Type  string                 `json:"type"`
+	Name  string                 `json:"name,omitempty"`
+	Input map[string]interface{} `json:"input,omitempty"`
+}
+
+type streamContent struct {
+	Type  string                 `json:"type"`
+	Text  string                 `json:"text,omitempty"`
+	Name  string                 `json:"name,omitempty"`
+	Input map[string]interface{} `json:"input,omitempty"`
 }
 
 // FormatStreamLine parses a JSON stream line and extracts displayable text.
@@ -197,15 +286,20 @@ func FormatStreamLine(line string) string {
 // The flush hint is true when buffered text should be emitted (message boundaries,
 // result events, or plain-text line boundaries).
 func parseStreamLine(line string) (string, bool) {
+	parsed := parseStreamLineDetails(line)
+	return parsed.Text, parsed.Flush
+}
+
+func parseStreamLineDetails(line string) parsedStreamLine {
 	line = strings.TrimSpace(line)
 	if line == "" {
-		return "", false
+		return parsedStreamLine{}
 	}
 
 	var event streamEvent
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
 		// Not JSON - return as-is
-		return line, true
+		return parsedStreamLine{Text: line, Flush: true}
 	}
 
 	switch event.Type {
@@ -215,29 +309,75 @@ func parseStreamLine(line string) (string, bool) {
 			case "content_block_delta":
 				// Token-level streaming - extract delta text
 				if event.Event.Delta != nil && event.Event.Delta.Type == "text_delta" {
-					return event.Event.Delta.Text, false
+					return parsedStreamLine{Text: event.Event.Delta.Text}
+				}
+			case "content_block_start":
+				if event.Event.ContentBlock != nil &&
+					event.Event.ContentBlock.Type == "tool_use" &&
+					event.Event.ContentBlock.Name != "" {
+					name := event.Event.ContentBlock.Name
+					return parsedStreamLine{
+						ToolUse: &toolUseEvent{
+							Name:   name,
+							Target: extractToolTarget(name, event.Event.ContentBlock.Input),
+						},
+					}
 				}
 			case "content_block_stop", "message_stop":
-				return "", true
+				return parsedStreamLine{Flush: true}
 			}
 		}
 	case "assistant":
-		// Full message - extract tool use notifications
+		// Assistant turn boundary - flush any buffered delta text.
+		return parsedStreamLine{Flush: true}
+	case "user":
 		if event.Message != nil {
 			for _, c := range event.Message.Content {
-				if c.Type == "tool_use" && c.Name != "" {
-					return fmt.Sprintf("\n[Tool: %s]", c.Name), true
+				if c.Type == "tool_result" {
+					return parsedStreamLine{ToolResult: true, Flush: true}
 				}
 			}
 		}
-		// Assistant turn boundary - flush any buffered delta text.
-		return "", true
 	case "result":
-		return "", true
+		parsed := parsedStreamLine{Flush: true}
+		if event.Usage != nil {
+			parsed.Usage = &usageEvent{
+				InputTokens:  event.Usage.InputTokens,
+				OutputTokens: event.Usage.OutputTokens,
+				CostUSD:      event.TotalCostUSD,
+			}
+		}
+		return parsed
 	}
 
 	// Ignore system/user/meta events.
-	return "", false
+	return parsedStreamLine{}
+}
+
+func extractToolTarget(toolName string, input map[string]interface{}) string {
+	switch toolName {
+	case "Read", "Write", "Edit":
+		if path, ok := input["file_path"].(string); ok {
+			return path
+		}
+	case "Glob", "Grep":
+		if pattern, ok := input["pattern"].(string); ok {
+			return pattern
+		}
+	case "Task":
+		if desc, ok := input["description"].(string); ok {
+			return desc
+		}
+	case "Bash":
+		if command, ok := input["command"].(string); ok {
+			return command
+		}
+	case "WebFetch":
+		if url, ok := input["url"].(string); ok {
+			return url
+		}
+	}
+	return ""
 }
 
 // Stdout returns the writer for stdout.

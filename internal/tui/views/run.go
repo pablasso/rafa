@@ -70,6 +70,9 @@ type RunningModel struct {
 	// Activity timeline for showing tool usage
 	activities []RunActivityEntry
 
+	// Number of currently running tools for output thinking indicator.
+	activeToolCount int
+
 	// Token/cost tracking
 	taskTokens    int64   // Tokens used in current task
 	totalTokens   int64   // Cumulative tokens across all tasks in plan
@@ -222,14 +225,6 @@ func (m RunningModel) listenForOutput() tea.Cmd {
 	}
 }
 
-func normalizeOutputChunk(chunk string) string {
-	trimmed := strings.TrimSpace(chunk)
-	if strings.HasPrefix(trimmed, "[Tool: ") && strings.HasSuffix(trimmed, "]") && !strings.Contains(trimmed, "\n") {
-		return "\n" + trimmed + "\n"
-	}
-	return chunk
-}
-
 // OutputChan returns the output channel for executor integration.
 func (m *RunningModel) OutputChan() chan string {
 	return m.outputChan
@@ -255,7 +250,28 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 		events := NewRunningModelEvents(program)
 
 		// Normal execution mode with file-based output capture
-		output, err := executor.NewOutputCaptureWithEvents(m.planDir, m.outputChan)
+		output, err := executor.NewOutputCaptureWithEventsAndHooks(
+			m.planDir,
+			m.outputChan,
+			executor.StreamHooks{
+				OnToolUse: func(toolName, toolTarget string) {
+					program.Send(ToolUseMsg{
+						ToolName:   toolName,
+						ToolTarget: toolTarget,
+					})
+				},
+				OnToolResult: func() {
+					program.Send(ToolResultMsg{})
+				},
+				OnUsage: func(inputTokens, outputTokens int64, costUSD float64) {
+					program.Send(UsageMsg{
+						InputTokens:  inputTokens,
+						OutputTokens: outputTokens,
+						CostUSD:      costUSD,
+					})
+				},
+			},
+		)
 		if err != nil {
 			return PlanDoneMsg{Success: false, Message: fmt.Sprintf("Failed to create output capture: %v", err)}
 		}
@@ -352,11 +368,15 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 	case ToolUseMsg:
 		// Add tool use to activity timeline
 		m.addActivity(msg.ToolName, msg.ToolTarget)
+		m.activeToolCount++
 		return m, nil
 
 	case ToolResultMsg:
 		// Mark last activity as done
 		m.markLastActivityDone()
+		if m.activeToolCount > 0 {
+			m.activeToolCount--
+		}
 		return m, nil
 
 	case UsageMsg:
@@ -373,11 +393,15 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		return m, nil
 
 	case OutputLineMsg:
-		m.output.AppendChunk(normalizeOutputChunk(msg.Line))
+		if isToolMarkerLine(msg.Line) {
+			return m, m.listenForOutput()
+		}
+		m.output.AppendChunk(msg.Line)
 		return m, m.listenForOutput()
 
 	case PlanDoneMsg:
 		m.state = stateDone
+		m.activeToolCount = 0
 		m.finalSuccess = msg.Success
 		if msg.Success {
 			m.finalMessage = fmt.Sprintf("Completed %d/%d tasks in %s",
@@ -397,6 +421,7 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 
 	case PlanCancelledMsg:
 		m.state = stateCancelled
+		m.activeToolCount = 0
 		m.finalMessage = fmt.Sprintf("Stopped. Completed %d/%d tasks.",
 			m.countCompleted(), m.totalTasks)
 		return m, nil
@@ -464,10 +489,11 @@ func (m *RunningModel) updateOutputSize() {
 	rightWidth := (m.width * 60 / 100) - 4
 
 	// Height: total - title(2) - bottom border(1) - status bar(1) - borders(2)
-	outputHeight := m.height - 6
+	// Then reserve 3 lines in output panel: header + blank spacer + indicator row.
+	outputHeight := m.height - 9
 
-	if outputHeight < 3 {
-		outputHeight = 3
+	if outputHeight < 1 {
+		outputHeight = 1
 	}
 	if rightWidth < 10 {
 		rightWidth = 10
@@ -744,17 +770,12 @@ func (m RunningModel) renderRightPanel(width, height int) string {
 	lines = append(lines, styles.SubtleStyle.Render("Output"))
 	lines = append(lines, "")
 
-	// Update output viewport size
-	outputHeight := height - 2
-	if outputHeight < 1 {
-		outputHeight = 1
-	}
-
 	// Render output viewport
 	outputView := m.output.View()
 
 	// Add output content
 	lines = append(lines, outputView)
+	lines = append(lines, m.renderOutputThinkingRow())
 
 	return strings.Join(lines, "\n")
 }
@@ -916,7 +937,19 @@ func (m *RunningModel) markLastActivityDone() {
 // clearActivities clears the activity timeline (e.g., when starting a new task).
 func (m *RunningModel) clearActivities() {
 	m.activities = nil
+	m.activeToolCount = 0
 	m.taskTokens = 0
+}
+
+func (m RunningModel) isToolRunning() bool {
+	return m.activeToolCount > 0
+}
+
+func (m RunningModel) renderOutputThinkingRow() string {
+	if m.state == stateRunning && m.isToolRunning() {
+		return fmt.Sprintf("%s %s", m.spinner.View(), styles.SubtleStyle.Render("Thinking (running tools)..."))
+	}
+	return styles.SubtleStyle.Render(" ")
 }
 
 // formatToolUseEntry formats a tool use entry for the activity timeline.
@@ -956,6 +989,18 @@ func truncateWithEllipsis(s string, maxLen int) string {
 		return s[:maxLen]
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func isToolMarkerLine(chunk string) bool {
+	trimmed := strings.TrimSpace(chunk)
+	if trimmed == "" || strings.Contains(trimmed, "\n") {
+		return false
+	}
+	if !strings.HasPrefix(trimmed, "[Tool: ") || !strings.HasSuffix(trimmed, "]") {
+		return false
+	}
+	toolName := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "[Tool: "), "]"))
+	return toolName != ""
 }
 
 // formatDuration formats a duration as MM:SS or HH:MM:SS.

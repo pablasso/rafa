@@ -3,7 +3,6 @@ package views
 import (
 	"context"
 	"errors"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -236,7 +235,7 @@ func TestRunningModel_Update_OutputLineMsg_JoinsChunkBoundaries(t *testing.T) {
 	}
 }
 
-func TestRunningModel_Update_OutputLineMsg_ToolMarkerChunkStaysStandalone(t *testing.T) {
+func TestRunningModel_Update_OutputLineMsg_ToolMarkerChunkIgnored(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.SetSize(200, 40)
@@ -245,18 +244,18 @@ func TestRunningModel_Update_OutputLineMsg_ToolMarkerChunkStaysStandalone(t *tes
 	m, _ = m.Update(OutputLineMsg{Line: "Now let me verify"})
 
 	view := m.output.View()
-	re := regexp.MustCompile(`\[Tool: Bash\][ \t]*\nNow let me verify`)
-	if !re.MatchString(view) {
-		t.Fatalf("expected tool marker to be standalone before prose, got %q", view)
+	if strings.Contains(view, "[Tool: Bash]") {
+		t.Fatalf("expected tool marker to be filtered from output, got %q", view)
 	}
-	if strings.Contains(view, "[Tool: Bash]Now let me verify") {
-		t.Fatalf("expected newline between tool marker and prose, got %q", view)
+	if !strings.Contains(view, "Now let me verify") {
+		t.Fatalf("expected prose chunk to remain, got %q", view)
 	}
 }
 
 func TestRunningModel_Update_PlanDoneMsg_Success(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.activeToolCount = 1
 
 	msg := PlanDoneMsg{
 		Success:   true,
@@ -278,6 +277,9 @@ func TestRunningModel_Update_PlanDoneMsg_Success(t *testing.T) {
 	}
 	if !strings.Contains(newM.FinalMessage(), "Completed 1/1") {
 		t.Errorf("expected finalMessage to contain completion info, got %s", newM.FinalMessage())
+	}
+	if newM.activeToolCount != 0 {
+		t.Errorf("expected activeToolCount to be reset on completion, got %d", newM.activeToolCount)
 	}
 }
 
@@ -396,6 +398,7 @@ func TestRunningModel_Update_PlanCancelledMsg(t *testing.T) {
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.tasks[0].Status = "completed"
 	m.state = stateCancelling
+	m.activeToolCount = 1
 
 	newM, cmd := m.Update(PlanCancelledMsg{})
 
@@ -407,6 +410,9 @@ func TestRunningModel_Update_PlanCancelledMsg(t *testing.T) {
 	}
 	if !strings.Contains(newM.FinalMessage(), "Stopped") {
 		t.Errorf("expected finalMessage to contain 'Stopped', got %s", newM.FinalMessage())
+	}
+	if newM.activeToolCount != 0 {
+		t.Errorf("expected activeToolCount to be reset on cancellation, got %d", newM.activeToolCount)
 	}
 }
 
@@ -815,16 +821,15 @@ func TestOutputLineMsg_Structure(t *testing.T) {
 	}
 }
 
-func TestNormalizeOutputChunk_ToolMarker(t *testing.T) {
-	got := normalizeOutputChunk("\n[Tool: Read]")
-	want := "\n[Tool: Read]\n"
-	if got != want {
-		t.Fatalf("expected normalized tool marker %q, got %q", want, got)
+func TestIsToolMarkerLine(t *testing.T) {
+	if !isToolMarkerLine("\n[Tool: Read]") {
+		t.Fatalf("expected tool marker chunk to be detected")
 	}
-
-	plain := "regular chunk"
-	if normalizeOutputChunk(plain) != plain {
-		t.Fatalf("expected non-marker chunk to be unchanged")
+	if isToolMarkerLine("[Tool: Read]\nmore") {
+		t.Fatalf("expected multi-line chunk to not be treated as pure marker")
+	}
+	if isToolMarkerLine("regular chunk") {
+		t.Fatalf("expected regular chunk to not be treated as marker")
 	}
 }
 
@@ -1212,6 +1217,9 @@ func TestRunningModel_Update_ToolUseMsg_AddsToActivityTimeline(t *testing.T) {
 	if newM.activities[0].IsDone {
 		t.Error("expected activity to not be done initially")
 	}
+	if newM.activeToolCount != 1 {
+		t.Errorf("expected activeToolCount to be 1, got %d", newM.activeToolCount)
+	}
 }
 
 func TestRunningModel_Update_ToolUseMsg_MultipleToolUses(t *testing.T) {
@@ -1256,6 +1264,9 @@ func TestRunningModel_Update_ToolResultMsg_MarksLastActivityDone(t *testing.T) {
 	if !newM.activities[0].IsDone {
 		t.Error("expected activity to be marked done")
 	}
+	if newM.activeToolCount != 0 {
+		t.Errorf("expected activeToolCount to be 0, got %d", newM.activeToolCount)
+	}
 }
 
 func TestRunningModel_Update_ToolResultMsg_MarksOnlyLastActivityDone(t *testing.T) {
@@ -1291,6 +1302,63 @@ func TestRunningModel_Update_ToolResultMsg_NoActivities(t *testing.T) {
 
 	if len(newM.activities) != 0 {
 		t.Errorf("expected 0 activities, got %d", len(newM.activities))
+	}
+	if newM.activeToolCount != 0 {
+		t.Errorf("expected activeToolCount to remain 0, got %d", newM.activeToolCount)
+	}
+}
+
+func TestRunningModel_View_OutputThinkingIndicator_ShownOnlyWhileToolRunning(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 30)
+	m.currentTask = 1
+	m.attempt = 1
+
+	// No active tool: no indicator text.
+	view := m.View()
+	if strings.Contains(view, "Thinking (running tools)...") {
+		t.Fatalf("did not expect thinking indicator before tool use")
+	}
+
+	// Tool active: indicator should appear.
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+	view = m.View()
+	if !strings.Contains(view, "Thinking (running tools)...") {
+		t.Fatalf("expected thinking indicator while tool is running")
+	}
+
+	// Tool finished: indicator should disappear immediately.
+	m, _ = m.Update(ToolResultMsg{})
+	view = m.View()
+	if strings.Contains(view, "Thinking (running tools)...") {
+		t.Fatalf("did not expect thinking indicator after tool result")
+	}
+}
+
+func TestRunningModel_RenderRightPanel_ReservedThinkingRowStable(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 30)
+
+	before := m.renderRightPanel(56, 20)
+	beforeLines := strings.Count(before, "\n")
+
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+	during := m.renderRightPanel(56, 20)
+	duringLines := strings.Count(during, "\n")
+
+	m, _ = m.Update(ToolResultMsg{})
+	after := m.renderRightPanel(56, 20)
+	afterLines := strings.Count(after, "\n")
+
+	if beforeLines != duringLines || beforeLines != afterLines {
+		t.Fatalf(
+			"expected reserved row to keep line count stable, got before=%d during=%d after=%d",
+			beforeLines,
+			duringLines,
+			afterLines,
+		)
 	}
 }
 
@@ -1567,6 +1635,9 @@ func TestRunningModel_TaskStartedMsg_ClearsActivities(t *testing.T) {
 	if m.taskTokens != 1500 {
 		t.Errorf("expected taskTokens to be 1500 before clear, got %d", m.taskTokens)
 	}
+	if m.activeToolCount != 1 {
+		t.Errorf("expected activeToolCount to be 1 before clear, got %d", m.activeToolCount)
+	}
 
 	// Start second task
 	m, _ = m.Update(TaskStartedMsg{TaskNum: 2, Total: 2, TaskID: "t02", Title: "Task Two", Attempt: 1})
@@ -1578,6 +1649,9 @@ func TestRunningModel_TaskStartedMsg_ClearsActivities(t *testing.T) {
 	// taskTokens should be reset
 	if m.taskTokens != 0 {
 		t.Errorf("expected taskTokens to be 0 after clear, got %d", m.taskTokens)
+	}
+	if m.activeToolCount != 0 {
+		t.Errorf("expected activeToolCount to be 0 after clear, got %d", m.activeToolCount)
 	}
 	// totalTokens should NOT be reset
 	if m.totalTokens != 1500 {

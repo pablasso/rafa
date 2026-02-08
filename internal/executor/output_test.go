@@ -616,13 +616,12 @@ func TestFormatStreamLine_TextDelta(t *testing.T) {
 }
 
 func TestFormatStreamLine_ToolUse(t *testing.T) {
-	// Test extracting tool use from assistant message
+	// Tool markers are now handled by activity hooks, not output text.
 	jsonLine := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}`
 
 	result := FormatStreamLine(jsonLine)
-	expected := "\n[Tool: Bash]"
-	if result != expected {
-		t.Errorf("formatStreamLine() = %q, want %q", result, expected)
+	if result != "" {
+		t.Errorf("formatStreamLine() = %q, want empty string", result)
 	}
 }
 
@@ -761,6 +760,62 @@ func TestStreamingWriter_JSONParsing_CoalescesTextDeltas(t *testing.T) {
 	case extra := <-eventsChan:
 		t.Fatalf("expected a single coalesced message, got extra: %q", extra)
 	default:
+	}
+}
+
+func TestStreamingWriter_Hooks_EmitToolLifecycleAndUsage(t *testing.T) {
+	eventsChan := make(chan string, 10)
+
+	var (
+		gotToolName   string
+		gotToolTarget string
+		gotToolResult bool
+		gotInput      int64
+		gotOutput     int64
+		gotCost       float64
+	)
+
+	sw := &streamingWriter{
+		underlying: io.Discard,
+		eventsChan: eventsChan,
+		hooks: StreamHooks{
+			OnToolUse: func(toolName, toolTarget string) {
+				gotToolName = toolName
+				gotToolTarget = toolTarget
+			},
+			OnToolResult: func() {
+				gotToolResult = true
+			},
+			OnUsage: func(inputTokens, outputTokens int64, costUSD float64) {
+				gotInput = inputTokens
+				gotOutput = outputTokens
+				gotCost = costUSD
+			},
+		},
+	}
+
+	toolUse := `{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Read","input":{"file_path":"internal/tui/views/run.go"}}}}` + "\n"
+	toolResult := `{"type":"user","message":{"content":[{"type":"tool_result"}]}}` + "\n"
+	usage := `{"type":"result","usage":{"input_tokens":123,"output_tokens":45},"total_cost_usd":0.007}` + "\n"
+
+	sw.Write([]byte(toolUse))
+	sw.Write([]byte(toolResult))
+	sw.Write([]byte(usage))
+
+	if gotToolName != "Read" {
+		t.Fatalf("expected tool name Read, got %q", gotToolName)
+	}
+	if gotToolTarget != "internal/tui/views/run.go" {
+		t.Fatalf("expected tool target internal/tui/views/run.go, got %q", gotToolTarget)
+	}
+	if !gotToolResult {
+		t.Fatalf("expected tool result hook to be called")
+	}
+	if gotInput != 123 || gotOutput != 45 {
+		t.Fatalf("expected usage tokens 123/45, got %d/%d", gotInput, gotOutput)
+	}
+	if gotCost != 0.007 {
+		t.Fatalf("expected cost 0.007, got %f", gotCost)
 	}
 }
 
