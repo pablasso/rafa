@@ -1744,7 +1744,7 @@ func TestRunningModel_View_RendersTaskList(t *testing.T) {
 	}
 }
 
-func TestRunningModel_TaskStartedMsg_ClearsActivities(t *testing.T) {
+func TestRunningModel_TaskStartedMsg_ActivitiesPersistAcrossTasks(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
 		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusPending},
@@ -1759,29 +1759,122 @@ func TestRunningModel_TaskStartedMsg_ClearsActivities(t *testing.T) {
 		t.Fatalf("expected 1 activity before TaskStartedMsg, got %d", len(m.activities))
 	}
 	if m.taskTokens != 1500 {
-		t.Errorf("expected taskTokens to be 1500 before clear, got %d", m.taskTokens)
+		t.Errorf("expected taskTokens to be 1500 before task start, got %d", m.taskTokens)
 	}
 	if m.activeToolCount != 1 {
-		t.Errorf("expected activeToolCount to be 1 before clear, got %d", m.activeToolCount)
+		t.Errorf("expected activeToolCount to be 1 before task start, got %d", m.activeToolCount)
 	}
 
 	// Start second task
 	m, _ = m.Update(TaskStartedMsg{TaskNum: 2, Total: 2, TaskID: "t02", Title: "Task Two", Attempt: 1})
 
-	// Activities should be cleared
-	if len(m.activities) != 0 {
-		t.Errorf("expected activities to be cleared, got %d", len(m.activities))
+	// Activities should NOT be cleared — they accumulate across the plan
+	// There should be the original activity + the separator = 2 entries
+	if len(m.activities) != 2 {
+		t.Errorf("expected 2 activities (1 tool use + 1 separator), got %d", len(m.activities))
+	}
+	// First entry should be the original tool use
+	if !strings.Contains(m.activities[0].Text, "Read") {
+		t.Errorf("expected first activity to contain 'Read', got %s", m.activities[0].Text)
+	}
+	// Second entry should be the separator
+	if !m.activities[1].IsSeparator {
+		t.Error("expected second activity to be a separator")
+	}
+	if !strings.Contains(m.activities[1].Text, "Task 2/2") {
+		t.Errorf("expected separator to contain 'Task 2/2', got %s", m.activities[1].Text)
+	}
+	if !strings.Contains(m.activities[1].Text, "Task Two") {
+		t.Errorf("expected separator to contain 'Task Two', got %s", m.activities[1].Text)
+	}
+	if !strings.Contains(m.activities[1].Text, "Attempt 1/") {
+		t.Errorf("expected separator to contain attempt info, got %s", m.activities[1].Text)
 	}
 	// taskTokens should be reset
 	if m.taskTokens != 0 {
-		t.Errorf("expected taskTokens to be 0 after clear, got %d", m.taskTokens)
+		t.Errorf("expected taskTokens to be 0 after task start, got %d", m.taskTokens)
 	}
 	if m.activeToolCount != 0 {
-		t.Errorf("expected activeToolCount to be 0 after clear, got %d", m.activeToolCount)
+		t.Errorf("expected activeToolCount to be 0 after task start, got %d", m.activeToolCount)
 	}
 	// totalTokens should NOT be reset
 	if m.totalTokens != 1500 {
 		t.Errorf("expected totalTokens to remain 1500, got %d", m.totalTokens)
+	}
+}
+
+func TestRunningModel_TaskStartedMsg_SeparatorContainsTaskAndAttemptInfo(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Implement auth", Status: plan.TaskStatusPending},
+		{ID: "t02", Title: "Add tests", Status: plan.TaskStatusPending},
+		{ID: "t03", Title: "Session management", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// Start task 1
+	m, _ = m.Update(TaskStartedMsg{TaskNum: 1, Total: 3, TaskID: "t01", Title: "Implement auth", Attempt: 1})
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/auth.go"})
+	m, _ = m.Update(ToolResultMsg{})
+
+	// Start task 2
+	m, _ = m.Update(TaskStartedMsg{TaskNum: 2, Total: 3, TaskID: "t02", Title: "Add tests", Attempt: 1})
+	m, _ = m.Update(ToolUseMsg{ToolName: "Edit", ToolTarget: "/auth_test.go"})
+
+	// Start task 3, attempt 2
+	m, _ = m.Update(TaskStartedMsg{TaskNum: 3, Total: 3, TaskID: "t03", Title: "Session management", Attempt: 2})
+
+	// Should have: separator1, Read, separator2, Edit, separator3 = 5 entries
+	if len(m.activities) != 5 {
+		t.Fatalf("expected 5 activities, got %d", len(m.activities))
+	}
+
+	// Check separators
+	sep1 := m.activities[0]
+	if !sep1.IsSeparator {
+		t.Error("expected first entry to be a separator")
+	}
+	if !strings.Contains(sep1.Text, "Task 1/3") || !strings.Contains(sep1.Text, "Implement auth") || !strings.Contains(sep1.Text, "Attempt 1/") {
+		t.Errorf("separator 1 content unexpected: %s", sep1.Text)
+	}
+
+	sep2 := m.activities[2]
+	if !sep2.IsSeparator {
+		t.Error("expected third entry to be a separator")
+	}
+	if !strings.Contains(sep2.Text, "Task 2/3") || !strings.Contains(sep2.Text, "Add tests") {
+		t.Errorf("separator 2 content unexpected: %s", sep2.Text)
+	}
+
+	sep3 := m.activities[4]
+	if !sep3.IsSeparator {
+		t.Error("expected fifth entry to be a separator")
+	}
+	if !strings.Contains(sep3.Text, "Task 3/3") || !strings.Contains(sep3.Text, "Session management") || !strings.Contains(sep3.Text, "Attempt 2/") {
+		t.Errorf("separator 3 content unexpected: %s", sep3.Text)
+	}
+
+	// Non-separator entries should not have IsSeparator set
+	if m.activities[1].IsSeparator {
+		t.Error("expected Read activity to not be a separator")
+	}
+	if m.activities[3].IsSeparator {
+		t.Error("expected Edit activity to not be a separator")
+	}
+}
+
+func TestRunningModel_ActivityEntriesCappedAt2000(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// Add more than maxActivityEntries activities
+	for i := 0; i < 2010; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+	}
+
+	if len(m.activities) != 2000 {
+		t.Errorf("expected activities to be capped at 2000, got %d", len(m.activities))
 	}
 }
 

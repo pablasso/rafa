@@ -32,12 +32,16 @@ type TaskDisplay struct {
 	Status string // "pending", "running", "completed", "failed"
 }
 
+// maxActivityEntries caps the in-memory activity entries to prevent unbounded growth.
+const maxActivityEntries = 2000
+
 // RunActivityEntry represents a single item in the activity timeline.
 // Similar to ActivityEntry in conversation.go but specific to plan execution.
 type RunActivityEntry struct {
-	Text      string
-	Timestamp time.Time
-	IsDone    bool // Whether this activity is complete
+	Text        string
+	Timestamp   time.Time
+	IsDone      bool // Whether this activity is complete
+	IsSeparator bool // Whether this is a task/attempt separator line
 }
 
 // RunningModel is the model for the execution monitor view.
@@ -346,9 +350,19 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		if msg.TaskNum > 0 && msg.TaskNum <= len(m.tasks) {
 			m.tasks[msg.TaskNum-1].Status = "running"
 		}
-		// Clear activities and task tokens for new task
-		m.clearActivities()
+		// Reset per-task counters without clearing plan-wide activity history
+		m.resetTaskUsage()
 		m.pendingOutputSeparator = false
+		// Append a separator line for this task/attempt
+		separator := fmt.Sprintf("── Task %d/%d: %s (Attempt %d/%d) ──",
+			msg.TaskNum, msg.Total, msg.Title, msg.Attempt, m.maxAttempts)
+		m.activities = append(m.activities, RunActivityEntry{
+			Text:        separator,
+			Timestamp:   time.Now(),
+			IsDone:      true,
+			IsSeparator: true,
+		})
+		m.trimActivities()
 		return m, nil
 
 	case TaskCompletedMsg:
@@ -843,14 +857,18 @@ func (m RunningModel) renderActivityPane(width, height int) string {
 	if activityMaxLines > 0 {
 		for i := activityStartIdx; i < len(m.activities); i++ {
 			entry := m.activities[i]
-			indicator := "├─"
-			if entry.IsDone {
-				indicator = styles.SuccessStyle.Render("✓")
-			} else if i == len(m.activities)-1 && m.state == stateRunning {
-				indicator = m.spinner.View()
+			var activityLine string
+			if entry.IsSeparator {
+				activityLine = styles.SubtleStyle.Render(entry.Text)
+			} else {
+				indicator := "├─"
+				if entry.IsDone {
+					indicator = styles.SuccessStyle.Render("✓")
+				} else if i == len(m.activities)-1 && m.state == stateRunning {
+					indicator = m.spinner.View()
+				}
+				activityLine = fmt.Sprintf("%s %s", indicator, entry.Text)
 			}
-
-			activityLine := fmt.Sprintf("%s %s", indicator, entry.Text)
 			if len(activityLine) > width {
 				activityLine = activityLine[:width-3] + "..."
 			}
@@ -1094,6 +1112,17 @@ func (m *RunningModel) addActivity(toolName, toolTarget string) {
 		Timestamp: time.Now(),
 		IsDone:    false,
 	})
+	m.trimActivities()
+}
+
+// trimActivities caps the in-memory activity entries to maxActivityEntries,
+// dropping the oldest entries when the cap is exceeded.
+func (m *RunningModel) trimActivities() {
+	if len(m.activities) > maxActivityEntries {
+		trimmed := make([]RunActivityEntry, maxActivityEntries)
+		copy(trimmed, m.activities[len(m.activities)-maxActivityEntries:])
+		m.activities = trimmed
+	}
 }
 
 // markLastActivityDone marks the last activity entry as done.
@@ -1103,9 +1132,8 @@ func (m *RunningModel) markLastActivityDone() {
 	}
 }
 
-// clearActivities clears the activity timeline (e.g., when starting a new task).
-func (m *RunningModel) clearActivities() {
-	m.activities = nil
+// resetTaskUsage resets per-task counters without clearing the plan-wide activity history.
+func (m *RunningModel) resetTaskUsage() {
 	m.activeToolCount = 0
 	m.taskTokens = 0
 }
