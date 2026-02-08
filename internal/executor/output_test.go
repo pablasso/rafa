@@ -843,6 +843,44 @@ func TestStreamingWriter_Hooks_EmitAssistantBoundary(t *testing.T) {
 	}
 }
 
+func TestStreamingWriter_Hooks_AssistantBoundaryAfterFlushedText(t *testing.T) {
+	eventsChan := make(chan string, 10)
+	sawTextBeforeBoundary := false
+
+	sw := &streamingWriter{
+		underlying: io.Discard,
+		eventsChan: eventsChan,
+		hooks: StreamHooks{
+			OnAssistantBoundary: func() {
+				sawTextBeforeBoundary = len(eventsChan) > 0
+			},
+		},
+	}
+
+	delta := `{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"I'll start by understanding"}}}` + "\n"
+	assistant := `{"type":"assistant","message":{"content":[{"type":"text","text":"I'll start by understanding"}]}}` + "\n"
+
+	if _, err := sw.Write([]byte(delta)); err != nil {
+		t.Fatalf("write delta error: %v", err)
+	}
+	if _, err := sw.Write([]byte(assistant)); err != nil {
+		t.Fatalf("write assistant error: %v", err)
+	}
+
+	if !sawTextBeforeBoundary {
+		t.Fatalf("expected buffered text to be flushed before assistant boundary callback")
+	}
+
+	select {
+	case got := <-eventsChan:
+		if got != "I'll start by understanding" {
+			t.Fatalf("expected flushed text chunk, got %q", got)
+		}
+	default:
+		t.Fatalf("expected a flushed text chunk before assistant boundary")
+	}
+}
+
 func TestExtractCommitMessage_JSONFormat(t *testing.T) {
 	tmpDir := t.TempDir()
 

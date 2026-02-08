@@ -169,9 +169,6 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 		if parsed.Usage != nil {
 			s.emitUsage(parsed.Usage.InputTokens, parsed.Usage.OutputTokens, parsed.Usage.CostUSD)
 		}
-		if parsed.AssistantBoundary {
-			s.emitAssistantBoundary()
-		}
 		if parsed.Text != "" {
 			s.outputBuf.WriteString(parsed.Text)
 			if strings.Contains(parsed.Text, "\n") || s.outputBuf.Len() >= streamChunkFlushBytes {
@@ -180,6 +177,11 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 		}
 		if parsed.Flush {
 			s.flushOutput()
+		}
+		// Emit assistant boundary only after pending text is flushed so
+		// run-view separators are never inserted mid-sentence.
+		if parsed.AssistantBoundary {
+			s.emitAssistantBoundary()
 		}
 	}
 
