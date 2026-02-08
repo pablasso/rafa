@@ -253,19 +253,19 @@ func TestRunningModel_Update_OutputLineMsg_ToolMarkerChunkIgnored(t *testing.T) 
 	}
 }
 
-func TestRunningModel_Update_OutputLineMsg_ToolUseSeparatesFollowingOutput(t *testing.T) {
+func TestRunningModel_Update_OutputLineMsg_ToolUseDoesNotSplitContinuation(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.SetSize(200, 40)
 
-	m, _ = m.Update(OutputLineMsg{Line: "All checks pass."})
+	m, _ = m.Update(OutputLineMsg{Line: "I'll start"})
 	m, _ = m.Update(ToolUseMsg{ToolName: "Bash", ToolTarget: "make test"})
-	m, _ = m.Update(OutputLineMsg{Line: "Let me verify the acceptance criteria."})
+	m, _ = m.Update(OutputLineMsg{Line: " by understanding the codebase."})
 
 	view := m.output.View()
-	re := regexp.MustCompile(`All checks pass\.[ \t]*\n[ \t]*\nLet me verify the acceptance criteria\.`)
+	re := regexp.MustCompile(`I'll start by understanding the codebase\.`)
 	if !re.MatchString(view) {
-		t.Fatalf("expected newline separator after tool use, got %q", view)
+		t.Fatalf("expected continuation chunk to remain contiguous, got %q", view)
 	}
 }
 
@@ -282,6 +282,22 @@ func TestRunningModel_Update_OutputLineMsg_MarkerChunkSeparatesFollowingOutput(t
 	re := regexp.MustCompile(`All checks pass\.[ \t]*\n[ \t]*\nNow let me inspect the file\.`)
 	if !re.MatchString(view) {
 		t.Fatalf("expected newline separator after marker chunk, got %q", view)
+	}
+}
+
+func TestRunningModel_Update_OutputLineMsg_AssistantBoundaryChunkSeparatesFollowingOutput(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(200, 40)
+
+	m, _ = m.Update(OutputLineMsg{Line: "First assistant message."})
+	m, _ = m.Update(OutputLineMsg{Line: executor.AssistantBoundaryChunk})
+	m, _ = m.Update(OutputLineMsg{Line: "Second assistant message."})
+
+	view := m.output.View()
+	re := regexp.MustCompile(`First assistant message\.[ \t]*\n[ \t]*\nSecond assistant message\.`)
+	if !re.MatchString(view) {
+		t.Fatalf("expected blank-line separation across assistant boundary chunk, got %q", view)
 	}
 }
 

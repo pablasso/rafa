@@ -15,6 +15,11 @@ const outputLogFileName = "output.log"
 
 const streamChunkFlushBytes = 768
 
+// AssistantBoundaryChunk is an internal stream marker sent over eventsChan to
+// indicate an assistant turn boundary. It is not written to output.log.
+// Keeping this marker on the same channel as text preserves ordering.
+const AssistantBoundaryChunk = "\x00RAFA_ASSISTANT_BOUNDARY\x00"
+
 // OutputWriter provides writers for capturing command output.
 // This interface is used by Runner to allow for different output strategies.
 type OutputWriter interface {
@@ -181,6 +186,7 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 		// Emit assistant boundary only after pending text is flushed so
 		// run-view separators are never inserted mid-sentence.
 		if parsed.AssistantBoundary {
+			s.emit(AssistantBoundaryChunk)
 			s.emitAssistantBoundary()
 		}
 	}

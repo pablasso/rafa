@@ -277,9 +277,6 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 						CostUSD:      costUSD,
 					})
 				},
-				OnAssistantBoundary: func() {
-					program.Send(AssistantBoundaryMsg{})
-				},
 			},
 		)
 		if err != nil {
@@ -380,11 +377,6 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		// Add tool use to activity timeline
 		m.addActivity(msg.ToolName, msg.ToolTarget)
 		m.activeToolCount++
-		// Preserve visual separation between pre/post tool output when markers
-		// are hidden from the output pane.
-		if m.output.LineCount() > 0 {
-			m.pendingOutputSeparator = true
-		}
 		return m, nil
 
 	case ToolResultMsg:
@@ -409,6 +401,12 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		return m, nil
 
 	case OutputLineMsg:
+		if isAssistantBoundaryChunk(msg.Line) {
+			if m.output.LineCount() > 0 {
+				m.pendingOutputSeparator = true
+			}
+			return m, m.listenForOutput()
+		}
 		if isToolMarkerLine(msg.Line) {
 			if m.output.LineCount() > 0 {
 				m.pendingOutputSeparator = true
@@ -1033,6 +1031,10 @@ func isToolMarkerLine(chunk string) bool {
 	}
 	toolName := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "[Tool: "), "]"))
 	return toolName != ""
+}
+
+func isAssistantBoundaryChunk(chunk string) bool {
+	return chunk == executor.AssistantBoundaryChunk
 }
 
 // insertInlineSpinner injects a spinner directly after the last visible text:

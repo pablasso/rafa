@@ -881,6 +881,43 @@ func TestStreamingWriter_Hooks_AssistantBoundaryAfterFlushedText(t *testing.T) {
 	}
 }
 
+func TestStreamingWriter_Events_AssistantBoundaryChunkAfterText(t *testing.T) {
+	eventsChan := make(chan string, 10)
+	called := false
+
+	sw := &streamingWriter{
+		underlying: io.Discard,
+		eventsChan: eventsChan,
+		hooks: StreamHooks{
+			OnAssistantBoundary: func() {
+				called = true
+			},
+		},
+	}
+
+	delta := `{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"I'll start by understanding"}}}` + "\n"
+	assistant := `{"type":"assistant","message":{"content":[{"type":"text","text":"I'll start by understanding"}]}}` + "\n"
+
+	if _, err := sw.Write([]byte(delta)); err != nil {
+		t.Fatalf("write delta error: %v", err)
+	}
+	if _, err := sw.Write([]byte(assistant)); err != nil {
+		t.Fatalf("write assistant error: %v", err)
+	}
+
+	gotText := <-eventsChan
+	if gotText != "I'll start by understanding" {
+		t.Fatalf("expected text chunk first, got %q", gotText)
+	}
+	gotBoundary := <-eventsChan
+	if gotBoundary != AssistantBoundaryChunk {
+		t.Fatalf("expected assistant boundary marker second, got %q", gotBoundary)
+	}
+	if !called {
+		t.Fatalf("expected assistant boundary hook to be called")
+	}
+}
+
 func TestExtractCommitMessage_JSONFormat(t *testing.T) {
 	tmpDir := t.TempDir()
 
