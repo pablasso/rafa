@@ -106,7 +106,7 @@ type TaskFailedMsg struct {
 	Err     error
 }
 
-// OutputLineMsg contains a line of output from the executor.
+// OutputLineMsg contains a chunk of output from the executor stream.
 type OutputLineMsg struct {
 	Line string
 }
@@ -220,6 +220,14 @@ func (m RunningModel) listenForOutput() tea.Cmd {
 		}
 		return OutputLineMsg{Line: line}
 	}
+}
+
+func normalizeOutputChunk(chunk string) string {
+	trimmed := strings.TrimSpace(chunk)
+	if strings.HasPrefix(trimmed, "[Tool: ") && strings.HasSuffix(trimmed, "]") && !strings.Contains(trimmed, "\n") {
+		return "\n" + trimmed + "\n"
+	}
+	return chunk
 }
 
 // OutputChan returns the output channel for executor integration.
@@ -365,7 +373,7 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		return m, nil
 
 	case OutputLineMsg:
-		m.output.AddLine(msg.Line)
+		m.output.AppendChunk(normalizeOutputChunk(msg.Line))
 		return m, m.listenForOutput()
 
 	case PlanDoneMsg:

@@ -47,6 +47,59 @@ func TestOutputViewport_AddLine(t *testing.T) {
 	}
 }
 
+func TestOutputViewport_AppendChunk_JoinsSplitPhrase(t *testing.T) {
+	ov := NewOutputViewport(80, 24, 100)
+
+	ov.AppendChunk("Let me verify")
+	ov.AppendChunk(" everything builds and tests pass.")
+
+	if ov.LineCount() != 1 {
+		t.Fatalf("expected 1 logical line, got %d", ov.LineCount())
+	}
+
+	view := ov.View()
+	if !strings.Contains(view, "Let me verify everything builds and tests pass.") {
+		t.Errorf("expected merged phrase in view, got %q", view)
+	}
+}
+
+func TestOutputViewport_AppendChunk_JoinsNumberedListContinuation(t *testing.T) {
+	ov := NewOutputViewport(80, 24, 100)
+
+	ov.AppendChunk("1. `")
+	ov.AppendChunk("showScrollbar` field")
+
+	if ov.LineCount() != 1 {
+		t.Fatalf("expected 1 logical line, got %d", ov.LineCount())
+	}
+
+	view := ov.View()
+	if !strings.Contains(view, "1. `showScrollbar` field") {
+		t.Errorf("expected merged list item in view, got %q", view)
+	}
+}
+
+func TestOutputViewport_AppendChunk_PreservesBlankLinesAcrossChunks(t *testing.T) {
+	ov := NewOutputViewport(80, 24, 100)
+
+	ov.AppendChunk("First line\n")
+	ov.AppendChunk("\nSecond line")
+
+	if ov.LineCount() != 3 {
+		t.Fatalf("expected 3 lines including blank line, got %d", ov.LineCount())
+	}
+
+	wantRaw := []string{"First line", "", "Second line"}
+	if len(ov.rawLines) != len(wantRaw) {
+		t.Fatalf("expected %d raw lines, got %d", len(wantRaw), len(ov.rawLines))
+	}
+	for i := range wantRaw {
+		if ov.rawLines[i] != wantRaw[i] {
+			t.Fatalf("raw line %d = %q, want %q", i, ov.rawLines[i], wantRaw[i])
+		}
+	}
+}
+
 func TestOutputViewport_AddLine_WrapsLongLines(t *testing.T) {
 	ov := NewOutputViewport(20, 10, 100)
 

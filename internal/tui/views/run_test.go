@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -207,6 +208,49 @@ func TestRunningModel_Update_OutputLineMsg(t *testing.T) {
 	}
 	if newM.output.LineCount() != 1 {
 		t.Errorf("expected 1 line in output, got %d", newM.output.LineCount())
+	}
+}
+
+func TestRunningModel_Update_OutputLineMsg_JoinsChunkBoundaries(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(200, 40)
+
+	var cmd tea.Cmd
+	m, cmd = m.Update(OutputLineMsg{Line: "Let me verify"})
+	if cmd == nil {
+		t.Fatal("expected command from first output chunk")
+	}
+	m, cmd = m.Update(OutputLineMsg{Line: " everything builds and tests pass."})
+	if cmd == nil {
+		t.Fatal("expected command from second output chunk")
+	}
+
+	if m.output.LineCount() != 1 {
+		t.Fatalf("expected 1 logical line after chunk merge, got %d", m.output.LineCount())
+	}
+
+	view := m.output.View()
+	if !strings.Contains(view, "Let me verify everything builds and tests pass.") {
+		t.Fatalf("expected merged phrase in output, got %q", view)
+	}
+}
+
+func TestRunningModel_Update_OutputLineMsg_ToolMarkerChunkStaysStandalone(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(200, 40)
+
+	m, _ = m.Update(OutputLineMsg{Line: "\n[Tool: Bash]"})
+	m, _ = m.Update(OutputLineMsg{Line: "Now let me verify"})
+
+	view := m.output.View()
+	re := regexp.MustCompile(`\[Tool: Bash\][ \t]*\nNow let me verify`)
+	if !re.MatchString(view) {
+		t.Fatalf("expected tool marker to be standalone before prose, got %q", view)
+	}
+	if strings.Contains(view, "[Tool: Bash]Now let me verify") {
+		t.Fatalf("expected newline between tool marker and prose, got %q", view)
 	}
 }
 
@@ -768,6 +812,19 @@ func TestOutputLineMsg_Structure(t *testing.T) {
 
 	if msg.Line != "Test output" {
 		t.Errorf("expected Line to be 'Test output', got %s", msg.Line)
+	}
+}
+
+func TestNormalizeOutputChunk_ToolMarker(t *testing.T) {
+	got := normalizeOutputChunk("\n[Tool: Read]")
+	want := "\n[Tool: Read]\n"
+	if got != want {
+		t.Fatalf("expected normalized tool marker %q, got %q", want, got)
+	}
+
+	plain := "regular chunk"
+	if normalizeOutputChunk(plain) != plain {
+		t.Fatalf("expected non-marker chunk to be unchanged")
 	}
 }
 

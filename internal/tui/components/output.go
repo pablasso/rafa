@@ -24,6 +24,7 @@ type OutputViewport struct {
 	viewport      viewport.Model
 	autoScroll    bool     // true = scroll to bottom on new content
 	rawLines      []string // buffered raw lines (unwrapped)
+	rawLineOpen   bool     // true when the last raw line is an unfinished chunk line
 	rawContent    string   // raw content when using SetContent
 	lines         []string // buffered lines
 	maxLines      int      // ring buffer size
@@ -89,32 +90,45 @@ func (o OutputViewport) contentWidth() int {
 	return o.width
 }
 
-// AddLine appends a line to the buffer, dropping the oldest if buffer is full.
+// AddLine appends a complete line to the buffer.
 func (o *OutputViewport) AddLine(line string) {
 	o.mode = outputModeLines
 	o.rawContent = ""
+	o.rawLineOpen = false
+	o.appendRawLine(line)
+	o.rewrapLines()
 
-	if len(o.rawLines) >= o.maxLines {
-		o.rawLines = o.rawLines[1:]
+	// Auto-scroll to bottom if enabled
+	if o.autoScroll {
+		o.viewport.GotoBottom()
 	}
-	o.rawLines = append(o.rawLines, line)
+}
 
-	cw := o.contentWidth()
-	wrapped := line
-	if cw > 0 {
-		wrapped = ansi.Wrap(line, cw, "/")
+// AppendChunk appends streamed output chunks while preserving exact whitespace
+// and newlines. Chunk boundaries do not create hard line breaks.
+func (o *OutputViewport) AppendChunk(chunk string) {
+	if chunk == "" {
+		return
 	}
-	for _, l := range strings.Split(wrapped, "\n") {
-		// Add line to buffer
-		if len(o.lines) >= o.maxLines {
-			// Drop oldest line (ring buffer behavior)
-			o.lines = o.lines[1:]
+
+	o.mode = outputModeLines
+	o.rawContent = ""
+
+	start := 0
+	for start < len(chunk) {
+		relIdx := strings.IndexByte(chunk[start:], '\n')
+		if relIdx == -1 {
+			o.appendToCurrentRawLine(chunk[start:])
+			break
 		}
-		o.lines = append(o.lines, l)
+
+		segment := chunk[start : start+relIdx]
+		o.appendToCurrentRawLine(segment)
+		o.rawLineOpen = false
+		start += relIdx + 1
 	}
 
-	// Update viewport content
-	o.viewport.SetContent(strings.Join(o.lines, "\n"))
+	o.rewrapLines()
 
 	// Auto-scroll to bottom if enabled
 	if o.autoScroll {
@@ -251,6 +265,7 @@ func (o OutputViewport) LineCount() int {
 func (o *OutputViewport) Clear() {
 	o.lines = o.lines[:0]
 	o.rawLines = o.rawLines[:0]
+	o.rawLineOpen = false
 	o.rawContent = ""
 	o.mode = outputModeLines
 	o.viewport.SetContent("")
@@ -264,6 +279,7 @@ func (o *OutputViewport) SetContent(content string) {
 	o.mode = outputModeContent
 	o.rawContent = content
 	o.rawLines = o.rawLines[:0]
+	o.rawLineOpen = false
 
 	cw := o.contentWidth()
 	wrapped := content
@@ -337,4 +353,21 @@ func (o *OutputViewport) rewrapContent() {
 
 	o.lines = lines
 	o.viewport.SetContent(wrapped)
+}
+
+func (o *OutputViewport) appendRawLine(line string) {
+	if len(o.rawLines) >= o.maxLines {
+		o.rawLines = o.rawLines[1:]
+	}
+	o.rawLines = append(o.rawLines, line)
+}
+
+func (o *OutputViewport) appendToCurrentRawLine(text string) {
+	if o.rawLineOpen && len(o.rawLines) > 0 {
+		o.rawLines[len(o.rawLines)-1] += text
+		return
+	}
+
+	o.appendRawLine(text)
+	o.rawLineOpen = true
 }
