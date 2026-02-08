@@ -31,13 +31,16 @@ func TestParseArgs_DemoDefaults(t *testing.T) {
 	if res.Options.Demo.Preset != demo.PresetMedium {
 		t.Fatalf("expected preset %q, got %q", demo.PresetMedium, res.Options.Demo.Preset)
 	}
+	if res.Options.Demo.Mode != demo.ModeRun {
+		t.Fatalf("expected mode %q, got %q", demo.ModeRun, res.Options.Demo.Mode)
+	}
 	if res.Options.Demo.Scenario != demo.ScenarioSuccess {
 		t.Fatalf("expected scenario %q, got %q", demo.ScenarioSuccess, res.Options.Demo.Scenario)
 	}
 }
 
 func TestParseArgs_DemoWithPresetAndScenario(t *testing.T) {
-	res, err := parseArgs([]string{"--demo", "--demo-preset=quick", "--demo-scenario=flaky"})
+	res, err := parseArgs([]string{"--demo", "--demo-preset=quick", "--demo-scenario=flaky", "--demo-mode=run"})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -50,10 +53,23 @@ func TestParseArgs_DemoWithPresetAndScenario(t *testing.T) {
 	if res.Options.Demo.Scenario != demo.ScenarioFlaky {
 		t.Fatalf("expected scenario %q, got %q", demo.ScenarioFlaky, res.Options.Demo.Scenario)
 	}
+	if res.Options.Demo.Mode != demo.ModeRun {
+		t.Fatalf("expected mode %q, got %q", demo.ModeRun, res.Options.Demo.Mode)
+	}
 }
 
 func TestParseArgs_DemoFlagsWithoutDemoErrors(t *testing.T) {
 	_, err := parseArgs([]string{"--demo-preset=quick"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "require --demo") {
+		t.Fatalf("expected error to mention require --demo, got: %s", err.Error())
+	}
+}
+
+func TestParseArgs_DemoModeWithoutDemoErrors(t *testing.T) {
+	_, err := parseArgs([]string{"--demo-mode=create"})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -69,6 +85,45 @@ func TestParseArgs_InvalidPresetErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid demo preset") {
 		t.Fatalf("expected invalid preset error, got: %s", err.Error())
+	}
+}
+
+func TestParseArgs_DemoCreateMode(t *testing.T) {
+	res, err := parseArgs([]string{"--demo", "--demo-mode=create"})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if res.Options.Demo == nil {
+		t.Fatalf("expected demo enabled")
+	}
+	if res.Options.Demo.Mode != demo.ModeCreate {
+		t.Fatalf("expected mode %q, got %q", demo.ModeCreate, res.Options.Demo.Mode)
+	}
+	if res.Options.Demo.Preset != demo.PresetMedium {
+		t.Fatalf("expected preset %q, got %q", demo.PresetMedium, res.Options.Demo.Preset)
+	}
+	if res.Options.Demo.Scenario != demo.ScenarioSuccess {
+		t.Fatalf("expected scenario %q, got %q", demo.ScenarioSuccess, res.Options.Demo.Scenario)
+	}
+}
+
+func TestParseArgs_InvalidModeErrors(t *testing.T) {
+	_, err := parseArgs([]string{"--demo", "--demo-mode=nope"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "invalid demo mode") {
+		t.Fatalf("expected invalid mode error, got: %s", err.Error())
+	}
+}
+
+func TestParseArgs_DemoScenarioNotAllowedInCreateMode(t *testing.T) {
+	_, err := parseArgs([]string{"--demo", "--demo-mode=create", "--demo-scenario=flaky"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "--demo-scenario is only valid with --demo-mode=run") {
+		t.Fatalf("expected mode/scenario error, got: %s", err.Error())
 	}
 }
 

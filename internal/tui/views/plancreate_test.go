@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pablasso/rafa/internal/ai"
+	"github.com/pablasso/rafa/internal/plan"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
@@ -27,7 +28,7 @@ func (m *mockPlanCreateConversationStarter) Start(ctx context.Context, config ai
 
 	events := make(chan ai.StreamEvent)
 	close(events)
-	return &ai.Conversation{}, events, nil
+	return nil, events, nil
 }
 
 func collectCmdMessages(cmd tea.Cmd) []tea.Msg {
@@ -182,5 +183,101 @@ func TestPlanCreateModel_HandleKeyPress_RetryRestartsExtraction(t *testing.T) {
 	}
 	if starter.calls != 1 {
 		t.Fatalf("expected one extraction start on retry, got %d", starter.calls)
+	}
+}
+
+func TestPlanCreateModel_DemoUnsavedApprovedJSON_DoesNotAutoRun(t *testing.T) {
+	m := NewPlanCreateModelForDemoUnsaved("docs/designs/plan-create-command.md", nil, "")
+	m.state = PlanCreateStateExtracting
+	m.isThinking = true
+
+	text := "PLAN_APPROVED_JSON:\n{\n  \"name\": \"demo-plan\",\n  \"description\": \"demo\",\n  \"tasks\": [\n    {\n      \"title\": \"Task one\",\n      \"description\": \"desc\",\n      \"acceptanceCriteria\": [\"criterion\"]\n    }\n  ]\n}\n"
+	cmd := m.handleStreamEvent(ai.StreamEvent{Type: "text", Text: text})
+	if cmd != nil {
+		t.Fatal("expected no command for demo-unsaved completion")
+	}
+	if m.State() != PlanCreateStateCompleted {
+		t.Fatalf("expected completed state, got %d", m.State())
+	}
+	if m.SavedPlanID() != "" {
+		t.Fatalf("expected empty saved plan ID in demo-unsaved mode, got %q", m.SavedPlanID())
+	}
+	if m.extractedPlan == nil {
+		t.Fatal("expected extracted plan to be set")
+	}
+
+	m.SetSize(120, 30)
+	view := m.View()
+	if !strings.Contains(view, "Demo extraction complete") {
+		t.Fatalf("expected demo completion message, got: %s", view)
+	}
+	if !strings.Contains(view, "[DEMO]") {
+		t.Fatalf("expected demo status indicator in action bar, got: %s", view)
+	}
+	if strings.Contains(view, "Starting execution...") {
+		t.Fatalf("did not expect auto-run text in demo-unsaved completion view")
+	}
+}
+
+func TestPlanCreateModel_DemoUnsavedCompleted_RKeyReplays(t *testing.T) {
+	m := NewPlanCreateModelForDemoUnsaved("missing-design.md", nil, "")
+	starter := &mockPlanCreateConversationStarter{}
+	m.SetConversationStarter(starter)
+	m.state = PlanCreateStateCompleted
+	result := demoExtractionResult()
+	m.extractedPlan = &result
+
+	retryKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
+	updated, cmd, handled := m.handleKeyPress(retryKey)
+	if !handled {
+		t.Fatal("expected replay key to be handled in demo completed state")
+	}
+	if updated.State() != PlanCreateStateExtracting {
+		t.Fatalf("expected extracting state after replay, got %d", updated.State())
+	}
+	if cmd == nil {
+		t.Fatal("expected replay command")
+	}
+	msg := cmd()
+	if _, ok := msg.(PlanCreateConversationStartedMsg); !ok {
+		t.Fatalf("expected PlanCreateConversationStartedMsg, got %T", msg)
+	}
+	if starter.calls != 1 {
+		t.Fatalf("expected one starter call, got %d", starter.calls)
+	}
+}
+
+func TestPlanCreateModel_DemoInitDoesNotRequireSourceFile(t *testing.T) {
+	m := NewPlanCreateModelForDemoUnsaved("does/not/exist.md", nil, "")
+	starter := &mockPlanCreateConversationStarter{}
+	m.SetConversationStarter(starter)
+
+	msgs := collectCmdMessages(m.Init())
+	if starter.calls != 1 {
+		t.Fatalf("expected extraction starter to run, got %d", starter.calls)
+	}
+	foundConversationStarted := false
+	for _, msg := range msgs {
+		if _, ok := msg.(PlanCreateConversationStartedMsg); ok {
+			foundConversationStarted = true
+			break
+		}
+	}
+	if !foundConversationStarted {
+		t.Fatal("expected PlanCreateConversationStartedMsg from demo init")
+	}
+}
+
+func demoExtractionResult() plan.TaskExtractionResult {
+	return plan.TaskExtractionResult{
+		Name:        "demo-plan",
+		Description: "demo",
+		Tasks: []plan.ExtractedTask{
+			{
+				Title:              "Task one",
+				Description:        "desc",
+				AcceptanceCriteria: []string{"criterion"},
+			},
+		},
 	}
 }

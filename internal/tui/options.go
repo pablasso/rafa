@@ -9,6 +9,7 @@ type Options struct {
 
 // DemoOptions configure demo mode when starting the TUI.
 type DemoOptions struct {
+	Mode     demo.Mode
 	Preset   demo.Preset
 	Scenario demo.Scenario
 }

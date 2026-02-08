@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/pablasso/rafa/internal/demo"
 	"github.com/pablasso/rafa/internal/tui/msgs"
 )
 
@@ -266,5 +267,21 @@ func TestHasMarkdownFiles(t *testing.T) {
 				t.Errorf("hasMarkdownFiles() = %v, want %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestInitialModelWithOptions_DemoCreateStartsOnPlanCreate(t *testing.T) {
+	m := initialModelWithOptions(Options{
+		Demo: &DemoOptions{
+			Mode:   demo.ModeCreate,
+			Preset: demo.PresetQuick,
+		},
+	})
+
+	if m.currentView != ViewPlanCreate {
+		t.Fatalf("expected ViewPlanCreate, got %v", m.currentView)
+	}
+	if m.planCreate.SourceFile() == "" {
+		t.Fatalf("expected demo create source file to be set")
 	}
 }

@@ -10,7 +10,7 @@ import (
 
 const fixtureVersionV1 = 1
 
-//go:embed fixtures/default.v1.json
+//go:embed fixtures/default.v1.json fixtures/create.default.v1.json
 var embeddedFixtures embed.FS
 
 type fixtureV1 struct {

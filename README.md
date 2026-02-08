@@ -75,6 +75,34 @@ The TUI allows you to:
 - `Esc` to go back
 - `Ctrl+C` to cancel or quit
 
+### Demo Mode
+
+Demo mode is opt-in and launched with `--demo`.
+
+Run demo (default demo mode):
+
+```bash
+rafa --demo
+# equivalent to:
+rafa --demo --demo-mode=run
+```
+
+Create-plan demo (unsaved, create view only):
+
+```bash
+rafa --demo --demo-mode=create
+```
+
+Create-plan demo behavior:
+- Replays realistic create-plan activity in the Create Plan view
+- Extracts and validates `PLAN_APPROVED_JSON` from replayed output
+- Does **not** write `.rafa/plans/.../plan.json`
+- Does **not** auto-transition to running view
+
+Optional flags:
+- `--demo-preset=quick|medium|slow` (run and create demo pacing)
+- `--demo-scenario=success|flaky|fail` (run demo only; not valid with `--demo-mode=create`)
+
 ### Creating a Plan
 
 Select **Create Plan** in the TUI, pick a design document, and follow the prompts.

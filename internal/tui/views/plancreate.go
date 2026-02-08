@@ -26,9 +26,17 @@ type PlanCreateState int
 
 const (
 	PlanCreateStateExtracting PlanCreateState = iota // Claude is extracting tasks
-	PlanCreateStateCompleted                         // Plan saved successfully
+	PlanCreateStateCompleted                         // Extraction completed (saved or demo-only)
 	PlanCreateStateCancelled                         // User cancelled
 	PlanCreateStateError                             // Error occurred
+)
+
+// PlanCreateMode controls whether plan creation is real or demo-unsaved.
+type PlanCreateMode int
+
+const (
+	PlanCreateModeReal PlanCreateMode = iota
+	PlanCreateModeDemoUnsaved
 )
 
 // ActivityEntry represents a single item in the activity timeline.
@@ -90,10 +98,26 @@ type PlanCreateModel struct {
 
 	// Conversation starter (injected for testing)
 	conversationStarter ConversationStarter
+
+	// Mode and demo metadata
+	mode    PlanCreateMode
+	warning string
 }
 
 // NewPlanCreateModel creates a new plan creation model.
 func NewPlanCreateModel(sourceFile string) PlanCreateModel {
+	return newPlanCreateModel(sourceFile, PlanCreateModeReal, DefaultConversationStarter{}, "")
+}
+
+// NewPlanCreateModelForDemoUnsaved creates a plan-create model backed by replayed events.
+func NewPlanCreateModelForDemoUnsaved(sourceFile string, starter ConversationStarter, warning string) PlanCreateModel {
+	if starter == nil {
+		starter = DefaultConversationStarter{}
+	}
+	return newPlanCreateModel(sourceFile, PlanCreateModeDemoUnsaved, starter, warning)
+}
+
+func newPlanCreateModel(sourceFile string, mode PlanCreateMode, starter ConversationStarter, warning string) PlanCreateModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = styles.SelectedStyle
@@ -111,7 +135,9 @@ func NewPlanCreateModel(sourceFile string) PlanCreateModel {
 		responseText:        &strings.Builder{},
 		responseView:        components.NewOutputViewport(80, 20, 0),
 		activities:          []ActivityEntry{{Text: "Starting task extraction...", Timestamp: time.Now(), Indent: 0, IsDone: false}},
-		conversationStarter: DefaultConversationStarter{},
+		conversationStarter: starter,
+		mode:                mode,
+		warning:             warning,
 	}
 }
 
@@ -154,11 +180,16 @@ func (m *PlanCreateModel) startExtraction() tea.Cmd {
 	return func() tea.Msg {
 		// Read the design document
 		content, err := os.ReadFile(m.sourceFile)
-		if err != nil {
+		if err != nil && m.mode == PlanCreateModeReal {
 			return PlanCreateErrorMsg{Err: fmt.Errorf("failed to read design file: %w", err)}
 		}
 
-		prompt := m.buildExtractionPrompt(string(content))
+		designContent := string(content)
+		if err != nil && m.mode == PlanCreateModeDemoUnsaved {
+			designContent = fmt.Sprintf("# Demo source context\n\nSource file: %s", m.sourceFile)
+		}
+
+		prompt := m.buildExtractionPrompt(designContent)
 
 		config := ai.ConversationConfig{
 			InitialPrompt: prompt,
@@ -331,10 +362,19 @@ func (m *PlanCreateModel) handleStreamEvent(event ai.StreamEvent) tea.Cmd {
 		m.responseView.SetContent(m.responseText.String())
 
 		// Check if Claude has sent the approved plan JSON
-		if strings.Contains(m.responseText.String(), "PLAN_APPROVED_JSON:") {
+		if m.state == PlanCreateStateExtracting && strings.Contains(m.responseText.String(), "PLAN_APPROVED_JSON:") {
 			if result := m.tryParseApprovedPlan(); result != nil {
 				m.extractedPlan = result
-				// Auto-save the plan
+
+				if m.mode == PlanCreateModeDemoUnsaved {
+					m.state = PlanCreateStateCompleted
+					m.savedPlanID = ""
+					m.addActivity("✓ Demo extraction complete (plan not saved)", 0)
+					m.stopExtractionSession()
+					return nil
+				}
+
+				// Auto-save the plan in real mode.
 				return m.savePlan()
 			}
 		}
@@ -500,6 +540,10 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 
 	case "r":
 		if m.state == PlanCreateStateError {
+			m.resetForRetry()
+			return m, m.startExtraction(), true
+		}
+		if m.state == PlanCreateStateCompleted && m.mode == PlanCreateModeDemoUnsaved {
 			m.resetForRetry()
 			return m, m.startExtraction(), true
 		}
@@ -711,10 +755,22 @@ func (m PlanCreateModel) renderResponsePanel(width, height int) string {
 func (m PlanCreateModel) renderStatusLine() string {
 	switch m.state {
 	case PlanCreateStateExtracting:
+		if m.mode == PlanCreateModeDemoUnsaved {
+			lines := []string{
+				styles.SubtleStyle.Render("Replaying create-plan demo (plan will not be saved)."),
+			}
+			if m.warning != "" {
+				lines = append(lines, styles.SubtleStyle.Render(m.warning))
+			}
+			return strings.Join(lines, "\n")
+		}
 		return styles.SubtleStyle.Render("Extracting tasks from design document...")
 
 	case PlanCreateStateCompleted:
-		return m.renderCompletionMessage()
+		if m.mode == PlanCreateModeDemoUnsaved {
+			return m.renderDemoCompletionMessage()
+		}
+		return m.renderRealCompletionMessage()
 
 	case PlanCreateStateCancelled:
 		return styles.SubtleStyle.Render("Plan creation cancelled.")
@@ -727,10 +783,24 @@ func (m PlanCreateModel) renderStatusLine() string {
 }
 
 // renderCompletionMessage shows success and next steps.
-func (m PlanCreateModel) renderCompletionMessage() string {
+func (m PlanCreateModel) renderRealCompletionMessage() string {
 	var lines []string
 	lines = append(lines, styles.SuccessStyle.Render(fmt.Sprintf("✓ Plan saved: %s", m.savedPlanID)))
 	lines = append(lines, styles.SubtleStyle.Render("Starting execution..."))
+	return strings.Join(lines, "\n")
+}
+
+func (m PlanCreateModel) renderDemoCompletionMessage() string {
+	var lines []string
+	lines = append(lines, styles.SuccessStyle.Render("✓ Demo extraction complete"))
+	if m.extractedPlan != nil {
+		lines = append(lines, styles.SubtleStyle.Render(fmt.Sprintf("%d tasks extracted (demo only, not saved).", len(m.extractedPlan.Tasks))))
+	} else {
+		lines = append(lines, styles.SubtleStyle.Render("Demo complete (no files written)."))
+	}
+	if m.warning != "" {
+		lines = append(lines, styles.SubtleStyle.Render(m.warning))
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -740,13 +810,25 @@ func (m PlanCreateModel) renderActionBar() string {
 
 	switch m.state {
 	case PlanCreateStateExtracting:
-		items = []string{"Extracting...", "Ctrl+C Cancel"}
+		if m.mode == PlanCreateModeDemoUnsaved {
+			items = []string{"Replaying demo...", "Ctrl+C Cancel"}
+		} else {
+			items = []string{"Extracting...", "Ctrl+C Cancel"}
+		}
 	case PlanCreateStateCompleted:
-		items = []string{"✓ Complete", "Starting execution...", "[h] Home", "[q] Quit"}
+		if m.mode == PlanCreateModeDemoUnsaved {
+			items = []string{"✓ Demo Complete", "Not saved", "[r] Replay", "[h] Home", "[q] Quit"}
+		} else {
+			items = []string{"✓ Complete", "Starting execution...", "[h] Home", "[q] Quit"}
+		}
 	case PlanCreateStateCancelled:
 		items = []string{"[h] Home", "[q] Quit"}
 	case PlanCreateStateError:
 		items = []string{"[r] Retry", "[h] Home", "[q] Quit"}
+	}
+
+	if m.mode == PlanCreateModeDemoUnsaved {
+		items = append([]string{"[DEMO]"}, items...)
 	}
 
 	return components.NewStatusBar().Render(m.width, items)

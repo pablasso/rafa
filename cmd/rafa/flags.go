@@ -21,6 +21,7 @@ func parseArgs(args []string) (parseResult, error) {
 	fs.SetOutput(io.Discard)
 
 	demoEnabled := fs.Bool("demo", false, "Start demo playback (auto-start)")
+	demoMode := fs.String("demo-mode", string(demo.ModeRun), "Demo mode: run|create")
 	demoPreset := fs.String("demo-preset", string(demo.PresetMedium), "Demo preset: quick|medium|slow")
 	demoScenario := fs.String("demo-scenario", string(demo.ScenarioSuccess), "Demo scenario: success|flaky|fail")
 
@@ -50,8 +51,11 @@ func parseArgs(args []string) (parseResult, error) {
 
 	var presetProvided bool
 	var scenarioProvided bool
+	var modeProvided bool
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
+		case "demo-mode":
+			modeProvided = true
 		case "demo-preset":
 			presetProvided = true
 		case "demo-scenario":
@@ -59,18 +63,28 @@ func parseArgs(args []string) (parseResult, error) {
 		}
 	})
 
-	if !*demoEnabled && (presetProvided || scenarioProvided) {
-		return parseResult{}, fmt.Errorf("--demo-preset/--demo-scenario require --demo\n\n%s", usage())
+	if !*demoEnabled && (modeProvided || presetProvided || scenarioProvided) {
+		return parseResult{}, fmt.Errorf("--demo-mode/--demo-preset/--demo-scenario require --demo\n\n%s", usage())
 	}
 
 	if !*demoEnabled {
 		return parseResult{Options: tui.Options{}}, nil
 	}
 
+	mode, err := demo.ParseMode(*demoMode)
+	if err != nil {
+		return parseResult{}, fmt.Errorf("%v\n\n%s", err, usage())
+	}
+
 	preset, err := demo.ParsePreset(*demoPreset)
 	if err != nil {
 		return parseResult{}, fmt.Errorf("%v\n\n%s", err, usage())
 	}
+
+	if mode == demo.ModeCreate && scenarioProvided {
+		return parseResult{}, fmt.Errorf("--demo-scenario is only valid with --demo-mode=run\n\n%s", usage())
+	}
+
 	scenario, err := demo.ParseScenario(*demoScenario)
 	if err != nil {
 		return parseResult{}, fmt.Errorf("%v\n\n%s", err, usage())
@@ -79,6 +93,7 @@ func parseArgs(args []string) (parseResult, error) {
 	return parseResult{
 		Options: tui.Options{
 			Demo: &tui.DemoOptions{
+				Mode:     mode,
 				Preset:   preset,
 				Scenario: scenario,
 			},

@@ -49,7 +49,7 @@ To exit, close the terminal tab/pane.
 
 ### Demo Mode (TUI)
 
-Demo mode replays a recorded plan execution inside the TUI. It is opt-in via flags on the TUI entrypoint.
+Demo mode is opt-in via `--demo`.
 
 1. Build or run the dev loop:
    ```bash
@@ -57,20 +57,40 @@ Demo mode replays a recorded plan execution inside the TUI. It is opt-in via fla
    ./bin/rafa --demo
    ```
    You can also use `make dev` for hot reload.
-2. Playback auto-starts immediately in the running view and the status bar shows `[DEMO]`.
+2. Demo starts automatically and shows `[DEMO]` in the status bar.
+
+Modes:
+
+- `--demo-mode=run` (default): replay running view execution
+- `--demo-mode=create`: replay create-plan view extraction (demo-only, unsaved)
 
 Optional flags:
 
 - `--demo-preset=quick|medium|slow` (default: `medium`)
-- `--demo-scenario=success|flaky|fail` (default: `success`)
+- `--demo-scenario=success|flaky|fail` (run mode only)
 
-Demo data is loaded from an embedded fixture (`internal/demo/fixtures/default.v1.json`). If the fixture is missing or invalid, the TUI falls back to a small in-memory dataset and shows a warning in the status bar.
+Fixtures:
 
-To refresh the fixture from a real run (developer-only):
+- Run demo fixture: `internal/demo/fixtures/default.v1.json`
+- Create demo fixture: `internal/demo/fixtures/create.default.v1.json`
+
+If fixture loading fails, Rafa falls back to in-memory demo data and shows a warning in the UI.
+
+Refresh run fixture from a real run (developer-only):
 
 ```bash
 go run ./scripts/gen_demo_fixture.go
 ```
+
+Refresh create fixture from a captured create-plan stream (developer-only):
+
+```bash
+go run ./scripts/gen_demo_create_fixture.go \
+  --source-doc docs/designs/plan-create-command.md \
+  --stream-log /path/to/create-stream.jsonl
+```
+
+The create fixture generator enforces a realism rule: `--source-doc` must not already be referenced as `sourceFile` in any `.rafa/plans/*/plan.json`.
 
 ### Code Formatting
 

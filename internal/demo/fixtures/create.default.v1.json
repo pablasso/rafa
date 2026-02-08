@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "sourceFile": "docs/designs/plan-create-command.md",
+  "events": [
+    {
+      "type": "init",
+      "sessionID": "demo-create-session-001"
+    },
+    {
+      "type": "tool_use",
+      "toolName": "Read",
+      "toolTarget": "docs/designs/plan-create-command.md"
+    },
+    {
+      "type": "tool_result"
+    },
+    {
+      "type": "tool_use",
+      "toolName": "Grep",
+      "toolTarget": "acceptance criteria"
+    },
+    {
+      "type": "tool_result"
+    },
+    {
+      "type": "text",
+      "text": "I reviewed the design and extracted a sequenced task list sized for single-session execution.\n\nPLAN_APPROVED_JSON:\n"
+    },
+    {
+      "type": "text",
+      "text": "{\n  \"name\": \"plan-create-command\",\n  \"description\": \"Create a plan command that transforms design docs into executable tasks.\",\n  \"tasks\": [\n    {\n      \"title\": \"Validate input and source document\",\n      \"description\": \"Verify markdown input exists, is readable, and is suitable for extraction.\",\n      \"acceptanceCriteria\": [\n        \"Invalid or missing input returns clear errors\",\n        \"Valid markdown input reaches extraction stage\"\n      ]\n    },\n"
+    },
+    {
+      "type": "text",
+      "text": "    {\n      \"title\": \"Extract tasks with Claude and parse approved JSON\",\n      \"description\": \"Invoke Claude with structured prompt and parse only approved payload.\",\n      \"acceptanceCriteria\": [\n        \"Response parsing requires PLAN_APPROVED_JSON marker\",\n        \"Extraction validation rejects empty tasks\"\n      ]\n    },\n    {\n      \"title\": \"Persist plan folder and logs\",\n      \"description\": \"Create plan directory with plan.json, progress.log, and output.log.\",\n      \"acceptanceCriteria\": [\n        \"Plan folder is created at .rafa/plans/<id>-<name>\",\n        \"plan.json contains tasks with acceptance criteria\",\n        \"Log files are initialized\"\n      ]\n    }\n  ]\n}\n"
+    },
+    {
+      "type": "usage",
+      "inputTokens": 2758,
+      "outputTokens": 844,
+      "costUSD": 0.0412
+    },
+    {
+      "type": "done",
+      "sessionID": "demo-create-session-001"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -223,6 +224,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) withDemoStartup(opts DemoOptions) Model {
+	mode := opts.Mode
+	if mode == "" {
+		mode = demo.ModeRun
+	}
+
+	switch mode {
+	case demo.ModeCreate:
+		return m.withDemoCreateStartup(opts)
+	case demo.ModeRun:
+		return m.withDemoRunStartup(opts)
+	default:
+		// Unknown mode should never happen (validated by CLI), but keep a safe fallback.
+		return m.withDemoRunStartup(opts)
+	}
+}
+
+func (m Model) withDemoRunStartup(opts DemoOptions) Model {
 	warning := ""
 
 	baseDataset, err := demo.LoadDefaultDataset()
@@ -265,6 +283,40 @@ func (m Model) withDemoStartup(opts DemoOptions) Model {
 		playback.Run(ctx, Program, runner.OutputChan())
 		return nil
 	}
+
+	return m
+}
+
+func (m Model) withDemoCreateStartup(opts DemoOptions) Model {
+	warning := ""
+
+	dataset, err := demo.LoadDefaultCreateDataset()
+	if err != nil {
+		warning = fmt.Sprintf("Warning: using fallback create demo data (%v)", err)
+		dataset = demo.FallbackCreateDataset()
+	}
+
+	config, err := demo.NewCreateReplayConfig(opts.Preset, dataset)
+	if err != nil {
+		warning = fmt.Sprintf("Warning: %v", err)
+		config = demo.CreateReplayConfig{
+			Preset:     opts.Preset,
+			EventDelay: 50 * time.Millisecond,
+		}
+	}
+
+	sourceFile := dataset.SourceFile
+	if sourceFile == "" {
+		sourceFile = "docs/designs/demo-mode-reborn.md"
+	}
+
+	m.currentView = ViewPlanCreate
+	m.planCreate = views.NewPlanCreateModelForDemoUnsaved(
+		sourceFile,
+		demo.NewCreateReplayStarter(dataset, config),
+		warning,
+	)
+	m.planCreate.SetSize(m.width, m.height)
 
 	return m
 }
