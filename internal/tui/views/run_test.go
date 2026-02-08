@@ -961,6 +961,75 @@ func TestRunningModel_View_SplitLayout(t *testing.T) {
 	}
 }
 
+func TestRunningModel_View_TwoPaneLeftColumn(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
+		{ID: "t02", Title: "Task Two", Status: plan.TaskStatusInProgress},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+	m.currentTask = 2
+	m.attempt = 1
+
+	// Add an activity so it shows up in the Activity pane
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+
+	view := m.View()
+
+	// The view should contain separate Progress and Activity sections
+	if !strings.Contains(view, "Usage") {
+		t.Error("expected Progress pane to contain 'Usage' section")
+	}
+	if !strings.Contains(view, "Tasks") {
+		t.Error("expected Progress pane to contain 'Tasks' section")
+	}
+	if !strings.Contains(view, "Activity") {
+		t.Error("expected Activity pane with 'Activity' header")
+	}
+	if !strings.Contains(view, "Output") {
+		t.Error("expected Output pane with 'Output' header")
+	}
+	// Activity pane should contain tool activity
+	if !strings.Contains(view, "Read") {
+		t.Error("expected Activity pane to contain 'Read' activity")
+	}
+
+	// Should have multiple bordered panes (at least 2 top-left corners for left column)
+	cornerCount := strings.Count(view, "┌")
+	if cornerCount < 3 {
+		t.Errorf("expected at least 3 bordered panes (Progress, Activity, Output), got %d corners", cornerCount)
+	}
+}
+
+func TestRunningModel_View_NarrowLayoutFallback(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	// Use a narrow width that triggers single-column fallback
+	// minTwoColWidth = (24+4) + (36+4) = 68, so 50 should trigger narrow
+	m.SetSize(50, 30)
+	m.currentTask = 1
+	m.attempt = 1
+
+	view := m.View()
+
+	// Should still contain all three sections
+	if !strings.Contains(view, "Output") {
+		t.Error("expected narrow layout to contain 'Output'")
+	}
+	if !strings.Contains(view, "Usage") {
+		t.Error("expected narrow layout to contain 'Usage'")
+	}
+	if !strings.Contains(view, "Activity") {
+		t.Error("expected narrow layout to contain 'Activity'")
+	}
+	// Should have bordered panes
+	if !strings.Contains(view, "┌") {
+		t.Error("expected narrow layout to contain bordered panes")
+	}
+}
+
 func TestRunningModel_SpinnerStopsAfterDone(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)

@@ -520,12 +520,32 @@ func (m *RunningModel) updateOutputSize() {
 		return
 	}
 
-	// Right panel is 60% of width minus borders
-	rightWidth := (m.width * 60 / 100) - 4
+	panelChrome := 4 // 2 border chars + 2*1 padding
+	minTwoColWidth := (leftMinWidth + panelChrome) + (outputMinWidth + panelChrome)
 
-	// Height: total - title(2) - bottom border(1) - status bar(1) - borders(2)
-	// Then reserve 2 lines in output panel: header + blank spacer.
-	outputHeight := m.height - 8
+	var rightWidth, outputHeight int
+
+	if m.width < minTwoColWidth {
+		// Narrow/single-column fallback
+		rightWidth = m.width - panelChrome
+		// Approximate: output gets ~50% of available height minus borders
+		availableHeight := m.height - 2      // title + status bar
+		contentBudget := availableHeight - 6 // 3 panes * 2 border lines
+		outputHeight = contentBudget * narrowFallbackOutputPct / 100
+	} else {
+		// Two-column layout
+		leftWidth := (m.width * leftWidthPercent / 100) - panelChrome
+		if leftWidth < leftMinWidth {
+			leftWidth = leftMinWidth
+		}
+		rightWidth = m.width - leftWidth - 2*panelChrome
+		if rightWidth < outputMinWidth {
+			rightWidth = outputMinWidth
+		}
+		// Output pane height = total available - 2 border lines, minus 2 for header+spacer in renderRightPanel
+		availableHeight := m.height - 2
+		outputHeight = availableHeight - 2 - 2 // borders + header lines
+	}
 
 	if outputHeight < 1 {
 		outputHeight = 1
@@ -557,6 +577,18 @@ func (m RunningModel) View() string {
 	return ""
 }
 
+// Layout constants for panel sizing.
+const (
+	leftWidthPercent          = 30 // Left column gets ~30% of total width
+	leftMinWidth              = 24 // Minimum width for left column content
+	outputMinWidth            = 36 // Minimum width for output column content
+	progressHeightPct         = 45 // Progress pane gets ~45% of left column height
+	progressMinHeight         = 16 // Minimum height for Progress pane content (header+usage+tasks)
+	activityMinHeight         = 6  // Minimum height for Activity pane content
+	narrowFallbackOutputPct   = 50 // Output pane height % in single-column fallback
+	narrowFallbackProgressPct = 60 // Progress pane height % of remaining in narrow fallback
+)
+
 // renderRunning renders the split-panel execution view.
 func (m RunningModel) renderRunning() string {
 	var b strings.Builder
@@ -567,38 +599,23 @@ func (m RunningModel) renderRunning() string {
 	b.WriteString(titleLine)
 	b.WriteString("\n")
 
-	// Calculate panel dimensions
-	leftWidth := (m.width * 40 / 100) - 2
-	rightWidth := (m.width * 60 / 100) - 2
-	panelHeight := m.height - 4 // title + status bar + borders
-
-	if panelHeight < 5 {
-		panelHeight = 5
+	// Reserve space for title line (1) + status bar (1)
+	availableHeight := m.height - 2
+	if availableHeight < 5 {
+		availableHeight = 5
 	}
 
-	// Build left panel content
-	leftContent := m.renderLeftPanel(leftWidth, panelHeight-2)
+	// Calculate minimum total width needed for two-column layout.
+	// Each bordered pane has 2 border chars + 2*1 padding = 4 extra width.
+	panelChrome := 4
+	minTwoColWidth := (leftMinWidth + panelChrome) + (outputMinWidth + panelChrome)
 
-	// Build right panel content
-	rightContent := m.renderRightPanel(rightWidth, panelHeight-2)
+	if m.width < minTwoColWidth {
+		b.WriteString(m.renderNarrowLayout(availableHeight))
+	} else {
+		b.WriteString(m.renderWideLayout(availableHeight))
+	}
 
-	// Style panels with borders - inherit border color from BoxStyle
-	leftPanelStyle := styles.BoxStyle.Copy().
-		Width(leftWidth).
-		Height(panelHeight-2).
-		Padding(0, 1) // Override padding for tighter layout
-
-	rightPanelStyle := styles.BoxStyle.Copy().
-		Width(rightWidth).
-		Height(panelHeight-2).
-		Padding(0, 1)
-
-	leftPanel := leftPanelStyle.Render(leftContent)
-	rightPanel := rightPanelStyle.Render(rightContent)
-
-	// Join panels horizontally
-	panels := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
-	b.WriteString(panels)
 	b.WriteString("\n")
 
 	// Status bar
@@ -617,8 +634,134 @@ func (m RunningModel) renderRunning() string {
 	return b.String()
 }
 
-// renderLeftPanel renders the progress panel with activity timeline and usage tracking.
-func (m RunningModel) renderLeftPanel(width, height int) string {
+// renderWideLayout renders the two-column layout: left (Progress + Activity) | right (Output).
+func (m RunningModel) renderWideLayout(availableHeight int) string {
+	panelChrome := 4 // 2 border chars + 2*1 padding per pane
+
+	// Calculate column widths (content area, excluding borders/padding)
+	leftWidth := (m.width * leftWidthPercent / 100) - panelChrome
+	if leftWidth < leftMinWidth {
+		leftWidth = leftMinWidth
+	}
+
+	rightWidth := m.width - leftWidth - 2*panelChrome
+	if rightWidth < outputMinWidth {
+		rightWidth = outputMinWidth
+	}
+
+	// Split left column vertically into Progress (top) and Activity (bottom).
+	// Each bordered pane has 2 vertical border lines, so total height for
+	// two stacked panes = progressContentH + activityContentH + 4 (2 borders each).
+	leftTotalHeight := availableHeight
+	// We have two panes stacked, each with 2 lines of vertical border.
+	contentBudget := leftTotalHeight - 4 // 2 top/bottom borders per pane = 4 total
+	if contentBudget < 2 {
+		contentBudget = 2
+	}
+
+	progressContentH := contentBudget * progressHeightPct / 100
+	if progressContentH < progressMinHeight {
+		progressContentH = progressMinHeight
+	}
+	activityContentH := contentBudget - progressContentH
+	if activityContentH < activityMinHeight {
+		activityContentH = activityMinHeight
+		progressContentH = contentBudget - activityContentH
+		if progressContentH < 1 {
+			progressContentH = 1
+		}
+	}
+	// Guard against total exceeding budget (when both minimums exceed budget).
+	if progressContentH+activityContentH > contentBudget {
+		progressContentH = contentBudget - activityContentH
+		if progressContentH < 1 {
+			progressContentH = 1
+		}
+	}
+
+	// Build Progress pane (top-left)
+	progressContent := m.renderProgressPane(leftWidth, progressContentH)
+	progressStyle := styles.BoxStyle.Copy().
+		Width(leftWidth).
+		Height(progressContentH).
+		Padding(0, 1)
+	progressPanel := progressStyle.Render(progressContent)
+
+	// Build Activity pane (bottom-left)
+	activityContent := m.renderActivityPane(leftWidth, activityContentH)
+	activityStyle := styles.BoxStyle.Copy().
+		Width(leftWidth).
+		Height(activityContentH).
+		Padding(0, 1)
+	activityPanel := activityStyle.Render(activityContent)
+
+	// Stack Progress and Activity vertically
+	leftColumn := lipgloss.JoinVertical(lipgloss.Left, progressPanel, activityPanel)
+
+	// Build Output pane (right)
+	outputContentH := leftTotalHeight - 2 // single pane: 2 border lines
+	if outputContentH < 1 {
+		outputContentH = 1
+	}
+	rightContent := m.renderRightPanel(rightWidth, outputContentH)
+	rightStyle := styles.BoxStyle.Copy().
+		Width(rightWidth).
+		Height(outputContentH).
+		Padding(0, 1)
+	rightPanel := rightStyle.Render(rightContent)
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightPanel)
+}
+
+// renderNarrowLayout renders a single-column fallback: Output top, Progress middle, Activity bottom.
+func (m RunningModel) renderNarrowLayout(availableHeight int) string {
+	panelChrome := 2            // vertical borders per pane (top + bottom)
+	contentWidth := m.width - 4 // 2 border chars + 2*1 padding
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
+	// Distribute height among three stacked panes (3 * 2 border lines = 6).
+	contentBudget := availableHeight - 3*panelChrome
+	if contentBudget < 3 {
+		contentBudget = 3
+	}
+
+	outputContentH := contentBudget * narrowFallbackOutputPct / 100
+	if outputContentH < 3 {
+		outputContentH = 3
+	}
+	remaining := contentBudget - outputContentH
+	progressContentH := remaining * narrowFallbackProgressPct / 100
+	if progressContentH < 1 {
+		progressContentH = 1
+	}
+	activityContentH := remaining - progressContentH
+	if activityContentH < 1 {
+		activityContentH = 1
+	}
+
+	paneStyle := styles.BoxStyle.Copy().
+		Width(contentWidth).
+		Padding(0, 1)
+
+	// Output (top)
+	outputContent := m.renderRightPanel(contentWidth, outputContentH)
+	outputPanel := paneStyle.Copy().Height(outputContentH).Render(outputContent)
+
+	// Progress (middle)
+	progressContent := m.renderProgressPane(contentWidth, progressContentH)
+	progressPanel := paneStyle.Copy().Height(progressContentH).Render(progressContent)
+
+	// Activity (bottom)
+	activityContent := m.renderActivityPane(contentWidth, activityContentH)
+	activityPanel := paneStyle.Copy().Height(activityContentH).Render(activityContent)
+
+	return lipgloss.JoinVertical(lipgloss.Left, outputPanel, progressPanel, activityPanel)
+}
+
+// renderProgressPane renders the Progress pane: header + usage + tasks list.
+func (m RunningModel) renderProgressPane(width, height int) string {
 	var lines []string
 
 	// Header: Task N/M, Attempt, Elapsed
@@ -642,53 +785,56 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 	lines = append(lines, m.formatDuration(elapsed))
 	lines = append(lines, "")
 
-	attemptLineCount := 0
-	if m.attempt > 0 {
-		attemptLineCount = 1
+	// Usage section
+	lines = append(lines, styles.SubtleStyle.Render("Usage"))
+	lines = append(lines, "─────")
+	lines = append(lines, fmt.Sprintf("Task:  %s", formatTokens(m.taskTokens)))
+	lines = append(lines, fmt.Sprintf("Plan:  %s", formatTokens(m.totalTokens)))
+	lines = append(lines, fmt.Sprintf("Cost:  $%.2f", m.estimatedCost))
+	lines = append(lines, "")
+
+	// Task list with titles and status indicators
+	lines = append(lines, styles.SubtleStyle.Render("Tasks"))
+	lines = append(lines, "─────")
+
+	// Calculate how many task lines we can show in remaining space
+	fixedLines := len(lines)
+	taskListMaxLines := height - fixedLines
+	if taskListMaxLines < 0 {
+		taskListMaxLines = 0
+	}
+	if taskListMaxLines > len(m.tasks) {
+		taskListMaxLines = len(m.tasks)
 	}
 
-	const fixedLinesWithoutAttempt = 14 // Everything except activity entries + task list entries.
-	fixedLines := fixedLinesWithoutAttempt + attemptLineCount
-	dynamicBudget := height - fixedLines
-	if dynamicBudget < 0 {
-		dynamicBudget = 0
+	lines = append(lines, m.renderTaskList(width, taskListMaxLines)...)
+
+	// Join lines and pad to height
+	content := strings.Join(lines, "\n")
+	lineCount := len(lines)
+	if lineCount < height {
+		content += strings.Repeat("\n", height-lineCount)
 	}
 
-	tasksDesiredLines := len(m.tasks)
-	if tasksDesiredLines > 7 {
-		tasksDesiredLines = 7
-	}
-	minActivityLines := 3
-	if dynamicBudget < minActivityLines {
-		minActivityLines = dynamicBudget
-	}
-	maxTaskLinesAllowed := dynamicBudget - minActivityLines
-	if maxTaskLinesAllowed < 0 {
-		maxTaskLinesAllowed = 0
-	}
-	targetTaskLines := dynamicBudget / 2
-	if targetTaskLines < 1 && maxTaskLinesAllowed > 0 {
-		targetTaskLines = 1
-	}
-	taskListMaxLines := targetTaskLines
-	if taskListMaxLines > tasksDesiredLines {
-		taskListMaxLines = tasksDesiredLines
-	}
-	if taskListMaxLines > maxTaskLinesAllowed {
-		taskListMaxLines = maxTaskLinesAllowed
-	}
+	return content
+}
 
-	// Activity timeline section
+// renderActivityPane renders the Activity pane: activity timeline entries.
+func (m RunningModel) renderActivityPane(width, height int) string {
+	var lines []string
+
+	// Activity header
 	lines = append(lines, styles.SubtleStyle.Render("Activity"))
 	lines = append(lines, "─────")
 
 	// Calculate how many activity lines we can show
-	activityMaxLines := dynamicBudget - taskListMaxLines
+	fixedLines := len(lines) // header + separator
+	activityMaxLines := height - fixedLines
 	if activityMaxLines < 0 {
 		activityMaxLines = 0
 	}
 
-	// Show activity entries with scrolling (show most recent)
+	// Show activity entries (most recent)
 	activityStartIdx := 0
 	if len(m.activities) > activityMaxLines {
 		activityStartIdx = len(m.activities) - activityMaxLines
@@ -716,20 +862,6 @@ func (m RunningModel) renderLeftPanel(width, height int) string {
 	if len(m.activities) == 0 && activityMaxLines > 0 {
 		lines = append(lines, styles.SubtleStyle.Render("  (waiting...)"))
 	}
-	lines = append(lines, "")
-
-	// Usage section
-	lines = append(lines, styles.SubtleStyle.Render("Usage"))
-	lines = append(lines, "─────")
-	lines = append(lines, fmt.Sprintf("Task:  %s", formatTokens(m.taskTokens)))
-	lines = append(lines, fmt.Sprintf("Plan:  %s", formatTokens(m.totalTokens)))
-	lines = append(lines, fmt.Sprintf("Cost:  $%.2f", m.estimatedCost))
-	lines = append(lines, "")
-
-	// Task list with titles and status indicators
-	lines = append(lines, styles.SubtleStyle.Render("Tasks"))
-	lines = append(lines, "─────")
-	lines = append(lines, m.renderTaskList(width, taskListMaxLines)...)
 
 	// Join lines and pad to height
 	content := strings.Join(lines, "\n")
