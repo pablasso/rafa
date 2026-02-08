@@ -143,23 +143,28 @@ func (o *OutputViewport) Update(msg tea.Msg) (OutputViewport, tea.Cmd) {
 	// Update viewport
 	o.viewport, cmd = o.viewport.Update(msg)
 
-	// Check for scroll keys to manage auto-scroll
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		switch keyMsg.String() {
+	// Check for scroll keys/mouse to manage auto-scroll
+	switch m := msg.(type) {
+	case tea.KeyMsg:
+		switch m.String() {
 		case "up", "k", "pgup", "ctrl+u":
-			// User scrolled up, pause auto-scroll
 			o.autoScroll = false
 		case "down", "j", "pgdown", "ctrl+d":
-			// If user scrolled to bottom, re-enable auto-scroll
 			if o.viewport.AtBottom() {
 				o.autoScroll = true
 			}
 		case "end", "G":
-			// User explicitly went to bottom, re-enable auto-scroll
 			o.autoScroll = true
 		case "home", "g":
-			// User went to top, disable auto-scroll
 			o.autoScroll = false
+		}
+	case tea.MouseMsg:
+		if m.Button == tea.MouseButtonWheelUp || m.Button == tea.MouseButtonWheelDown {
+			if o.viewport.AtBottom() {
+				o.autoScroll = true
+			} else {
+				o.autoScroll = false
+			}
 		}
 	}
 

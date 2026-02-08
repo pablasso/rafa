@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -2268,5 +2269,429 @@ func TestRunningModel_View_FocusedPaneHasDistinctBorder(t *testing.T) {
 	// border characters are present.
 	if !strings.Contains(view, "┌") {
 		t.Error("expected view to contain border characters")
+	}
+}
+
+// Pane Bounding Box Tests
+
+func TestRunningModel_PaneBoundsUpdatedOnWindowSizeMsg(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	// Before SetSize, bounds should be zero
+	if m.boundsOutput.w != 0 || m.boundsActivity.w != 0 || m.boundsProgress.w != 0 {
+		t.Error("expected zero bounds before SetSize")
+	}
+
+	m.SetSize(120, 40)
+
+	// After SetSize, all three panes should have non-zero bounds
+	if m.boundsOutput.w == 0 || m.boundsOutput.h == 0 {
+		t.Error("expected non-zero Output bounds after SetSize")
+	}
+	if m.boundsActivity.w == 0 || m.boundsActivity.h == 0 {
+		t.Error("expected non-zero Activity bounds after SetSize")
+	}
+	if m.boundsProgress.w == 0 || m.boundsProgress.h == 0 {
+		t.Error("expected non-zero Progress bounds after SetSize")
+	}
+}
+
+func TestRunningModel_PaneBoundsRecalculatedOnResize(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	oldOutputW := m.boundsOutput.w
+	oldProgressW := m.boundsProgress.w
+
+	// Resize wider
+	m.SetSize(200, 50)
+
+	if m.boundsOutput.w == oldOutputW {
+		t.Error("expected Output bounds width to change after resize")
+	}
+	if m.boundsProgress.w == oldProgressW {
+		t.Error("expected Progress bounds width to change after resize")
+	}
+}
+
+// Mouse Wheel Routing Tests
+
+func TestRunningModel_MouseWheelRoutesToOutputPane(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Add enough output content so scrolling has an effect
+	for i := 0; i < 100; i++ {
+		m.output.AddLine("Output line")
+	}
+
+	// Mouse wheel inside the Output pane bounds
+	mouseX := m.boundsOutput.x + m.boundsOutput.w/2
+	mouseY := m.boundsOutput.y + m.boundsOutput.h/2
+
+	mouseMsg := tea.MouseMsg{
+		X:      mouseX,
+		Y:      mouseY,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Focus should be set to Output
+	if m.focus != focusOutput {
+		t.Errorf("expected focus to be focusOutput after mouse wheel in Output, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_MouseWheelRoutesToActivityPane(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Add activity content
+	for i := 0; i < 50; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// Mouse wheel inside the Activity pane bounds
+	mouseX := m.boundsActivity.x + m.boundsActivity.w/2
+	mouseY := m.boundsActivity.y + m.boundsActivity.h/2
+
+	mouseMsg := tea.MouseMsg{
+		X:      mouseX,
+		Y:      mouseY,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Focus should be set to Activity
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to be focusActivity after mouse wheel in Activity, got %d", m.focus)
+	}
+
+	// Auto-scroll should be disabled after scrolling up
+	if m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be disabled after wheel up")
+	}
+}
+
+func TestRunningModel_MouseWheelRoutesToTasksPane(t *testing.T) {
+	// Create many tasks so scrolling has an effect
+	var taskList []plan.Task
+	for i := 0; i < 30; i++ {
+		taskList = append(taskList, plan.Task{ID: fmt.Sprintf("t%02d", i), Title: "Task", Status: plan.TaskStatusPending})
+	}
+	m := NewRunningModel("abc123", "my-plan", taskList, "", nil)
+	m.SetSize(120, 40)
+	m.currentTask = 1
+	m.syncTasksView()
+
+	// Mouse wheel inside the Progress/Tasks pane bounds
+	mouseX := m.boundsProgress.x + m.boundsProgress.w/2
+	mouseY := m.boundsProgress.y + m.boundsProgress.h/2
+
+	mouseMsg := tea.MouseMsg{
+		X:      mouseX,
+		Y:      mouseY,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Focus should be set to Tasks
+	if m.focus != focusTasks {
+		t.Errorf("expected focus to be focusTasks after mouse wheel in Progress, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_MouseWheelFallbackToFocusedPane(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Set focus to Activity
+	m.focus = focusActivity
+
+	// Mouse wheel at coordinates outside all pane bounds (e.g., in title row)
+	mouseMsg := tea.MouseMsg{
+		X:      m.width / 2,
+		Y:      0, // title row — outside all panes
+		Button: tea.MouseButtonWheelDown,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Should fall back to the currently focused pane (Activity)
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to remain focusActivity on ambiguous coords, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_MouseWheelSetsFocusAndScrolls(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Start with focus on Output (default)
+	if m.focus != focusOutput {
+		t.Fatalf("expected initial focus to be focusOutput, got %d", m.focus)
+	}
+
+	// Add enough activity for scrolling to matter
+	for i := 0; i < 50; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// Scroll in Activity pane — should switch focus from Output to Activity
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 2,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+	m, _ = m.Update(mouseMsg)
+
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to switch to focusActivity, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_MouseWheelDownInActivity(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Add activity content
+	for i := 0; i < 50; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// First scroll up to disable auto-scroll
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 2,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+	m, _ = m.Update(mouseMsg)
+	if m.activityView.AutoScroll() {
+		t.Fatal("expected autoScroll to be disabled after wheel up")
+	}
+
+	// Now scroll down — the viewport internally handles the position.
+	// We just verify focus stays on Activity and no panic occurs.
+	mouseMsg.Button = tea.MouseButtonWheelDown
+	m, _ = m.Update(mouseMsg)
+
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to remain focusActivity after wheel down, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_MouseWheelIgnoredAfterDone(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+	m.state = stateDone
+
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 2,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Focus should not change in done state
+	if m.focus != focusOutput {
+		t.Errorf("expected focus to remain focusOutput in done state, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_MouseNonWheelIgnored(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Left click should not change focus
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 2,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Focus should remain Output (default)
+	if m.focus != focusOutput {
+		t.Errorf("expected focus to remain focusOutput on non-wheel mouse event, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_MouseWheelDuringCancelling(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+	m.state = stateCancelling
+
+	// Add some activity content
+	for i := 0; i < 20; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// Mouse wheel should still work during cancelling state
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 2,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to switch to focusActivity during cancelling, got %d", m.focus)
+	}
+}
+
+// PaneRect Tests
+
+func TestPaneRect_Contains(t *testing.T) {
+	r := paneRect{x: 10, y: 5, w: 20, h: 10}
+
+	tests := []struct {
+		px, py int
+		want   bool
+	}{
+		{10, 5, true},   // top-left corner
+		{29, 14, true},  // bottom-right edge (exclusive: x+w-1, y+h-1)
+		{20, 10, true},  // middle
+		{9, 5, false},   // just outside left
+		{30, 5, false},  // just outside right
+		{10, 4, false},  // just above
+		{10, 15, false}, // just below
+	}
+
+	for _, tt := range tests {
+		got := r.contains(tt.px, tt.py)
+		if got != tt.want {
+			t.Errorf("paneRect{%d,%d,%d,%d}.contains(%d,%d) = %v, want %v",
+				r.x, r.y, r.w, r.h, tt.px, tt.py, got, tt.want)
+		}
+	}
+}
+
+// Hit-Test Tests
+
+func TestRunningModel_HitTestPane_Wide(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Hit-test inside each pane
+	tests := []struct {
+		name string
+		x, y int
+		want focusPane
+	}{
+		{
+			"inside Output",
+			m.boundsOutput.x + m.boundsOutput.w/2,
+			m.boundsOutput.y + m.boundsOutput.h/2,
+			focusOutput,
+		},
+		{
+			"inside Activity",
+			m.boundsActivity.x + m.boundsActivity.w/2,
+			m.boundsActivity.y + m.boundsActivity.h/2,
+			focusActivity,
+		},
+		{
+			"inside Progress/Tasks",
+			m.boundsProgress.x + m.boundsProgress.w/2,
+			m.boundsProgress.y + m.boundsProgress.h/2,
+			focusTasks,
+		},
+	}
+
+	for _, tt := range tests {
+		got := m.hitTestPane(tt.x, tt.y)
+		if got != tt.want {
+			t.Errorf("hitTestPane(%d, %d) [%s] = %d, want %d", tt.x, tt.y, tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestRunningModel_HitTestPane_Ambiguous_FallsBackToFocus(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	// Title row (y=0) should be outside all pane bounds
+	m.focus = focusTasks
+	got := m.hitTestPane(60, 0)
+	if got != focusTasks {
+		t.Errorf("hitTestPane(60, 0) with focus=focusTasks = %d, want focusTasks(%d)", got, focusTasks)
+	}
+
+	m.focus = focusActivity
+	got = m.hitTestPane(60, 0)
+	if got != focusActivity {
+		t.Errorf("hitTestPane(60, 0) with focus=focusActivity = %d, want focusActivity(%d)", got, focusActivity)
+	}
+}
+
+func TestRunningModel_HitTestPane_Narrow(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	// Use narrow width to trigger single-column layout
+	m.SetSize(50, 30)
+
+	// In narrow layout, all panes span the full width and are stacked vertically.
+	// Output is at the top, Progress in the middle, Activity at the bottom.
+	tests := []struct {
+		name string
+		x, y int
+		want focusPane
+	}{
+		{
+			"inside Output (top)",
+			m.boundsOutput.x + m.boundsOutput.w/2,
+			m.boundsOutput.y + m.boundsOutput.h/2,
+			focusOutput,
+		},
+		{
+			"inside Progress/Tasks (middle)",
+			m.boundsProgress.x + m.boundsProgress.w/2,
+			m.boundsProgress.y + m.boundsProgress.h/2,
+			focusTasks,
+		},
+		{
+			"inside Activity (bottom)",
+			m.boundsActivity.x + m.boundsActivity.w/2,
+			m.boundsActivity.y + m.boundsActivity.h/2,
+			focusActivity,
+		},
+	}
+
+	for _, tt := range tests {
+		got := m.hitTestPane(tt.x, tt.y)
+		if got != tt.want {
+			t.Errorf("hitTestPane(%d, %d) [%s] = %d, want %d", tt.x, tt.y, tt.name, got, tt.want)
+		}
 	}
 }

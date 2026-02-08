@@ -41,6 +41,16 @@ const (
 	focusTasks                     // Tasks list within the Progress pane (top-left)
 )
 
+// paneRect describes a pane's bounding box in screen coordinates (0-indexed).
+type paneRect struct {
+	x, y, w, h int
+}
+
+// contains reports whether the screen coordinate (px, py) is inside the rect.
+func (r paneRect) contains(px, py int) bool {
+	return px >= r.x && px < r.x+r.w && py >= r.y && py < r.y+r.h
+}
+
 // maxActivityEntries caps the in-memory activity entries to prevent unbounded growth.
 const maxActivityEntries = 2000
 
@@ -74,6 +84,12 @@ type RunningModel struct {
 
 	// Focus state for keyboard scroll routing
 	focus focusPane // defaults to focusOutput (zero value)
+
+	// Pane bounding boxes in screen coordinates for mouse wheel hit-testing.
+	// Recomputed on WindowSizeMsg / layout changes.
+	boundsOutput   paneRect
+	boundsActivity paneRect
+	boundsProgress paneRect // Progress pane (Tasks viewport lives inside)
 
 	// When true, tasksView auto-follows the current task
 	tasksAutoFollow bool
@@ -510,6 +526,9 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
+
+	case tea.MouseMsg:
+		return m.handleMouseMsg(msg)
 	}
 
 	// Pass through to output viewport for scrolling
@@ -592,6 +611,59 @@ func (m RunningModel) routeScrollKey(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
 	}
 }
 
+// handleMouseMsg routes mouse wheel events to the pane under the cursor,
+// setting focus to that pane. Non-wheel events are ignored. Falls back to
+// the currently focused pane when coordinates don't match any pane.
+func (m RunningModel) handleMouseMsg(msg tea.MouseMsg) (RunningModel, tea.Cmd) {
+	if m.state != stateRunning && m.state != stateCancelling {
+		return m, nil
+	}
+
+	// Only handle wheel events.
+	if msg.Button != tea.MouseButtonWheelUp && msg.Button != tea.MouseButtonWheelDown {
+		return m, nil
+	}
+
+	target := m.hitTestPane(msg.X, msg.Y)
+	m.focus = target
+	return m.routeMouseScroll(target, msg)
+}
+
+// hitTestPane determines which pane the screen coordinate (x, y) falls inside.
+// Returns the matching focusPane, or the currently focused pane if ambiguous.
+func (m RunningModel) hitTestPane(x, y int) focusPane {
+	if m.boundsActivity.contains(x, y) {
+		return focusActivity
+	}
+	if m.boundsProgress.contains(x, y) {
+		return focusTasks
+	}
+	if m.boundsOutput.contains(x, y) {
+		return focusOutput
+	}
+	// Ambiguous / outside all panes — fall back to current focus.
+	return m.focus
+}
+
+// routeMouseScroll forwards a mouse wheel event to the given pane's viewport.
+func (m RunningModel) routeMouseScroll(target focusPane, msg tea.MouseMsg) (RunningModel, tea.Cmd) {
+	switch target {
+	case focusActivity:
+		var cmd tea.Cmd
+		m.activityView, cmd = m.activityView.Update(msg)
+		return m, cmd
+	case focusTasks:
+		var cmd tea.Cmd
+		m.tasksView, cmd = m.tasksView.Update(msg)
+		m.updateTasksAutoFollow()
+		return m, cmd
+	default: // focusOutput
+		var cmd tea.Cmd
+		m.output, cmd = m.output.Update(msg)
+		return m, cmd
+	}
+}
+
 // paneStyle returns BoxStyle or FocusedBoxStyle depending on whether pane
 // matches the current focus.
 func (m RunningModel) paneStyle(pane focusPane) lipgloss.Style {
@@ -615,111 +687,175 @@ func focusLabel(f focusPane) string {
 	}
 }
 
+// layoutDims holds the computed layout dimensions shared by viewport sizing
+// and bounding box calculations. This avoids duplicating layout arithmetic.
+type layoutDims struct {
+	narrow           bool // true for single-column fallback
+	leftWidth        int  // content width of left column (excluding chrome)
+	rightWidth       int  // content width of right column (excluding chrome)
+	outputContentH   int  // output pane content height
+	progressContentH int  // progress pane content height
+	activityContentH int  // activity pane content height
+	tasksContentH    int  // tasks viewport height (within progress)
+	// Outer pane dimensions (including borders) for bounding boxes
+	leftOuterW    int
+	rightOuterW   int
+	outputPaneH   int
+	progressPaneH int
+	activityPaneH int
+}
+
+// computeLayout calculates the layout dimensions for the Run view based on
+// the terminal width and height.
+func computeLayout(width, height int) layoutDims {
+	panelChrome := 4 // 2 border chars + 2*1 padding
+	minTwoColWidth := (leftMinWidth + panelChrome) + (outputMinWidth + panelChrome)
+	borderPerPane := 2
+
+	var d layoutDims
+
+	if width < minTwoColWidth {
+		d.narrow = true
+		d.leftWidth = width - panelChrome
+		d.rightWidth = width - panelChrome
+		d.leftOuterW = width
+		d.rightOuterW = width
+
+		availableHeight := height - 2 // title + status bar
+		contentBudget := availableHeight - 3*borderPerPane
+		if contentBudget < 3 {
+			contentBudget = 3
+		}
+
+		d.outputContentH = contentBudget * narrowFallbackOutputPct / 100
+		if d.outputContentH < 3 {
+			d.outputContentH = 3
+		}
+		remaining := contentBudget - d.outputContentH
+		d.progressContentH = remaining * narrowFallbackProgressPct / 100
+		if d.progressContentH < 1 {
+			d.progressContentH = 1
+		}
+		d.activityContentH = remaining - d.progressContentH
+		if d.activityContentH < 1 {
+			d.activityContentH = 1
+		}
+
+		d.tasksContentH = d.progressContentH - progressStaticLines
+		if d.tasksContentH < 1 {
+			d.tasksContentH = 1
+		}
+
+		d.outputPaneH = d.outputContentH + borderPerPane
+		d.progressPaneH = d.progressContentH + borderPerPane
+		d.activityPaneH = d.activityContentH + borderPerPane
+	} else {
+		d.leftWidth = (width * leftWidthPercent / 100) - panelChrome
+		if d.leftWidth < leftMinWidth {
+			d.leftWidth = leftMinWidth
+		}
+		d.rightWidth = width - d.leftWidth - 2*panelChrome
+		if d.rightWidth < outputMinWidth {
+			d.rightWidth = outputMinWidth
+		}
+
+		d.leftOuterW = d.leftWidth + panelChrome
+		d.rightOuterW = width - d.leftOuterW
+
+		availableHeight := height - 2
+		d.outputContentH = availableHeight - 2 - 2 // borders + header lines
+
+		contentBudget := availableHeight - 2*borderPerPane
+		if contentBudget < 2 {
+			contentBudget = 2
+		}
+
+		d.progressContentH = contentBudget * progressHeightPct / 100
+		if d.progressContentH < progressMinHeight {
+			d.progressContentH = progressMinHeight
+		}
+		d.activityContentH = contentBudget - d.progressContentH
+		if d.activityContentH < activityMinHeight {
+			d.activityContentH = activityMinHeight
+			d.progressContentH = contentBudget - d.activityContentH
+			if d.progressContentH < 1 {
+				d.progressContentH = 1
+			}
+		}
+		if d.progressContentH+d.activityContentH > contentBudget {
+			d.progressContentH = contentBudget - d.activityContentH
+			if d.progressContentH < 1 {
+				d.progressContentH = 1
+			}
+		}
+
+		d.tasksContentH = d.progressContentH - progressStaticLines
+		if d.tasksContentH < 1 {
+			d.tasksContentH = 1
+		}
+
+		d.progressPaneH = d.progressContentH + borderPerPane
+		d.activityPaneH = d.activityContentH + borderPerPane
+		d.outputPaneH = availableHeight
+	}
+
+	if d.outputContentH < 1 {
+		d.outputContentH = 1
+	}
+	if d.rightWidth < 10 {
+		d.rightWidth = 10
+	}
+
+	return d
+}
+
 // updateOutputSize recalculates the output viewport size based on window size.
 func (m *RunningModel) updateOutputSize() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
 
-	panelChrome := 4 // 2 border chars + 2*1 padding
-	minTwoColWidth := (leftMinWidth + panelChrome) + (outputMinWidth + panelChrome)
+	d := computeLayout(m.width, m.height)
 
-	var rightWidth, outputHeight int
-	var leftWidth, activityContentH, tasksContentH int
-
-	if m.width < minTwoColWidth {
-		// Narrow/single-column fallback
-		rightWidth = m.width - panelChrome
-		leftWidth = m.width - panelChrome
-		// Approximate: output gets ~50% of available height minus borders
-		availableHeight := m.height - 2      // title + status bar
-		contentBudget := availableHeight - 6 // 3 panes * 2 border lines
-		outputHeight = contentBudget * narrowFallbackOutputPct / 100
-
-		remaining := contentBudget - outputHeight
-		progressContentH := remaining * narrowFallbackProgressPct / 100
-		if progressContentH < 1 {
-			progressContentH = 1
-		}
-		activityContentH = remaining - progressContentH
-		if activityContentH < 1 {
-			activityContentH = 1
-		}
-
-		// Tasks height within progress pane (subtract static header lines)
-		tasksContentH = progressContentH - progressStaticLines
-		if tasksContentH < 1 {
-			tasksContentH = 1
-		}
-	} else {
-		// Two-column layout
-		leftWidth = (m.width * leftWidthPercent / 100) - panelChrome
-		if leftWidth < leftMinWidth {
-			leftWidth = leftMinWidth
-		}
-		rightWidth = m.width - leftWidth - 2*panelChrome
-		if rightWidth < outputMinWidth {
-			rightWidth = outputMinWidth
-		}
-		// Output pane height = total available - 2 border lines, minus 2 for header+spacer in renderRightPanel
-		availableHeight := m.height - 2
-		outputHeight = availableHeight - 2 - 2 // borders + header lines
-
-		// Calculate left column split
-		leftTotalHeight := availableHeight
-		contentBudget := leftTotalHeight - 4 // 2 borders per pane * 2 panes
-		if contentBudget < 2 {
-			contentBudget = 2
-		}
-
-		progressContentH := contentBudget * progressHeightPct / 100
-		if progressContentH < progressMinHeight {
-			progressContentH = progressMinHeight
-		}
-		activityContentH = contentBudget - progressContentH
-		if activityContentH < activityMinHeight {
-			activityContentH = activityMinHeight
-			progressContentH = contentBudget - activityContentH
-			if progressContentH < 1 {
-				progressContentH = 1
-			}
-		}
-		if progressContentH+activityContentH > contentBudget {
-			progressContentH = contentBudget - activityContentH
-			if progressContentH < 1 {
-				progressContentH = 1
-			}
-		}
-
-		// Tasks height within progress pane (subtract static header lines)
-		tasksContentH = progressContentH - progressStaticLines
-		if tasksContentH < 1 {
-			tasksContentH = 1
-		}
-	}
-
-	if outputHeight < 1 {
-		outputHeight = 1
-	}
-	if rightWidth < 10 {
-		rightWidth = 10
-	}
-
-	m.output.SetSize(rightWidth, outputHeight)
+	m.output.SetSize(d.rightWidth, d.outputContentH)
 
 	// Activity viewport: subtract 2 lines for header ("Activity" + "─────")
-	activityViewportH := activityContentH - 2
+	activityViewportH := d.activityContentH - 2
 	if activityViewportH < 1 {
 		activityViewportH = 1
 	}
-	m.activityView.SetSize(leftWidth, activityViewportH)
+	m.activityView.SetSize(d.leftWidth, activityViewportH)
 
 	// Tasks viewport
-	m.tasksView.SetSize(leftWidth, tasksContentH)
+	m.tasksView.SetSize(d.leftWidth, d.tasksContentH)
 
 	// Sync viewport content after resize
 	m.syncActivityView()
 	m.syncTasksView()
+
+	// Recompute pane bounding boxes for mouse hit-testing.
+	m.computePaneBounds(d)
+}
+
+// computePaneBounds calculates the screen-coordinate bounding boxes for the
+// three scrollable panes (Output, Progress/Tasks, Activity). These bounds
+// are used for mouse wheel hit-testing.
+func (m *RunningModel) computePaneBounds(d layoutDims) {
+	titleRows := 1
+
+	if d.narrow {
+		y := titleRows
+		m.boundsOutput = paneRect{x: 0, y: y, w: d.rightOuterW, h: d.outputPaneH}
+		y += d.outputPaneH
+		m.boundsProgress = paneRect{x: 0, y: y, w: d.leftOuterW, h: d.progressPaneH}
+		y += d.progressPaneH
+		m.boundsActivity = paneRect{x: 0, y: y, w: d.leftOuterW, h: d.activityPaneH}
+	} else {
+		y := titleRows
+		m.boundsProgress = paneRect{x: 0, y: y, w: d.leftOuterW, h: d.progressPaneH}
+		m.boundsActivity = paneRect{x: 0, y: y + d.progressPaneH, w: d.leftOuterW, h: d.activityPaneH}
+		m.boundsOutput = paneRect{x: d.leftOuterW, y: y, w: d.rightOuterW, h: d.outputPaneH}
+	}
 }
 
 // View implements tea.Model.
