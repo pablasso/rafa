@@ -42,7 +42,7 @@
         "make fmt produces no changes"
       ],
       "status": "pending",
-      "attempts": 2
+      "attempts": 3
     },
     {
       "id": "t03",

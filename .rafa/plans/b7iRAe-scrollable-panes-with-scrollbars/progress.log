@@ -6,3 +6,7 @@
 {"timestamp":"2026-02-08T12:49:26.463081-06:00","event":"task_started","data":{"attempt":2,"task_id":"t02"}}
 {"timestamp":"2026-02-08T12:49:36.891572-06:00","event":"task_failed","data":{"attempt":2,"task_id":"t02"}}
 {"timestamp":"2026-02-08T12:49:36.892246-06:00","event":"plan_cancelled","data":{"last_task_id":"t02"}}
+{"timestamp":"2026-02-08T14:22:51.332623-06:00","event":"plan_started","data":{"plan_id":"b7iRAe"}}
+{"timestamp":"2026-02-08T14:22:51.33348-06:00","event":"task_started","data":{"attempt":3,"task_id":"t02"}}
+{"timestamp":"2026-02-08T14:23:12.617488-06:00","event":"task_failed","data":{"attempt":3,"task_id":"t02"}}
+{"timestamp":"2026-02-08T14:23:12.618101-06:00","event":"plan_cancelled","data":{"last_task_id":"t02"}}
