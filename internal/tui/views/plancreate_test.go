@@ -2,6 +2,7 @@ package views
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -326,6 +327,399 @@ func TestPlanCreateModel_DemoInitDoesNotRequireSourceFile(t *testing.T) {
 	}
 	if !foundConversationStarted {
 		t.Fatal("expected PlanCreateConversationStartedMsg from demo init")
+	}
+}
+
+// --- Scroll, Focus, and Scrollbar Tests ---
+
+func TestPlanCreateModel_DefaultFocusIsResponse(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	if m.Focus() != planCreateFocusResponse {
+		t.Errorf("expected default focus to be planCreateFocusResponse (%d), got %d", planCreateFocusResponse, m.Focus())
+	}
+}
+
+func TestPlanCreateModel_TabTogglesFocus(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Default: focusResponse
+	if m.Focus() != planCreateFocusResponse {
+		t.Fatalf("expected initial focus to be planCreateFocusResponse, got %d", m.Focus())
+	}
+
+	// Tab → focusActivity
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.Focus() != planCreateFocusActivity {
+		t.Errorf("expected focus after first Tab to be planCreateFocusActivity (%d), got %d", planCreateFocusActivity, m.Focus())
+	}
+
+	// Tab → focusResponse (wraps around)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.Focus() != planCreateFocusResponse {
+		t.Errorf("expected focus after second Tab to be planCreateFocusResponse (%d), got %d", planCreateFocusResponse, m.Focus())
+	}
+}
+
+func TestPlanCreateModel_TabDoesNotToggleAfterCompleted(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.state = PlanCreateStateCompleted
+	m.mode = PlanCreateModeReal
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	// Tab should have no effect in completed state
+	if m.Focus() != planCreateFocusResponse {
+		t.Errorf("expected focus to remain planCreateFocusResponse in completed state, got %d", m.Focus())
+	}
+}
+
+func TestPlanCreateModel_ScrollKeysRouteToFocusedPane_Response(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Add content to the response so scrolling has an effect
+	for i := 0; i < 100; i++ {
+		m.responseView.AddLine("Response line")
+	}
+
+	// Default focus is Response — scroll up should be handled
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+
+	// Verify model is still valid (no panic, state unchanged, focus unchanged)
+	if m.Focus() != planCreateFocusResponse {
+		t.Errorf("expected focus to remain planCreateFocusResponse, got %d", m.Focus())
+	}
+
+	// Auto-scroll should be disabled after scrolling up
+	if m.responseView.AutoScroll() {
+		t.Error("expected responseView autoScroll to be disabled after scroll up")
+	}
+}
+
+func TestPlanCreateModel_ScrollKeysRouteToFocusedPane_Activity(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Add activity content
+	for i := 0; i < 50; i++ {
+		m.handleStreamEvent(ai.StreamEvent{Type: "tool_use", ToolName: "Read", ToolTarget: "/file.go"})
+		m.handleStreamEvent(ai.StreamEvent{Type: "tool_result"})
+	}
+
+	// Switch focus to Activity
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.Focus() != planCreateFocusActivity {
+		t.Fatalf("expected planCreateFocusActivity, got %d", m.Focus())
+	}
+
+	// Scroll up in activity should disable auto-scroll
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be disabled after scroll up")
+	}
+
+	// End key ('G') should re-enable auto-scroll
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	if !m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be re-enabled after G")
+	}
+}
+
+func TestPlanCreateModel_ScrollKeysDoNotAffectUnfocusedPanes(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Add lots of content to both panes
+	for i := 0; i < 50; i++ {
+		m.handleStreamEvent(ai.StreamEvent{Type: "tool_use", ToolName: "Read", ToolTarget: "/file.go"})
+		m.handleStreamEvent(ai.StreamEvent{Type: "tool_result"})
+		m.responseView.AddLine("Response line")
+	}
+
+	// Focus is on Response (default). Verify Activity autoScroll is still true
+	if !m.activityView.AutoScroll() {
+		t.Fatal("expected activityView autoScroll to be true before any scroll events")
+	}
+
+	// Scroll up in Response — should only affect Response, not Activity
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+
+	if !m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to remain true when scrolling in unfocused pane")
+	}
+	if m.responseView.AutoScroll() {
+		t.Error("expected responseView autoScroll to be disabled after scrolling up in focused Response pane")
+	}
+}
+
+func TestPlanCreateModel_ResponseScrollbarPresent(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	if !m.responseView.ShowScrollbar() {
+		t.Error("expected response viewport to have scrollbar enabled")
+	}
+}
+
+func TestPlanCreateModel_ActivityUsesScrollViewport(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Add some activity entries
+	m.addActivity("Task started", 0)
+	m.addActivity("Using Read: /file.go", 1)
+
+	// The activity view should render content with a scrollbar column
+	view := m.activityView.View()
+	if view == "" {
+		t.Error("expected activityView to render non-empty content")
+	}
+}
+
+func TestPlanCreateModel_View_FocusedPaneBorderHighlight(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// With default focus on Response, the response pane should have focused styling
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view")
+	}
+
+	// Verify status bar shows focus hint
+	if !strings.Contains(view, "Focus: Response") {
+		t.Errorf("expected status bar to show 'Focus: Response', got view that doesn't contain it")
+	}
+
+	// Switch focus to Activity
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	view = m.View()
+	if !strings.Contains(view, "Focus: Activity") {
+		t.Errorf("expected status bar to show 'Focus: Activity' after Tab")
+	}
+}
+
+func TestPlanCreateModel_View_StatusBarShowsScrollHints(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+	view := m.View()
+
+	if !strings.Contains(view, "Tab Focus") {
+		t.Error("expected status bar to show 'Tab Focus' hint")
+	}
+	if !strings.Contains(view, "Scroll") {
+		t.Error("expected status bar to show scroll hint")
+	}
+}
+
+func TestPlanCreateModel_MouseWheelRoutesToResponsePane(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Add enough response content so scrolling has an effect
+	for i := 0; i < 100; i++ {
+		m.responseView.AddLine("Response line")
+	}
+
+	// Mouse wheel inside the Response pane bounds
+	mouseX := m.boundsResponse.x + m.boundsResponse.w/2
+	mouseY := m.boundsResponse.y + m.boundsResponse.h/2
+
+	mouseMsg := tea.MouseMsg{
+		X:      mouseX,
+		Y:      mouseY,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	if m.Focus() != planCreateFocusResponse {
+		t.Errorf("expected focus to be planCreateFocusResponse after mouse wheel in Response, got %d", m.Focus())
+	}
+}
+
+func TestPlanCreateModel_MouseWheelRoutesToActivityPane(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Add activity content
+	for i := 0; i < 50; i++ {
+		m.handleStreamEvent(ai.StreamEvent{Type: "tool_use", ToolName: "Read", ToolTarget: "/file.go"})
+		m.handleStreamEvent(ai.StreamEvent{Type: "tool_result"})
+	}
+
+	// Mouse wheel inside the Activity pane bounds
+	mouseX := m.boundsActivity.x + m.boundsActivity.w/2
+	mouseY := m.boundsActivity.y + m.boundsActivity.h/2
+
+	mouseMsg := tea.MouseMsg{
+		X:      mouseX,
+		Y:      mouseY,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Focus should be set to Activity
+	if m.Focus() != planCreateFocusActivity {
+		t.Errorf("expected focus to be planCreateFocusActivity after mouse wheel in Activity, got %d", m.Focus())
+	}
+
+	// Auto-scroll should be disabled after scrolling up
+	if m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be disabled after wheel up")
+	}
+}
+
+func TestPlanCreateModel_MouseWheelSetsFocusAndScrolls(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Start with focus on Response (default)
+	if m.Focus() != planCreateFocusResponse {
+		t.Fatalf("expected initial focus to be planCreateFocusResponse, got %d", m.Focus())
+	}
+
+	// Add enough activity for scrolling to matter
+	for i := 0; i < 50; i++ {
+		m.handleStreamEvent(ai.StreamEvent{Type: "tool_use", ToolName: "Read", ToolTarget: "/file.go"})
+		m.handleStreamEvent(ai.StreamEvent{Type: "tool_result"})
+	}
+
+	// Scroll in Activity pane — should switch focus from Response to Activity
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 2,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+	m, _ = m.Update(mouseMsg)
+
+	if m.Focus() != planCreateFocusActivity {
+		t.Errorf("expected focus to switch to planCreateFocusActivity, got %d", m.Focus())
+	}
+}
+
+func TestPlanCreateModel_MouseWheelFallbackToFocusedPane(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Set focus to Activity
+	m.focus = planCreateFocusActivity
+
+	// Mouse wheel at coordinates outside all pane bounds (e.g., in title row)
+	mouseMsg := tea.MouseMsg{
+		X:      m.width / 2,
+		Y:      0, // title row — outside all panes
+		Button: tea.MouseButtonWheelDown,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Should fall back to the currently focused pane (Activity)
+	if m.Focus() != planCreateFocusActivity {
+		t.Errorf("expected focus to remain planCreateFocusActivity on ambiguous coords, got %d", m.Focus())
+	}
+}
+
+func TestPlanCreateModel_MouseWheelIgnoredAfterCompleted(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+	m.state = PlanCreateStateCompleted
+	m.mode = PlanCreateModeReal
+
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 2,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Focus should not change in completed state
+	if m.Focus() != planCreateFocusResponse {
+		t.Errorf("expected focus to remain planCreateFocusResponse in completed state, got %d", m.Focus())
+	}
+}
+
+func TestPlanCreateModel_MouseNonWheelIgnored(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	mouseMsg := tea.MouseMsg{
+		X:      m.boundsActivity.x + 2,
+		Y:      m.boundsActivity.y + 2,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	}
+
+	m, _ = m.Update(mouseMsg)
+
+	// Non-wheel events should not change focus
+	if m.Focus() != planCreateFocusResponse {
+		t.Errorf("expected focus to remain planCreateFocusResponse for non-wheel mouse event, got %d", m.Focus())
+	}
+}
+
+func TestPlanCreateModel_ResponseAutoScrollFollowsBottomDuringStreaming(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Simulate streaming text that exceeds viewport
+	for i := 0; i < 100; i++ {
+		m.handleStreamEvent(ai.StreamEvent{Type: "text", Text: "Line of response text\n"})
+	}
+
+	// Auto-scroll should be true (following bottom during streaming)
+	if !m.responseView.AutoScroll() {
+		t.Error("expected responseView autoScroll to be true during streaming")
+	}
+
+	// Scroll up to pause auto-scroll
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.responseView.AutoScroll() {
+		t.Error("expected responseView autoScroll to be paused after user scroll up")
+	}
+}
+
+func TestPlanCreateModel_ActivityAutoScrollFollowsBottomAsEntriesArrive(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.SetSize(120, 30)
+
+	// Add many activity entries
+	for i := 0; i < 50; i++ {
+		m.addActivity(fmt.Sprintf("Activity %d", i), 0)
+	}
+
+	// Auto-scroll should be true (following bottom)
+	if !m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be true as new entries arrive")
+	}
+
+	// Switch focus to Activity and scroll up to pause
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be paused after user scroll up")
+	}
+}
+
+func TestPlanCreateFocusLabel(t *testing.T) {
+	tests := []struct {
+		focus planCreateFocus
+		want  string
+	}{
+		{planCreateFocusResponse, "Response"},
+		{planCreateFocusActivity, "Activity"},
+		{planCreateFocus(99), "Response"}, // unknown defaults to Response
+	}
+	for _, tt := range tests {
+		got := planCreateFocusLabel(tt.focus)
+		if got != tt.want {
+			t.Errorf("planCreateFocusLabel(%d) = %q, want %q", tt.focus, got, tt.want)
+		}
 	}
 }
 

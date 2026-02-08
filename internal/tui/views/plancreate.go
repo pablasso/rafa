@@ -60,6 +60,14 @@ func (d DefaultConversationStarter) Start(ctx context.Context, config ai.Convers
 	return ai.StartConversation(ctx, config)
 }
 
+// planCreateFocus identifies which scrollable pane has keyboard focus in Plan Create.
+type planCreateFocus int
+
+const (
+	planCreateFocusResponse planCreateFocus = iota // Response pane (right column, default)
+	planCreateFocusActivity                        // Activity pane (left column)
+)
+
 // PlanCreateModel handles the conversational plan creation UI.
 type PlanCreateModel struct {
 	sourceFile string // Path to design document
@@ -70,10 +78,18 @@ type PlanCreateModel struct {
 	// Activity timeline (left pane)
 	activities   []ActivityEntry
 	activitiesMu sync.Mutex
+	activityView components.ScrollViewport
 
 	// Response content (main pane)
 	responseText *strings.Builder
 	responseView components.OutputViewport
+
+	// Focus state for keyboard scroll routing
+	focus planCreateFocus // defaults to planCreateFocusResponse (zero value)
+
+	// Pane bounding boxes in screen coordinates for mouse wheel hit-testing.
+	boundsActivity paneRect
+	boundsResponse paneRect
 
 	// UI state
 	spinner    spinner.Model
@@ -124,6 +140,9 @@ func newPlanCreateModel(sourceFile string, mode PlanCreateMode, starter Conversa
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	responseView := components.NewOutputViewport(80, 20, 0)
+	responseView.SetShowScrollbar(true)
+
 	return PlanCreateModel{
 		sourceFile:          sourceFile,
 		state:               PlanCreateStateExtracting,
@@ -133,7 +152,8 @@ func newPlanCreateModel(sourceFile string, mode PlanCreateMode, starter Conversa
 		ctx:                 ctx,
 		cancel:              cancel,
 		responseText:        &strings.Builder{},
-		responseView:        components.NewOutputViewport(80, 20, 0),
+		responseView:        responseView,
+		activityView:        components.NewScrollViewport(20, 6, 0),
 		activities:          []ActivityEntry{{Text: "Starting task extraction...", Timestamp: time.Now(), Indent: 0, IsDone: false}},
 		conversationStarter: starter,
 		mode:                mode,
@@ -312,6 +332,8 @@ func (m PlanCreateModel) Update(msg tea.Msg) (PlanCreateModel, tea.Cmd) {
 		if m.isThinking {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
+			// Re-sync activity view to update spinner animation on last entry
+			m.syncActivityView()
 			cmds = append(cmds, cmd)
 		}
 
@@ -345,6 +367,9 @@ func (m PlanCreateModel) Update(msg tea.Msg) (PlanCreateModel, tea.Cmd) {
 			return newModel, cmd
 		}
 		return newModel, nil
+
+	case tea.MouseMsg:
+		return m.handleMouseMsg(msg)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -545,6 +570,18 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 		m.state = PlanCreateStateCancelled
 		return m, nil, true
 
+	case "tab":
+		if m.state == PlanCreateStateExtracting {
+			m.focus = m.nextFocus()
+			return m, nil, true
+		}
+
+	case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":
+		if m.state == PlanCreateStateExtracting {
+			model, cmd := m.routeScrollKey(msg)
+			return model, cmd, true
+		}
+
 	case "r":
 		if m.state == PlanCreateStateError {
 			m.resetForRetry()
@@ -575,6 +612,80 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 
 	// Key not handled by us.
 	return m, nil, false
+}
+
+// nextFocus cycles focus: Response → Activity → Response.
+func (m PlanCreateModel) nextFocus() planCreateFocus {
+	if m.focus == planCreateFocusResponse {
+		return planCreateFocusActivity
+	}
+	return planCreateFocusResponse
+}
+
+// routeScrollKey routes a scroll key event to the currently focused pane's viewport.
+func (m PlanCreateModel) routeScrollKey(msg tea.KeyMsg) (PlanCreateModel, tea.Cmd) {
+	switch m.focus {
+	case planCreateFocusActivity:
+		var cmd tea.Cmd
+		m.activityView, cmd = m.activityView.Update(msg)
+		return m, cmd
+	default: // planCreateFocusResponse
+		var cmd tea.Cmd
+		m.responseView, cmd = m.responseView.Update(msg)
+		return m, cmd
+	}
+}
+
+// handleMouseMsg routes mouse wheel events to the pane under the cursor,
+// setting focus to that pane. Non-wheel events are ignored.
+func (m PlanCreateModel) handleMouseMsg(msg tea.MouseMsg) (PlanCreateModel, tea.Cmd) {
+	if m.state != PlanCreateStateExtracting {
+		return m, nil
+	}
+
+	// Only handle wheel events.
+	if msg.Button != tea.MouseButtonWheelUp && msg.Button != tea.MouseButtonWheelDown {
+		return m, nil
+	}
+
+	target := m.hitTestPane(msg.X, msg.Y)
+	m.focus = target
+	return m.routeMouseScroll(target, msg)
+}
+
+// hitTestPane determines which pane the screen coordinate (x, y) falls inside.
+func (m PlanCreateModel) hitTestPane(x, y int) planCreateFocus {
+	if m.boundsActivity.contains(x, y) {
+		return planCreateFocusActivity
+	}
+	if m.boundsResponse.contains(x, y) {
+		return planCreateFocusResponse
+	}
+	// Ambiguous / outside all panes — fall back to current focus.
+	return m.focus
+}
+
+// routeMouseScroll forwards a mouse wheel event to the given pane's viewport.
+func (m PlanCreateModel) routeMouseScroll(target planCreateFocus, msg tea.MouseMsg) (PlanCreateModel, tea.Cmd) {
+	switch target {
+	case planCreateFocusActivity:
+		var cmd tea.Cmd
+		m.activityView, cmd = m.activityView.Update(msg)
+		return m, cmd
+	default: // planCreateFocusResponse
+		var cmd tea.Cmd
+		m.responseView, cmd = m.responseView.Update(msg)
+		return m, cmd
+	}
+}
+
+// planCreatePaneStyle returns BoxStyle or FocusedBoxStyle depending on whether pane
+// matches the current focus.
+func (m PlanCreateModel) planCreatePaneStyle(pane planCreateFocus) lipgloss.Style {
+	if m.focus == pane {
+		return styles.FocusedBoxStyle.Copy()
+	}
+	return styles.BoxStyle.Copy()
 }
 
 // stopExtractionSession stops any active conversation and cancels extraction context.
@@ -611,6 +722,7 @@ func (m *PlanCreateModel) addActivity(text string, indent int) {
 		Indent:    indent,
 		IsDone:    false,
 	})
+	m.syncActivityView()
 }
 
 // markLastActivityDone marks the last activity entry as done.
@@ -620,6 +732,40 @@ func (m *PlanCreateModel) markLastActivityDone() {
 	if len(m.activities) > 0 {
 		m.activities[len(m.activities)-1].IsDone = true
 	}
+	m.syncActivityView()
+}
+
+// syncActivityView converts activity entries to []string lines and feeds them
+// into the activityView ScrollViewport.
+func (m *PlanCreateModel) syncActivityView() {
+	contentWidth := m.activityView.ContentWidth()
+
+	var lines []string
+	for i, entry := range m.activities {
+		prefix := ""
+		if entry.Indent > 0 {
+			prefix = "├─ "
+		}
+
+		indicator := "○"
+		if entry.IsDone {
+			indicator = styles.SuccessStyle.Render("✓")
+		} else if i == len(m.activities)-1 && m.isThinking {
+			indicator = m.spinner.View()
+		}
+
+		line := fmt.Sprintf("%s%s %s", prefix, indicator, entry.Text)
+		if contentWidth > 0 && lipgloss.Width(line) > contentWidth {
+			line = truncateWithEllipsis(line, contentWidth)
+		}
+		lines = append(lines, line)
+	}
+
+	if len(lines) == 0 {
+		lines = append(lines, styles.SubtleStyle.Render("  (waiting...)"))
+	}
+
+	m.activityView.SetLines(lines)
 }
 
 // updateLayout recalculates component sizes.
@@ -628,6 +774,7 @@ func (m *PlanCreateModel) updateLayout() {
 		return
 	}
 
+	leftWidth := (m.width * 25 / 100) - 2
 	rightWidth := (m.width * 75 / 100) - 2
 
 	// Height: total - title(2) - status(1) - action bar(1) - spacing/borders
@@ -640,7 +787,10 @@ func (m *PlanCreateModel) updateLayout() {
 	// Padding: 1 left + 1 right = 2 chars
 	// Border: 1 left + 1 right = 2 chars
 	// Total: 4 chars less for content
-	viewportWidth := rightWidth - 4
+	panelChrome := 4
+
+	// Response viewport sizing
+	viewportWidth := rightWidth - panelChrome
 	if viewportWidth < 20 {
 		viewportWidth = 20
 	}
@@ -652,6 +802,28 @@ func (m *PlanCreateModel) updateLayout() {
 	}
 
 	m.responseView.SetSize(viewportWidth, viewportHeight)
+
+	// Activity viewport sizing
+	// Activity pane has: "Activity" header (1) + "" (1) + "Source: ..." (1) + "" (1) = 4 static lines
+	activityContentWidth := leftWidth - panelChrome
+	if activityContentWidth < 10 {
+		activityContentWidth = 10
+	}
+	activityViewportH := panelHeight - 4 // minus static header lines
+	if activityViewportH < 1 {
+		activityViewportH = 1
+	}
+	m.activityView.SetSize(activityContentWidth, activityViewportH)
+	m.syncActivityView()
+
+	// Compute pane bounding boxes for mouse hit-testing
+	titleRows := 2 // title + margin
+	leftOuterW := leftWidth + panelChrome
+	rightOuterW := m.width - leftOuterW
+	panelOuterH := panelHeight + 2 // content + borders
+
+	m.boundsActivity = paneRect{x: 0, y: titleRows, w: leftOuterW, h: panelOuterH}
+	m.boundsResponse = paneRect{x: leftOuterW, y: titleRows, w: rightOuterW, h: panelOuterH}
 }
 
 // View implements tea.Model.
@@ -679,12 +851,12 @@ func (m PlanCreateModel) View() string {
 	leftPanel := m.renderActivityPanel(leftWidth, panelHeight)
 	rightPanel := m.renderResponsePanel(rightWidth, panelHeight)
 
-	leftStyle := styles.BoxStyle.Copy().
+	leftStyle := m.planCreatePaneStyle(planCreateFocusActivity).
 		Width(leftWidth).
 		Height(panelHeight).
 		Padding(0, 1)
 
-	rightStyle := styles.BoxStyle.Copy().
+	rightStyle := m.planCreatePaneStyle(planCreateFocusResponse).
 		Width(rightWidth).
 		Height(panelHeight).
 		Padding(0, 1)
@@ -712,43 +884,24 @@ func (m PlanCreateModel) renderActivityPanel(width, height int) string {
 	lines = append(lines, styles.SubtleStyle.Render("Activity"))
 	lines = append(lines, "")
 
-	// Show source file
+	// Show source file (static header)
 	sourceDisplay := shortenPath(m.sourceFile, width-4)
 	lines = append(lines, styles.SubtleStyle.Render("Source: "+sourceDisplay))
 	lines = append(lines, "")
 
-	m.activitiesMu.Lock()
-	activities := make([]ActivityEntry, len(m.activities))
-	copy(activities, m.activities)
-	m.activitiesMu.Unlock()
+	// Render the scrollable activity viewport below the static header
+	activityContent := m.activityView.View()
+	lines = append(lines, activityContent)
 
-	for i, entry := range activities {
-		prefix := ""
-		if entry.Indent > 0 {
-			prefix = "├─ "
-		}
-
-		indicator := "○"
-		if entry.IsDone {
-			indicator = styles.SuccessStyle.Render("✓")
-		} else if i == len(activities)-1 && m.isThinking {
-			indicator = m.spinner.View()
-		}
-
-		line := fmt.Sprintf("%s%s %s", prefix, indicator, entry.Text)
-		// Truncate if too long
-		if len(line) > width {
-			line = line[:width-3] + "..."
-		}
-		lines = append(lines, line)
-	}
+	result := strings.Join(lines, "\n")
 
 	// Pad to height
-	for len(lines) < height {
-		lines = append(lines, "")
+	resultLines := strings.Count(result, "\n") + 1
+	if resultLines < height {
+		result += strings.Repeat("\n", height-resultLines)
 	}
 
-	return strings.Join(lines, "\n")
+	return result
 }
 
 // renderResponsePanel returns the Claude response view.
@@ -817,16 +970,29 @@ func (m PlanCreateModel) renderDemoCompletionMessage() string {
 	return strings.Join(lines, "\n")
 }
 
+// planCreateFocusLabel returns a display name for the given focus pane.
+func planCreateFocusLabel(f planCreateFocus) string {
+	switch f {
+	case planCreateFocusResponse:
+		return "Response"
+	case planCreateFocusActivity:
+		return "Activity"
+	default:
+		return "Response"
+	}
+}
+
 // renderActionBar returns the bottom action bar.
 func (m PlanCreateModel) renderActionBar() string {
 	var items []string
 
 	switch m.state {
 	case PlanCreateStateExtracting:
+		focusHint := "Focus: " + planCreateFocusLabel(m.focus)
 		if m.mode == PlanCreateModeDemoUnsaved {
-			items = []string{"Replaying demo...", "Ctrl+C Cancel"}
+			items = []string{"Replaying demo...", focusHint, "Tab Focus", "↑↓ Scroll", "Ctrl+C Cancel"}
 		} else {
-			items = []string{"Extracting...", "Ctrl+C Cancel"}
+			items = []string{"Extracting...", focusHint, "Tab Focus", "↑↓ Scroll", "Ctrl+C Cancel"}
 		}
 	case PlanCreateStateCompleted:
 		if m.mode == PlanCreateModeDemoUnsaved {
@@ -881,6 +1047,11 @@ func (m PlanCreateModel) Activities() []ActivityEntry {
 // IsThinking returns whether the model is waiting for Claude.
 func (m PlanCreateModel) IsThinking() bool {
 	return m.isThinking
+}
+
+// Focus returns the current focus pane.
+func (m PlanCreateModel) Focus() planCreateFocus {
+	return m.focus
 }
 
 // normalizeSourcePath converts an absolute path to relative from repo root.
