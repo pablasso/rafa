@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,12 +41,17 @@ func NewPlanListModel(rafaDir string) PlanListModel {
 	m := PlanListModel{
 		rafaDir: rafaDir,
 	}
-	m.plans = m.loadPlans()
+	m.plans = m.loadPlansGrouped()
+	m.cursor = m.firstRunnableIndex()
 	return m
 }
 
-// loadPlans reads plan data from .rafa/plans/*/plan.json files.
-func (m PlanListModel) loadPlans() []PlanSummary {
+// loadPlansGrouped reads plan data from .rafa/plans/*/plan.json files and
+// returns them in section order:
+// 1) Ready to Run (in_progress, failed, not_started, unknown)
+// 2) Running Elsewhere (all locked plans)
+// 3) Completed (unlocked completed plans)
+func (m PlanListModel) loadPlansGrouped() []PlanSummary {
 	var summaries []PlanSummary
 
 	plansPath := filepath.Join(m.rafaDir, "plans")
@@ -92,7 +98,7 @@ func (m PlanListModel) loadPlans() []PlanSummary {
 		})
 	}
 
-	return summaries
+	return groupAndSortPlanSummaries(summaries)
 }
 
 // isLocked checks if a plan directory has a run.lock file indicating it's running elsewhere.
@@ -100,6 +106,79 @@ func isLocked(planDir string) bool {
 	lockFile := filepath.Join(planDir, "run.lock")
 	_, err := os.Stat(lockFile)
 	return err == nil
+}
+
+func groupAndSortPlanSummaries(summaries []PlanSummary) []PlanSummary {
+	var ready []PlanSummary
+	var locked []PlanSummary
+	var completed []PlanSummary
+
+	for _, s := range summaries {
+		switch {
+		case s.Locked:
+			locked = append(locked, s)
+		case s.Status == plan.PlanStatusCompleted:
+			completed = append(completed, s)
+		default:
+			ready = append(ready, s)
+		}
+	}
+
+	sort.Slice(ready, func(i, j int) bool {
+		pi := readyStatusPriority(ready[i].Status)
+		pj := readyStatusPriority(ready[j].Status)
+		if pi != pj {
+			return pi < pj
+		}
+		nameI := strings.ToLower(ready[i].Name)
+		nameJ := strings.ToLower(ready[j].Name)
+		if nameI != nameJ {
+			return nameI < nameJ
+		}
+		return ready[i].ID < ready[j].ID
+	})
+
+	sortPlanSummariesByName(locked)
+	sortPlanSummariesByName(completed)
+
+	ordered := make([]PlanSummary, 0, len(summaries))
+	ordered = append(ordered, ready...)
+	ordered = append(ordered, locked...)
+	ordered = append(ordered, completed...)
+	return ordered
+}
+
+func sortPlanSummariesByName(items []PlanSummary) {
+	sort.Slice(items, func(i, j int) bool {
+		nameI := strings.ToLower(items[i].Name)
+		nameJ := strings.ToLower(items[j].Name)
+		if nameI != nameJ {
+			return nameI < nameJ
+		}
+		return items[i].ID < items[j].ID
+	})
+}
+
+func readyStatusPriority(status string) int {
+	switch status {
+	case plan.PlanStatusInProgress:
+		return 0
+	case plan.PlanStatusFailed:
+		return 1
+	case plan.PlanStatusNotStarted:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func (m PlanListModel) firstRunnableIndex() int {
+	for i, p := range m.plans {
+		if !p.Locked {
+			return i
+		}
+	}
+	return 0
 }
 
 // Init implements tea.Model.
@@ -182,18 +261,32 @@ func (m PlanListModel) renderNormalView() string {
 	title := styles.TitleStyle.Render("Select Plan to Run")
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 
-	// Plan list
+	readyCount, lockedCount, completedCount := m.sectionCounts()
+
+	// Plan list (with section headings; empty sections are hidden)
 	var planLines []string
-	for i, p := range m.plans {
-		line := m.formatPlanLine(i, p)
-		planLines = append(planLines, line)
+	addSection := func(label string, plans []PlanSummary, offset int) {
+		if len(plans) == 0 {
+			return
+		}
+		planLines = append(planLines, styles.SectionStyle.Render(fmt.Sprintf("%s (%d)", label, len(plans))))
+		for i, p := range plans {
+			line := m.formatPlanLine(offset+i, p)
+			planLines = append(planLines, line)
+		}
 	}
+
+	readyEnd := readyCount
+	lockedEnd := readyCount + lockedCount
+	addSection("Ready to Run", m.plans[:readyEnd], 0)
+	addSection("Running Elsewhere", m.plans[readyEnd:lockedEnd], readyEnd)
+	addSection("Completed", m.plans[lockedEnd:lockedEnd+completedCount], lockedEnd)
 
 	planList := strings.Join(planLines, "\n")
 
 	// Calculate vertical centering (add 2 for potential error message)
 	statusBarHeight := 1
-	contentHeight := 2 + len(m.plans) // title + spacing + plans
+	contentHeight := 2 + len(planLines) // title + spacing + plans + section headings
 	if m.lockedErrMsg != "" {
 		contentHeight += 2 // error message + spacing
 	}
@@ -230,6 +323,20 @@ func (m PlanListModel) renderNormalView() string {
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
+}
+
+func (m PlanListModel) sectionCounts() (readyCount, lockedCount, completedCount int) {
+	for _, p := range m.plans {
+		switch {
+		case p.Locked:
+			lockedCount++
+		case p.Status == plan.PlanStatusCompleted:
+			completedCount++
+		default:
+			readyCount++
+		}
+	}
+	return readyCount, lockedCount, completedCount
 }
 
 // formatPlanLine formats a single plan line for display.

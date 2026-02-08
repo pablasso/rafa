@@ -114,6 +114,84 @@ func TestNewPlanListModel_LoadsPlans(t *testing.T) {
 	}
 }
 
+func TestNewPlanListModel_StartsCursorOnFirstRunnablePlan(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	plansDir := filepath.Join(rafaDir, "plans")
+	if err := os.MkdirAll(plansDir, 0755); err != nil {
+		t.Fatalf("failed to create plans dir: %v", err)
+	}
+
+	// Create a locked in-progress plan.
+	createTestPlan(t, plansDir, "locked", "alpha", plan.PlanStatusInProgress, nil)
+	lockedPlanDir := filepath.Join(plansDir, "locked-alpha")
+	lockFile := filepath.Join(lockedPlanDir, "run.lock")
+	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	// Create an unlocked not-started plan.
+	createTestPlan(t, plansDir, "open", "beta", plan.PlanStatusNotStarted, nil)
+
+	m := NewPlanListModel(rafaDir)
+	if m.Cursor() != 0 {
+		t.Fatalf("expected cursor at first runnable plan, got %d", m.Cursor())
+	}
+	if len(m.Plans()) < 1 {
+		t.Fatal("expected at least one plan")
+	}
+	if m.Plans()[m.Cursor()].Locked {
+		t.Fatal("expected initial cursor to land on an unlocked plan")
+	}
+}
+
+func TestNewPlanListModel_GroupsAndSortsPlans(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	plansDir := filepath.Join(rafaDir, "plans")
+	if err := os.MkdirAll(plansDir, 0755); err != nil {
+		t.Fatalf("failed to create plans dir: %v", err)
+	}
+
+	createTestPlan(t, plansDir, "ip2", "zzz-progress", plan.PlanStatusInProgress, nil)
+	createTestPlan(t, plansDir, "ip1", "aaa-progress", plan.PlanStatusInProgress, nil)
+	createTestPlan(t, plansDir, "fd1", "mmm-failed", plan.PlanStatusFailed, nil)
+	createTestPlan(t, plansDir, "ns1", "bbb-not-started", plan.PlanStatusNotStarted, nil)
+	createTestPlan(t, plansDir, "uk1", "ccc-unknown", "custom_state", nil)
+
+	// Locked completed should be in locked section due lock precedence.
+	createTestPlan(t, plansDir, "lc1", "locked-completed", plan.PlanStatusCompleted, nil)
+	lockedPlanDir := filepath.Join(plansDir, "lc1-locked-completed")
+	lockFile := filepath.Join(lockedPlanDir, "run.lock")
+	if err := os.WriteFile(lockFile, []byte("locked"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+
+	// Unlocked completed should stay in completed section.
+	createTestPlan(t, plansDir, "cp1", "done", plan.PlanStatusCompleted, nil)
+
+	m := NewPlanListModel(rafaDir)
+	got := m.Plans()
+	wantIDs := []string{"ip1", "ip2", "fd1", "ns1", "uk1", "lc1", "cp1"}
+
+	if len(got) != len(wantIDs) {
+		t.Fatalf("expected %d plans, got %d", len(wantIDs), len(got))
+	}
+
+	for i, want := range wantIDs {
+		if got[i].ID != want {
+			t.Fatalf("expected position %d to be %q, got %q", i, want, got[i].ID)
+		}
+	}
+
+	if !got[5].Locked {
+		t.Fatal("expected locked-completed plan to be in locked section with Locked=true")
+	}
+	if got[6].Status != plan.PlanStatusCompleted || got[6].Locked {
+		t.Fatal("expected final plan to be unlocked completed")
+	}
+}
+
 func TestPlanListModel_Init(t *testing.T) {
 	m := NewPlanListModel("")
 	cmd := m.Init()
@@ -404,6 +482,9 @@ func TestPlanListModel_View_WithPlans(t *testing.T) {
 	if !strings.Contains(view, "xK9pQ2-feature-auth") {
 		t.Error("expected view to contain 'xK9pQ2-feature-auth'")
 	}
+	if !strings.Contains(view, "Ready to Run (1)") {
+		t.Error("expected view to contain Ready to Run section heading")
+	}
 
 	// Check for task count
 	if !strings.Contains(view, "4 tasks") {
@@ -429,6 +510,66 @@ func TestPlanListModel_View_WithPlans(t *testing.T) {
 	}
 	if !strings.Contains(view, "Esc Back") {
 		t.Error("expected view to contain 'Esc Back' in status bar")
+	}
+}
+
+func TestPlanListModel_View_HidesEmptySections(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	plansDir := filepath.Join(rafaDir, "plans")
+	if err := os.MkdirAll(plansDir, 0755); err != nil {
+		t.Fatalf("failed to create plans dir: %v", err)
+	}
+
+	createTestPlan(t, plansDir, "n1", "only-ready", plan.PlanStatusNotStarted, nil)
+
+	m := NewPlanListModel(rafaDir)
+	m.SetSize(80, 24)
+	view := m.View()
+
+	if !strings.Contains(view, "Ready to Run (1)") {
+		t.Error("expected Ready to Run section")
+	}
+	if strings.Contains(view, "Running Elsewhere (") {
+		t.Error("did not expect Running Elsewhere section when empty")
+	}
+	if strings.Contains(view, "Completed (") {
+		t.Error("did not expect Completed section when empty")
+	}
+}
+
+func TestPlanListModel_View_CompletedSectionVisibleAndSelectable(t *testing.T) {
+	tmpDir := t.TempDir()
+	rafaDir := filepath.Join(tmpDir, ".rafa")
+	plansDir := filepath.Join(rafaDir, "plans")
+	if err := os.MkdirAll(plansDir, 0755); err != nil {
+		t.Fatalf("failed to create plans dir: %v", err)
+	}
+
+	createTestPlan(t, plansDir, "n1", "ready", plan.PlanStatusNotStarted, nil)
+	createTestPlan(t, plansDir, "c1", "done", plan.PlanStatusCompleted, nil)
+
+	m := NewPlanListModel(rafaDir)
+	m.SetSize(80, 24)
+	view := m.View()
+
+	if !strings.Contains(view, "Completed (1)") {
+		t.Fatal("expected Completed section heading")
+	}
+
+	// Move selection from ready to completed and ensure Enter still runs.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected run command when selecting completed plan")
+	}
+	msg := cmd()
+	runMsg, ok := msg.(msgs.RunPlanMsg)
+	if !ok {
+		t.Fatalf("expected msgs.RunPlanMsg, got %T", msg)
+	}
+	if runMsg.PlanID != "c1-done" {
+		t.Fatalf("expected completed plan run id c1-done, got %s", runMsg.PlanID)
 	}
 }
 
@@ -680,14 +821,17 @@ func TestPlanListModel_LockedPlan_ErrMsgClearedOnNavigation(t *testing.T) {
 	m := NewPlanListModel(rafaDir)
 	m.SetSize(80, 24)
 
+	// Move to the locked plan (cursor starts on first runnable plan).
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+
 	// Try to select the locked plan
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.LockedErrMsg() == "" {
 		t.Fatal("expected error message after selecting locked plan")
 	}
 
-	// Navigate down
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	// Navigate up
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
 
 	// Error message should be cleared
 	if m.LockedErrMsg() != "" {
