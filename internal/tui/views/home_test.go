@@ -1,6 +1,7 @@
 package views
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -18,6 +19,24 @@ func TestNewHomeModel_MenuItems(t *testing.T) {
 	totalItems := m.totalMenuItems()
 	if totalItems != 3 {
 		t.Errorf("expected 3 menu items, got %d", totalItems)
+	}
+}
+
+func TestNewHomeModel_MenuOrder_RunPlanFirst(t *testing.T) {
+	m := NewHomeModel("")
+
+	if len(m.sections) == 0 || len(m.sections[0].Items) < 2 {
+		t.Fatalf("expected at least two menu items in first section")
+	}
+
+	first := m.sections[0].Items[0]
+	second := m.sections[0].Items[1]
+
+	if first.Label != "Run Plan" || first.Shortcut != "r" {
+		t.Fatalf("expected first item to be Run Plan [r], got %s [%s]", first.Label, first.Shortcut)
+	}
+	if second.Label != "Create Plan" || second.Shortcut != "c" {
+		t.Fatalf("expected second item to be Create Plan [c], got %s [%s]", second.Label, second.Shortcut)
 	}
 }
 
@@ -185,10 +204,48 @@ func TestHomeModel_View_RendersMenu(t *testing.T) {
 	m.SetSize(80, 24)
 
 	view := m.View()
+	if !strings.Contains(view, "Task Loop Runner for Claude Code") {
+		t.Errorf("expected view to contain updated subtitle, got: %s", view)
+	}
 	if !strings.Contains(view, "Create Plan") {
 		t.Errorf("expected view to contain Create Plan, got: %s", view)
 	}
 	if !strings.Contains(view, "Run Plan") {
 		t.Errorf("expected view to contain Run Plan, got: %s", view)
 	}
+}
+
+func TestHomeModel_View_MenuDescriptionsAligned(t *testing.T) {
+	m := NewHomeModel("")
+	m.SetSize(100, 24)
+
+	view := stripANSI(m.View())
+	lines := strings.Split(view, "\n")
+
+	runDescriptionStart := -1
+	createDescriptionStart := -1
+
+	for _, line := range lines {
+		if strings.Contains(line, "Execute an existing plan") {
+			runDescriptionStart = strings.Index(line, "Execute an existing plan")
+		}
+		if strings.Contains(line, "Generate execution plan from design") {
+			createDescriptionStart = strings.Index(line, "Generate execution plan from design")
+		}
+	}
+
+	if runDescriptionStart == -1 {
+		t.Fatal("expected run plan description line in view")
+	}
+	if createDescriptionStart == -1 {
+		t.Fatal("expected create plan description line in view")
+	}
+	if runDescriptionStart != createDescriptionStart {
+		t.Fatalf("expected descriptions to start at same column, got run=%d create=%d", runDescriptionStart, createDescriptionStart)
+	}
+}
+
+func stripANSI(s string) string {
+	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return ansi.ReplaceAllString(s, "")
 }

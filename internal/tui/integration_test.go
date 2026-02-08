@@ -413,19 +413,16 @@ func TestKeyboardNavigation(t *testing.T) {
 		m := createTestModel(t, repoRoot, rafaDir)
 		sendWindowSize(t, &m, 80, 24)
 
-		// Press Enter on first item (Create Plan) - sends GoToFilePickerMsg
+		// Press Enter on first item (Run Plan) - sends GoToPlanListMsg
 		cmd := sendKey(t, &m, "enter")
 		if cmd == nil {
 			t.Fatal("expected command from Enter")
 		}
 
 		msg := processCmd(cmd)
-		fpMsg, ok := msg.(msgs.GoToFilePickerMsg)
+		_, ok := msg.(msgs.GoToPlanListMsg)
 		if !ok {
-			t.Errorf("expected GoToFilePickerMsg, got %T", msg)
-		}
-		if !fpMsg.ForPlanCreation {
-			t.Error("expected ForPlanCreation to be true")
+			t.Errorf("expected GoToPlanListMsg, got %T", msg)
 		}
 	})
 

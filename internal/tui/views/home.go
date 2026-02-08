@@ -39,8 +39,8 @@ func NewHomeModel(_ string) HomeModel {
 			{
 				Title: "Execute",
 				Items: []MenuItem{
-					{Label: "Create Plan", Shortcut: "c", Description: "Generate execution plan from design"},
 					{Label: "Run Plan", Shortcut: "r", Description: "Execute an existing plan"},
+					{Label: "Create Plan", Shortcut: "c", Description: "Generate execution plan from design"},
 				},
 			},
 			{
@@ -140,7 +140,7 @@ func (m HomeModel) View() string {
 // renderHeader returns the centered title and tagline.
 func (m HomeModel) renderHeader() (titleLine, taglineLine string) {
 	title := styles.TitleStyle.Render("R A F A")
-	tagline := styles.SubtleStyle.Render("Task Loop Runner for AI")
+	tagline := styles.SubtleStyle.Render("Task Loop Runner for Claude Code")
 
 	titleLine = lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	taglineLine = lipgloss.PlaceHorizontal(m.width, lipgloss.Center, tagline)
@@ -152,6 +152,7 @@ func (m HomeModel) renderNormalView() string {
 	var b strings.Builder
 
 	titleLine, taglineLine := m.renderHeader()
+	mainColumnWidth := m.maxMenuItemMainWidth()
 
 	// Build menu with sections
 	var menuLines []string
@@ -166,18 +167,15 @@ func (m HomeModel) renderNormalView() string {
 
 		// Render items in this section
 		for _, item := range section.Items {
-			shortcut := "[" + item.Shortcut + "]"
-			line := shortcut + " " + item.Label
+			mainPart := "[" + item.Shortcut + "] " + item.Label
+			paddedMainPart := padRight(mainPart, mainColumnWidth)
+			line := paddedMainPart
 
-			// Add description if present
 			if item.Description != "" {
-				line += "  " + styles.SubtleStyle.Render(item.Description)
+				line += "  " + item.Description
 			}
-
 			if cursorIdx == m.cursor {
-				// For selected items, style the main part but keep description subtle
-				mainPart := "[" + item.Shortcut + "] " + item.Label
-				line = styles.SelectedStyle.Render(mainPart)
+				line = styles.SelectedStyle.Render(paddedMainPart)
 				if item.Description != "" {
 					line += "  " + styles.SubtleStyle.Render(item.Description)
 				}
@@ -214,7 +212,7 @@ func (m HomeModel) renderNormalView() string {
 	// Build content
 	b.WriteString(strings.Repeat("\n", topPadding))
 
-	menuBlock := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, menu)
+	menuBlock := centerBlock(m.width, menu)
 
 	b.WriteString(titleLine)
 	b.WriteString("\n")
@@ -258,6 +256,49 @@ func (m HomeModel) Cursor() int {
 // SetError sets an error message to display temporarily.
 func (m *HomeModel) SetError(msg string) {
 	m.errorMsg = msg
+}
+
+func (m HomeModel) maxMenuItemMainWidth() int {
+	maxWidth := 0
+	for _, section := range m.sections {
+		for _, item := range section.Items {
+			width := lipgloss.Width("[" + item.Shortcut + "] " + item.Label)
+			if width > maxWidth {
+				maxWidth = width
+			}
+		}
+	}
+	return maxWidth
+}
+
+func padRight(s string, targetWidth int) string {
+	padding := targetWidth - lipgloss.Width(s)
+	if padding <= 0 {
+		return s
+	}
+	return s + strings.Repeat(" ", padding)
+}
+
+func centerBlock(width int, block string) string {
+	lines := strings.Split(block, "\n")
+	blockWidth := 0
+	for _, line := range lines {
+		lineWidth := lipgloss.Width(line)
+		if lineWidth > blockWidth {
+			blockWidth = lineWidth
+		}
+	}
+
+	leftPadding := (width - blockWidth) / 2
+	if leftPadding < 0 {
+		leftPadding = 0
+	}
+
+	padding := strings.Repeat(" ", leftPadding)
+	for i, line := range lines {
+		lines[i] = padding + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Error returns the current error message.
