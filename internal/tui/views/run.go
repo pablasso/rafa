@@ -73,6 +73,10 @@ type RunningModel struct {
 	// Number of currently running tools for output thinking indicator.
 	activeToolCount int
 
+	// When true, insert a separator before the next non-marker output chunk.
+	// This preserves readability when tool marker lines are hidden.
+	pendingOutputSeparator bool
+
 	// Token/cost tracking
 	taskTokens    int64   // Tokens used in current task
 	totalTokens   int64   // Cumulative tokens across all tasks in plan
@@ -113,6 +117,9 @@ type TaskFailedMsg struct {
 type OutputLineMsg struct {
 	Line string
 }
+
+// AssistantBoundaryMsg marks the end of an assistant message.
+type AssistantBoundaryMsg struct{}
 
 // PlanDoneMsg signals that the plan execution has finished.
 type PlanDoneMsg struct {
@@ -270,6 +277,9 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 						CostUSD:      costUSD,
 					})
 				},
+				OnAssistantBoundary: func() {
+					program.Send(AssistantBoundaryMsg{})
+				},
 			},
 		)
 		if err != nil {
@@ -341,6 +351,7 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		}
 		// Clear activities and task tokens for new task
 		m.clearActivities()
+		m.pendingOutputSeparator = false
 		return m, nil
 
 	case TaskCompletedMsg:
@@ -369,6 +380,11 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		// Add tool use to activity timeline
 		m.addActivity(msg.ToolName, msg.ToolTarget)
 		m.activeToolCount++
+		// Preserve visual separation between pre/post tool output when markers
+		// are hidden from the output pane.
+		if m.output.LineCount() > 0 {
+			m.pendingOutputSeparator = true
+		}
 		return m, nil
 
 	case ToolResultMsg:
@@ -394,10 +410,31 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 
 	case OutputLineMsg:
 		if isToolMarkerLine(msg.Line) {
+			if m.output.LineCount() > 0 {
+				m.pendingOutputSeparator = true
+			}
 			return m, m.listenForOutput()
 		}
-		m.output.AppendChunk(msg.Line)
+		chunk := msg.Line
+		if m.pendingOutputSeparator && chunk != "" {
+			switch {
+			case strings.HasPrefix(chunk, "\n\n"):
+				// Already separated by a blank line.
+			case strings.HasPrefix(chunk, "\n"):
+				chunk = "\n" + chunk
+			default:
+				chunk = "\n\n" + chunk
+			}
+		}
+		m.pendingOutputSeparator = false
+		m.output.AppendChunk(chunk)
 		return m, m.listenForOutput()
+
+	case AssistantBoundaryMsg:
+		if m.output.LineCount() > 0 {
+			m.pendingOutputSeparator = true
+		}
+		return m, nil
 
 	case PlanDoneMsg:
 		m.state = stateDone

@@ -819,6 +819,30 @@ func TestStreamingWriter_Hooks_EmitToolLifecycleAndUsage(t *testing.T) {
 	}
 }
 
+func TestStreamingWriter_Hooks_EmitAssistantBoundary(t *testing.T) {
+	sw := &streamingWriter{
+		underlying: io.Discard,
+		hooks: StreamHooks{
+			OnAssistantBoundary: func() {
+				// marker assertion below
+			},
+		},
+	}
+
+	called := false
+	sw.hooks.OnAssistantBoundary = func() {
+		called = true
+	}
+
+	assistant := `{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}` + "\n"
+	if _, err := sw.Write([]byte(assistant)); err != nil {
+		t.Fatalf("write error: %v", err)
+	}
+	if !called {
+		t.Fatalf("expected assistant boundary hook to be called")
+	}
+}
+
 func TestExtractCommitMessage_JSONFormat(t *testing.T) {
 	tmpDir := t.TempDir()
 

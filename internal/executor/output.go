@@ -25,13 +25,17 @@ type OutputWriter interface {
 // StreamHooks provides callbacks for structured stream events.
 // All callbacks are optional.
 type StreamHooks struct {
-	OnToolUse    func(toolName, toolTarget string)
-	OnToolResult func()
-	OnUsage      func(inputTokens, outputTokens int64, costUSD float64)
+	OnToolUse           func(toolName, toolTarget string)
+	OnToolResult        func()
+	OnUsage             func(inputTokens, outputTokens int64, costUSD float64)
+	OnAssistantBoundary func()
 }
 
 func (h StreamHooks) hasCallbacks() bool {
-	return h.OnToolUse != nil || h.OnToolResult != nil || h.OnUsage != nil
+	return h.OnToolUse != nil ||
+		h.OnToolResult != nil ||
+		h.OnUsage != nil ||
+		h.OnAssistantBoundary != nil
 }
 
 // OutputCapture manages output to both terminal and log file.
@@ -165,6 +169,9 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 		if parsed.Usage != nil {
 			s.emitUsage(parsed.Usage.InputTokens, parsed.Usage.OutputTokens, parsed.Usage.CostUSD)
 		}
+		if parsed.AssistantBoundary {
+			s.emitAssistantBoundary()
+		}
 		if parsed.Text != "" {
 			s.outputBuf.WriteString(parsed.Text)
 			if strings.Contains(parsed.Text, "\n") || s.outputBuf.Len() >= streamChunkFlushBytes {
@@ -218,12 +225,19 @@ func (s *streamingWriter) emitUsage(inputTokens, outputTokens int64, costUSD flo
 	}
 }
 
+func (s *streamingWriter) emitAssistantBoundary() {
+	if s.hooks.OnAssistantBoundary != nil {
+		s.hooks.OnAssistantBoundary()
+	}
+}
+
 type parsedStreamLine struct {
-	Text       string
-	Flush      bool
-	ToolUse    *toolUseEvent
-	ToolResult bool
-	Usage      *usageEvent
+	Text              string
+	Flush             bool
+	ToolUse           *toolUseEvent
+	ToolResult        bool
+	Usage             *usageEvent
+	AssistantBoundary bool
 }
 
 type toolUseEvent struct {
@@ -329,7 +343,7 @@ func parseStreamLineDetails(line string) parsedStreamLine {
 		}
 	case "assistant":
 		// Assistant turn boundary - flush any buffered delta text.
-		return parsedStreamLine{Flush: true}
+		return parsedStreamLine{Flush: true, AssistantBoundary: true}
 	case "user":
 		if event.Message != nil {
 			for _, c := range event.Message.Content {

@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -249,6 +250,54 @@ func TestRunningModel_Update_OutputLineMsg_ToolMarkerChunkIgnored(t *testing.T) 
 	}
 	if !strings.Contains(view, "Now let me verify") {
 		t.Fatalf("expected prose chunk to remain, got %q", view)
+	}
+}
+
+func TestRunningModel_Update_OutputLineMsg_ToolUseSeparatesFollowingOutput(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(200, 40)
+
+	m, _ = m.Update(OutputLineMsg{Line: "All checks pass."})
+	m, _ = m.Update(ToolUseMsg{ToolName: "Bash", ToolTarget: "make test"})
+	m, _ = m.Update(OutputLineMsg{Line: "Let me verify the acceptance criteria."})
+
+	view := m.output.View()
+	re := regexp.MustCompile(`All checks pass\.[ \t]*\n[ \t]*\nLet me verify the acceptance criteria\.`)
+	if !re.MatchString(view) {
+		t.Fatalf("expected newline separator after tool use, got %q", view)
+	}
+}
+
+func TestRunningModel_Update_OutputLineMsg_MarkerChunkSeparatesFollowingOutput(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(200, 40)
+
+	m, _ = m.Update(OutputLineMsg{Line: "All checks pass."})
+	m, _ = m.Update(OutputLineMsg{Line: "\n[Tool: Read]"})
+	m, _ = m.Update(OutputLineMsg{Line: "Now let me inspect the file."})
+
+	view := m.output.View()
+	re := regexp.MustCompile(`All checks pass\.[ \t]*\n[ \t]*\nNow let me inspect the file\.`)
+	if !re.MatchString(view) {
+		t.Fatalf("expected newline separator after marker chunk, got %q", view)
+	}
+}
+
+func TestRunningModel_Update_AssistantBoundarySeparatesFollowingOutput(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(200, 40)
+
+	m, _ = m.Update(OutputLineMsg{Line: "First assistant message."})
+	m, _ = m.Update(AssistantBoundaryMsg{})
+	m, _ = m.Update(OutputLineMsg{Line: "Second assistant message."})
+
+	view := m.output.View()
+	re := regexp.MustCompile(`First assistant message\.[ \t]*\n[ \t]*\nSecond assistant message\.`)
+	if !re.MatchString(view) {
+		t.Fatalf("expected blank-line separation across assistant boundary, got %q", view)
 	}
 }
 
