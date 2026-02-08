@@ -2027,3 +2027,246 @@ func TestRenderTaskList(t *testing.T) {
 		t.Error("expected task list to contain circle for pending")
 	}
 }
+
+// Focus Cycling Tests
+
+func TestRunningModel_DefaultFocusIsOutput(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	if m.focus != focusOutput {
+		t.Errorf("expected default focus to be focusOutput (%d), got %d", focusOutput, m.focus)
+	}
+}
+
+func TestRunningModel_TabCyclesFocus(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 40)
+
+	// Default: focusOutput
+	if m.focus != focusOutput {
+		t.Fatalf("expected initial focus to be focusOutput, got %d", m.focus)
+	}
+
+	// Tab → focusActivity
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != focusActivity {
+		t.Errorf("expected focus after first Tab to be focusActivity (%d), got %d", focusActivity, m.focus)
+	}
+
+	// Tab → focusTasks
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != focusTasks {
+		t.Errorf("expected focus after second Tab to be focusTasks (%d), got %d", focusTasks, m.focus)
+	}
+
+	// Tab → focusOutput (wraps around)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != focusOutput {
+		t.Errorf("expected focus after third Tab to be focusOutput (%d), got %d", focusOutput, m.focus)
+	}
+}
+
+func TestRunningModel_TabCyclesFocus_DuringCancelling(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.state = stateCancelling
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != focusActivity {
+		t.Errorf("expected focus to cycle during cancelling, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_TabDoesNotCycleAfterDone(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.state = stateDone
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	// Tab should have no effect in done state since the three-pane layout is not shown
+	if m.focus != focusOutput {
+		t.Errorf("expected focus to remain focusOutput in done state, got %d", m.focus)
+	}
+}
+
+// Scroll Key Routing Tests
+
+func TestRunningModel_ScrollKeysRouteToFocusedPane_Output(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 40)
+
+	// Add content to the output so scrolling has an effect
+	for i := 0; i < 100; i++ {
+		m.output.AddLine("Output line")
+	}
+
+	// Default focus is Output — scroll up should be handled without error
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	_ = cmd // Output viewport may or may not return a cmd
+
+	// Verify model is still valid (no panic, state unchanged)
+	if m.focus != focusOutput {
+		t.Errorf("expected focus to remain focusOutput, got %d", m.focus)
+	}
+}
+
+func TestRunningModel_ScrollKeysRouteToFocusedPane_Activity(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 40)
+
+	// Add activity content
+	for i := 0; i < 50; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+	}
+
+	// Switch focus to Activity
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != focusActivity {
+		t.Fatalf("expected focusActivity, got %d", m.focus)
+	}
+
+	// Scroll up in activity should disable auto-scroll
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be disabled after scroll up")
+	}
+
+	// End key should re-enable auto-scroll
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	if !m.activityView.AutoScroll() {
+		t.Error("expected activityView autoScroll to be re-enabled after G")
+	}
+}
+
+func TestRunningModel_ScrollKeysRouteToFocusedPane_Tasks(t *testing.T) {
+	// Create a model with many tasks
+	var taskList []plan.Task
+	for i := 0; i < 20; i++ {
+		taskList = append(taskList, plan.Task{ID: "t" + string(rune('a'+i)), Title: "Task", Status: plan.TaskStatusPending})
+	}
+	m := NewRunningModel("abc123", "my-plan", taskList, "", nil)
+	m.SetSize(100, 40)
+	m.currentTask = 1
+	m.syncTasksView()
+
+	// Switch focus to Tasks (Tab twice: Output → Activity → Tasks)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != focusTasks {
+		t.Fatalf("expected focusTasks, got %d", m.focus)
+	}
+
+	// Scroll up should disable auto-follow
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.tasksAutoFollow {
+		t.Error("expected tasksAutoFollow to be disabled after scroll up in focused Tasks pane")
+	}
+}
+
+func TestRunningModel_ScrollKeysDoNotAffectUnfocusedPanes(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 40)
+
+	// Add lots of activity and output content
+	for i := 0; i < 50; i++ {
+		m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
+		m, _ = m.Update(ToolResultMsg{})
+		m.output.AddLine("Output line")
+	}
+
+	// Focus is Output (default). Activity autoScroll should stay true even when we scroll.
+	activityAutoScrollBefore := m.activityView.AutoScroll()
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	activityAutoScrollAfter := m.activityView.AutoScroll()
+
+	if activityAutoScrollBefore != activityAutoScrollAfter {
+		t.Error("expected activity autoScroll to be unchanged when Output is focused and scroll key pressed")
+	}
+}
+
+// Focus Label Tests
+
+func TestFocusLabel(t *testing.T) {
+	tests := []struct {
+		focus    focusPane
+		expected string
+	}{
+		{focusOutput, "Output"},
+		{focusActivity, "Activity"},
+		{focusTasks, "Tasks"},
+	}
+
+	for _, tt := range tests {
+		result := focusLabel(tt.focus)
+		if result != tt.expected {
+			t.Errorf("focusLabel(%d) = %q, want %q", tt.focus, result, tt.expected)
+		}
+	}
+}
+
+// Status Bar Focus Hints Tests
+
+func TestRunningModel_View_StatusBarShowsFocusHints(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+	m.currentTask = 1
+	m.attempt = 1
+
+	view := m.View()
+
+	// Default focus is Output
+	if !strings.Contains(view, "Focus: Output") {
+		t.Error("expected status bar to contain 'Focus: Output'")
+	}
+	if !strings.Contains(view, "Tab Focus") {
+		t.Error("expected status bar to contain 'Tab Focus' hint")
+	}
+	if !strings.Contains(view, "↑↓ Scroll") {
+		t.Error("expected status bar to contain '↑↓ Scroll' hint")
+	}
+
+	// Switch focus to Activity
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	view = m.View()
+	if !strings.Contains(view, "Focus: Activity") {
+		t.Error("expected status bar to contain 'Focus: Activity' after Tab")
+	}
+
+	// Switch focus to Tasks
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	view = m.View()
+	if !strings.Contains(view, "Focus: Tasks") {
+		t.Error("expected status bar to contain 'Focus: Tasks' after second Tab")
+	}
+}
+
+// Focused Border Styling Tests
+
+func TestRunningModel_View_FocusedPaneHasDistinctBorder(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+	m.currentTask = 1
+	m.attempt = 1
+
+	// Default focus is Output; the view should render
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view")
+	}
+	// We just verify it renders without panicking and contains bordered panes.
+	// The exact ANSI color codes are hard to assert, but we can verify the
+	// border characters are present.
+	if !strings.Contains(view, "┌") {
+		t.Error("expected view to contain border characters")
+	}
+}

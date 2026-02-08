@@ -54,4 +54,10 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(secondaryColor).
 			Padding(0, 1)
+
+	// FocusedBoxStyle for pane borders that have keyboard focus
+	FocusedBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(primaryColor).
+			Padding(1, 2)
 )

@@ -32,6 +32,15 @@ type TaskDisplay struct {
 	Status string // "pending", "running", "completed", "failed"
 }
 
+// focusPane identifies which scrollable region has keyboard focus in the Run view.
+type focusPane int
+
+const (
+	focusOutput   focusPane = iota // Output pane (right column, default)
+	focusActivity                  // Activity pane (bottom-left)
+	focusTasks                     // Tasks list within the Progress pane (top-left)
+)
+
 // maxActivityEntries caps the in-memory activity entries to prevent unbounded growth.
 const maxActivityEntries = 2000
 
@@ -62,6 +71,9 @@ type RunningModel struct {
 	// Scrollable viewports for Activity and Tasks panes
 	activityView components.ScrollViewport
 	tasksView    components.ScrollViewport
+
+	// Focus state for keyboard scroll routing
+	focus focusPane // defaults to focusOutput (zero value)
 
 	// When true, tasksView auto-follows the current task
 	tasksAutoFollow bool
@@ -521,20 +533,20 @@ func (m RunningModel) handleKeyPress(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
 				m.cancel = nil
 			}
 			return m, nil
+		case "tab":
+			m.focus = m.nextFocus()
+			return m, nil
 		case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":
-			// Pass scroll keys to output viewport
-			var cmd tea.Cmd
-			m.output, cmd = m.output.Update(msg)
-			return m, cmd
+			return m.routeScrollKey(msg)
 		}
 
 	case stateCancelling:
 		switch msg.String() {
+		case "tab":
+			m.focus = m.nextFocus()
+			return m, nil
 		case "up", "k", "pgup", "ctrl+u", "down", "j", "pgdown", "ctrl+d", "home", "g", "end", "G":
-			// Allow output scrolling while waiting for cancellation cleanup.
-			var cmd tea.Cmd
-			m.output, cmd = m.output.Update(msg)
-			return m, cmd
+			return m.routeScrollKey(msg)
 		}
 
 	case stateDone, stateCancelled:
@@ -547,6 +559,60 @@ func (m RunningModel) handleKeyPress(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// nextFocus cycles focus: Output → Activity → Tasks → Output.
+func (m RunningModel) nextFocus() focusPane {
+	switch m.focus {
+	case focusOutput:
+		return focusActivity
+	case focusActivity:
+		return focusTasks
+	default:
+		return focusOutput
+	}
+}
+
+// routeScrollKey routes a scroll key event to the currently focused pane's viewport.
+func (m RunningModel) routeScrollKey(msg tea.KeyMsg) (RunningModel, tea.Cmd) {
+	switch m.focus {
+	case focusActivity:
+		var cmd tea.Cmd
+		m.activityView, cmd = m.activityView.Update(msg)
+		return m, cmd
+	case focusTasks:
+		var cmd tea.Cmd
+		m.tasksView, cmd = m.tasksView.Update(msg)
+		m.updateTasksAutoFollow()
+		return m, cmd
+	default: // focusOutput
+		var cmd tea.Cmd
+		m.output, cmd = m.output.Update(msg)
+		return m, cmd
+	}
+}
+
+// paneStyle returns BoxStyle or FocusedBoxStyle depending on whether pane
+// matches the current focus.
+func (m RunningModel) paneStyle(pane focusPane) lipgloss.Style {
+	if m.focus == pane {
+		return styles.FocusedBoxStyle.Copy()
+	}
+	return styles.BoxStyle.Copy()
+}
+
+// focusLabel returns a display name for the given focus pane.
+func focusLabel(f focusPane) string {
+	switch f {
+	case focusOutput:
+		return "Output"
+	case focusActivity:
+		return "Activity"
+	case focusTasks:
+		return "Tasks"
+	default:
+		return "Output"
+	}
 }
 
 // updateOutputSize recalculates the output viewport size based on window size.
@@ -722,10 +788,11 @@ func (m RunningModel) renderRunning() string {
 
 	b.WriteString("\n")
 
-	// Status bar
-	statusItems := []string{"Running...", "Ctrl+C Cancel"}
+	// Status bar with focus indicator and scroll hints
+	focusHint := "Focus: " + focusLabel(m.focus)
+	statusItems := []string{"Running...", focusHint, "Tab Focus", "↑↓ Scroll", "Ctrl+C Cancel"}
 	if m.state == stateCancelling {
-		statusItems = []string{"Stopping...", "Waiting for cleanup"}
+		statusItems = []string{"Stopping...", focusHint, "Tab Focus", "↑↓ Scroll"}
 	}
 	if m.demoMode {
 		statusItems = append([]string{"[DEMO]"}, statusItems...)
@@ -783,9 +850,9 @@ func (m RunningModel) renderWideLayout(availableHeight int) string {
 		}
 	}
 
-	// Build Progress pane (top-left)
+	// Build Progress pane (top-left) — highlighted when focusTasks is active
 	progressContent := m.renderProgressPane(leftWidth, progressContentH)
-	progressStyle := styles.BoxStyle.Copy().
+	progressStyle := m.paneStyle(focusTasks).
 		Width(leftWidth).
 		Height(progressContentH).
 		Padding(0, 1)
@@ -793,7 +860,7 @@ func (m RunningModel) renderWideLayout(availableHeight int) string {
 
 	// Build Activity pane (bottom-left)
 	activityContent := m.renderActivityPane(leftWidth, activityContentH)
-	activityStyle := styles.BoxStyle.Copy().
+	activityStyle := m.paneStyle(focusActivity).
 		Width(leftWidth).
 		Height(activityContentH).
 		Padding(0, 1)
@@ -808,7 +875,7 @@ func (m RunningModel) renderWideLayout(availableHeight int) string {
 		outputContentH = 1
 	}
 	rightContent := m.renderRightPanel(rightWidth, outputContentH)
-	rightStyle := styles.BoxStyle.Copy().
+	rightStyle := m.paneStyle(focusOutput).
 		Width(rightWidth).
 		Height(outputContentH).
 		Padding(0, 1)
@@ -845,21 +912,26 @@ func (m RunningModel) renderNarrowLayout(availableHeight int) string {
 		activityContentH = 1
 	}
 
-	paneStyle := styles.BoxStyle.Copy().
-		Width(contentWidth).
-		Padding(0, 1)
-
 	// Output (top)
 	outputContent := m.renderRightPanel(contentWidth, outputContentH)
-	outputPanel := paneStyle.Copy().Height(outputContentH).Render(outputContent)
+	outputPanel := m.paneStyle(focusOutput).
+		Width(contentWidth).
+		Padding(0, 1).
+		Height(outputContentH).Render(outputContent)
 
 	// Progress (middle)
 	progressContent := m.renderProgressPane(contentWidth, progressContentH)
-	progressPanel := paneStyle.Copy().Height(progressContentH).Render(progressContent)
+	progressPanel := m.paneStyle(focusTasks).
+		Width(contentWidth).
+		Padding(0, 1).
+		Height(progressContentH).Render(progressContent)
 
 	// Activity (bottom)
 	activityContent := m.renderActivityPane(contentWidth, activityContentH)
-	activityPanel := paneStyle.Copy().Height(activityContentH).Render(activityContent)
+	activityPanel := m.paneStyle(focusActivity).
+		Width(contentWidth).
+		Padding(0, 1).
+		Height(activityContentH).Render(activityContent)
 
 	return lipgloss.JoinVertical(lipgloss.Left, outputPanel, progressPanel, activityPanel)
 }
