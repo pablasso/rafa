@@ -13,6 +13,8 @@ import (
 
 const outputLogFileName = "output.log"
 
+const streamChunkFlushBytes = 768
+
 // OutputWriter provides writers for capturing command output.
 // This interface is used by Runner to allow for different output strategies.
 type OutputWriter interface {
@@ -82,6 +84,7 @@ type streamingWriter struct {
 	underlying io.Writer
 	eventsChan chan string
 	lineBuf    strings.Builder // Buffer for partial lines
+	outputBuf  strings.Builder // Buffer for coalescing tiny text deltas
 	isStderr   bool            // If true, pass through raw (no JSON parsing)
 }
 
@@ -119,20 +122,48 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 		line := content[:idx]
 		content = content[idx+1:]
 
-		// Parse JSON and extract displayable text
-		formatted := FormatStreamLine(line)
+		// Parse JSON and extract displayable text plus flush boundaries.
+		formatted, shouldFlush := parseStreamLine(line)
 		if formatted != "" {
-			select {
-			case s.eventsChan <- formatted:
-			default:
-				// Drop if buffer full, don't block execution
+			// Tool markers should be emitted as standalone lines.
+			if strings.HasPrefix(formatted, "\n[Tool: ") {
+				s.flushOutput()
+				s.emit(formatted)
+			} else {
+				s.outputBuf.WriteString(formatted)
+				if strings.Contains(formatted, "\n") || s.outputBuf.Len() >= streamChunkFlushBytes {
+					s.flushOutput()
+				}
 			}
+		}
+
+		if shouldFlush {
+			s.flushOutput()
 		}
 	}
 
 	s.lineBuf.Reset()
 	s.lineBuf.WriteString(content)
 	return
+}
+
+func (s *streamingWriter) emit(text string) {
+	if text == "" {
+		return
+	}
+	select {
+	case s.eventsChan <- text:
+	default:
+		// Drop if buffer full, don't block execution
+	}
+}
+
+func (s *streamingWriter) flushOutput() {
+	if s.outputBuf.Len() == 0 {
+		return
+	}
+	s.emit(s.outputBuf.String())
+	s.outputBuf.Reset()
 }
 
 // streamEvent represents the JSON structure from Claude's stream-json output.
@@ -158,23 +189,36 @@ type streamEvent struct {
 // FormatStreamLine parses a JSON stream line and extracts displayable text.
 // For non-JSON input, it returns the line unchanged.
 func FormatStreamLine(line string) string {
+	formatted, _ := parseStreamLine(line)
+	return formatted
+}
+
+// parseStreamLine parses a stream-json line into display text and a flush hint.
+// The flush hint is true when buffered text should be emitted (message boundaries,
+// result events, or plain-text line boundaries).
+func parseStreamLine(line string) (string, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
-		return ""
+		return "", false
 	}
 
 	var event streamEvent
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
 		// Not JSON - return as-is
-		return line
+		return line, true
 	}
 
 	switch event.Type {
 	case "stream_event":
-		// Token-level streaming - extract delta text
-		if event.Event != nil && event.Event.Type == "content_block_delta" {
-			if event.Event.Delta != nil && event.Event.Delta.Type == "text_delta" {
-				return event.Event.Delta.Text
+		if event.Event != nil {
+			switch event.Event.Type {
+			case "content_block_delta":
+				// Token-level streaming - extract delta text
+				if event.Event.Delta != nil && event.Event.Delta.Type == "text_delta" {
+					return event.Event.Delta.Text, false
+				}
+			case "content_block_stop", "message_stop":
+				return "", true
 			}
 		}
 	case "assistant":
@@ -182,12 +226,18 @@ func FormatStreamLine(line string) string {
 		if event.Message != nil {
 			for _, c := range event.Message.Content {
 				if c.Type == "tool_use" && c.Name != "" {
-					return fmt.Sprintf("\n[Tool: %s]", c.Name)
+					return fmt.Sprintf("\n[Tool: %s]", c.Name), true
 				}
 			}
 		}
+		// Assistant turn boundary - flush any buffered delta text.
+		return "", true
+	case "result":
+		return "", true
 	}
-	return "" // Ignore system, user, result events
+
+	// Ignore system/user/meta events.
+	return "", false
 }
 
 // Stdout returns the writer for stdout.

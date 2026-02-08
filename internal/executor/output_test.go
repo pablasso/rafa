@@ -713,9 +713,11 @@ func TestStreamingWriter_JSONParsing(t *testing.T) {
 		isStderr:   false,
 	}
 
-	// Write JSON stream event
+	// Write a text delta followed by a boundary event so buffered content flushes.
 	jsonLine := `{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Streamed text"}}}` + "\n"
+	boundary := `{"type":"result","subtype":"success"}` + "\n"
 	sw.Write([]byte(jsonLine))
+	sw.Write([]byte(boundary))
 
 	select {
 	case msg := <-eventsChan:
@@ -725,6 +727,40 @@ func TestStreamingWriter_JSONParsing(t *testing.T) {
 		}
 	default:
 		t.Error("should have received parsed text from JSON")
+	}
+}
+
+func TestStreamingWriter_JSONParsing_CoalescesTextDeltas(t *testing.T) {
+	eventsChan := make(chan string, 10)
+
+	sw := &streamingWriter{
+		underlying: io.Discard,
+		eventsChan: eventsChan,
+		isStderr:   false,
+	}
+
+	first := `{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"I'll start"}}}` + "\n"
+	second := `{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":" by reading files"}}}` + "\n"
+	stop := `{"type":"stream_event","event":{"type":"message_stop"}}` + "\n"
+
+	sw.Write([]byte(first))
+	sw.Write([]byte(second))
+	sw.Write([]byte(stop))
+
+	select {
+	case msg := <-eventsChan:
+		expected := "I'll start by reading files"
+		if msg != expected {
+			t.Errorf("received %q, want %q", msg, expected)
+		}
+	default:
+		t.Fatal("should have received coalesced text")
+	}
+
+	select {
+	case extra := <-eventsChan:
+		t.Fatalf("expected a single coalesced message, got extra: %q", extra)
+	default:
 	}
 }
 
