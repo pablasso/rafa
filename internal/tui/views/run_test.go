@@ -1364,50 +1364,42 @@ func TestRunningModel_View_OutputThinkingIndicator_ShownOnlyWhileToolRunning(t *
 	m.currentTask = 1
 	m.attempt = 1
 
-	// No active tool: no indicator text.
-	view := m.View()
-	if strings.Contains(view, "Thinking (running tools)...") {
-		t.Fatalf("did not expect thinking indicator before tool use")
+	rightBefore := m.renderRightPanel(56, 20)
+	if strings.Contains(rightBefore, m.spinner.View()) {
+		t.Fatalf("did not expect spinner before tool use")
 	}
 
 	// Tool active: indicator should appear.
+	m, _ = m.Update(OutputLineMsg{Line: "Now let me verify"})
 	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
-	view = m.View()
-	if !strings.Contains(view, "Thinking (running tools)...") {
-		t.Fatalf("expected thinking indicator while tool is running")
+	rightDuring := m.renderRightPanel(56, 20)
+
+	inlineSpinner := regexp.MustCompile(regexp.QuoteMeta("Now let me verify") + `[^\n]*\n[ \t]*\n` + regexp.QuoteMeta(m.spinner.View()))
+	if !inlineSpinner.MatchString(rightDuring) {
+		t.Fatalf("expected spinner after output text with a blank separator, got %q", rightDuring)
 	}
 
 	// Tool finished: indicator should disappear immediately.
 	m, _ = m.Update(ToolResultMsg{})
-	view = m.View()
-	if strings.Contains(view, "Thinking (running tools)...") {
-		t.Fatalf("did not expect thinking indicator after tool result")
+	rightAfter := m.renderRightPanel(56, 20)
+	if strings.Contains(rightAfter, m.spinner.View()) {
+		t.Fatalf("did not expect spinner after tool result")
 	}
 }
 
-func TestRunningModel_RenderRightPanel_ReservedThinkingRowStable(t *testing.T) {
-	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
-	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
-	m.SetSize(100, 30)
+func TestInsertInlineSpinner_AfterLastText(t *testing.T) {
+	got := insertInlineSpinner("line one\n\n\n", "*")
+	want := "line one\n\n*\n"
+	if got != want {
+		t.Fatalf("insertInlineSpinner() = %q, want %q", got, want)
+	}
+}
 
-	before := m.renderRightPanel(56, 20)
-	beforeLines := strings.Count(before, "\n")
-
-	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: "/file.go"})
-	during := m.renderRightPanel(56, 20)
-	duringLines := strings.Count(during, "\n")
-
-	m, _ = m.Update(ToolResultMsg{})
-	after := m.renderRightPanel(56, 20)
-	afterLines := strings.Count(after, "\n")
-
-	if beforeLines != duringLines || beforeLines != afterLines {
-		t.Fatalf(
-			"expected reserved row to keep line count stable, got before=%d during=%d after=%d",
-			beforeLines,
-			duringLines,
-			afterLines,
-		)
+func TestInsertInlineSpinner_NoVisibleText(t *testing.T) {
+	got := insertInlineSpinner("\n\n", "*")
+	want := "*\n\n"
+	if got != want {
+		t.Fatalf("insertInlineSpinner() = %q, want %q", got, want)
 	}
 }
 

@@ -526,8 +526,8 @@ func (m *RunningModel) updateOutputSize() {
 	rightWidth := (m.width * 60 / 100) - 4
 
 	// Height: total - title(2) - bottom border(1) - status bar(1) - borders(2)
-	// Then reserve 3 lines in output panel: header + blank spacer + indicator row.
-	outputHeight := m.height - 9
+	// Then reserve 2 lines in output panel: header + blank spacer.
+	outputHeight := m.height - 8
 
 	if outputHeight < 1 {
 		outputHeight = 1
@@ -809,10 +809,12 @@ func (m RunningModel) renderRightPanel(width, height int) string {
 
 	// Render output viewport
 	outputView := m.output.View()
+	if m.state == stateRunning && m.isToolRunning() {
+		outputView = insertInlineSpinner(outputView, m.spinner.View())
+	}
 
 	// Add output content
 	lines = append(lines, outputView)
-	lines = append(lines, m.renderOutputThinkingRow())
 
 	return strings.Join(lines, "\n")
 }
@@ -982,13 +984,6 @@ func (m RunningModel) isToolRunning() bool {
 	return m.activeToolCount > 0
 }
 
-func (m RunningModel) renderOutputThinkingRow() string {
-	if m.state == stateRunning && m.isToolRunning() {
-		return fmt.Sprintf("%s %s", m.spinner.View(), styles.SubtleStyle.Render("Thinking (running tools)..."))
-	}
-	return styles.SubtleStyle.Render(" ")
-}
-
 // formatToolUseEntry formats a tool use entry for the activity timeline.
 func formatToolUseEntry(toolName, target string) string {
 	entry := toolName
@@ -1038,6 +1033,49 @@ func isToolMarkerLine(chunk string) bool {
 	}
 	toolName := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "[Tool: "), "]"))
 	return toolName != ""
+}
+
+// insertInlineSpinner injects a spinner directly after the last visible text:
+// last text line, empty line, spinner icon.
+func insertInlineSpinner(outputView, spinnerIcon string) string {
+	if outputView == "" {
+		return spinnerIcon
+	}
+
+	lines := strings.Split(outputView, "\n")
+	if len(lines) == 0 {
+		return spinnerIcon
+	}
+
+	lastTextIdx := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			lastTextIdx = i
+			break
+		}
+	}
+
+	if lastTextIdx == -1 {
+		lines[0] = spinnerIcon
+		return strings.Join(lines, "\n")
+	}
+
+	separatorIdx := lastTextIdx + 1
+	spinnerIdx := lastTextIdx + 2
+
+	if spinnerIdx < len(lines) {
+		lines[separatorIdx] = ""
+		lines[spinnerIdx] = spinnerIcon
+		return strings.Join(lines, "\n")
+	}
+
+	if separatorIdx < len(lines) {
+		lines[separatorIdx] = spinnerIcon
+		return strings.Join(lines, "\n")
+	}
+
+	lines[len(lines)-1] = spinnerIcon
+	return strings.Join(lines, "\n")
 }
 
 // formatDuration formats a duration as MM:SS or HH:MM:SS.
