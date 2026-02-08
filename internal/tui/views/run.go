@@ -59,6 +59,13 @@ type RunningModel struct {
 	spinner spinner.Model
 	output  components.OutputViewport
 
+	// Scrollable viewports for Activity and Tasks panes
+	activityView components.ScrollViewport
+	tasksView    components.ScrollViewport
+
+	// When true, tasksView auto-follows the current task
+	tasksAutoFollow bool
+
 	// For receiving events from executor
 	outputChan chan string
 	cancel     context.CancelFunc // Set when executor starts
@@ -184,20 +191,23 @@ func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string,
 	}
 
 	return RunningModel{
-		state:       stateRunning,
-		planID:      planID,
-		planName:    planName,
-		tasks:       taskDisplays,
-		currentTask: 0,
-		totalTasks:  len(tasks),
-		attempt:     0,
-		maxAttempts: executor.MaxAttempts,
-		startTime:   time.Now(),
-		spinner:     s,
-		output:      components.NewOutputViewport(80, 20, 0), // Will be resized
-		outputChan:  make(chan string, 100),                  // Buffered channel
-		planDir:     planDir,
-		plan:        p,
+		state:           stateRunning,
+		planID:          planID,
+		planName:        planName,
+		tasks:           taskDisplays,
+		currentTask:     0,
+		totalTasks:      len(tasks),
+		attempt:         0,
+		maxAttempts:     executor.MaxAttempts,
+		startTime:       time.Now(),
+		spinner:         s,
+		output:          components.NewOutputViewport(80, 20, 0), // Will be resized
+		activityView:    components.NewScrollViewport(20, 6, 0),  // Will be resized
+		tasksView:       components.NewScrollViewport(20, 4, 0),  // Will be resized
+		tasksAutoFollow: true,
+		outputChan:      make(chan string, 100), // Buffered channel
+		planDir:         planDir,
+		plan:            p,
 	}
 }
 
@@ -333,6 +343,8 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		if m.state == stateRunning || m.state == stateCancelling {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
+			// Re-sync activity view to update spinner animation on last entry
+			m.syncActivityView()
 			return m, cmd
 		}
 		return m, nil
@@ -363,6 +375,8 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 			IsSeparator: true,
 		})
 		m.trimActivities()
+		m.syncActivityView()
+		m.syncTasksView()
 		return m, nil
 
 	case TaskCompletedMsg:
@@ -373,6 +387,7 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 				break
 			}
 		}
+		m.syncTasksView()
 		return m, nil
 
 	case TaskFailedMsg:
@@ -385,12 +400,14 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 				}
 			}
 		}
+		m.syncTasksView()
 		return m, nil
 
 	case ToolUseMsg:
 		// Add tool use to activity timeline
 		m.addActivity(msg.ToolName, msg.ToolTarget)
 		m.activeToolCount++
+		m.syncActivityView()
 		return m, nil
 
 	case ToolResultMsg:
@@ -399,6 +416,7 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		if m.activeToolCount > 0 {
 			m.activeToolCount--
 		}
+		m.syncActivityView()
 		return m, nil
 
 	case UsageMsg:
@@ -538,17 +556,35 @@ func (m *RunningModel) updateOutputSize() {
 	minTwoColWidth := (leftMinWidth + panelChrome) + (outputMinWidth + panelChrome)
 
 	var rightWidth, outputHeight int
+	var leftWidth, activityContentH, tasksContentH int
 
 	if m.width < minTwoColWidth {
 		// Narrow/single-column fallback
 		rightWidth = m.width - panelChrome
+		leftWidth = m.width - panelChrome
 		// Approximate: output gets ~50% of available height minus borders
 		availableHeight := m.height - 2      // title + status bar
 		contentBudget := availableHeight - 6 // 3 panes * 2 border lines
 		outputHeight = contentBudget * narrowFallbackOutputPct / 100
+
+		remaining := contentBudget - outputHeight
+		progressContentH := remaining * narrowFallbackProgressPct / 100
+		if progressContentH < 1 {
+			progressContentH = 1
+		}
+		activityContentH = remaining - progressContentH
+		if activityContentH < 1 {
+			activityContentH = 1
+		}
+
+		// Tasks height within progress pane (subtract static header lines)
+		tasksContentH = progressContentH - progressStaticLines
+		if tasksContentH < 1 {
+			tasksContentH = 1
+		}
 	} else {
 		// Two-column layout
-		leftWidth := (m.width * leftWidthPercent / 100) - panelChrome
+		leftWidth = (m.width * leftWidthPercent / 100) - panelChrome
 		if leftWidth < leftMinWidth {
 			leftWidth = leftMinWidth
 		}
@@ -559,6 +595,38 @@ func (m *RunningModel) updateOutputSize() {
 		// Output pane height = total available - 2 border lines, minus 2 for header+spacer in renderRightPanel
 		availableHeight := m.height - 2
 		outputHeight = availableHeight - 2 - 2 // borders + header lines
+
+		// Calculate left column split
+		leftTotalHeight := availableHeight
+		contentBudget := leftTotalHeight - 4 // 2 borders per pane * 2 panes
+		if contentBudget < 2 {
+			contentBudget = 2
+		}
+
+		progressContentH := contentBudget * progressHeightPct / 100
+		if progressContentH < progressMinHeight {
+			progressContentH = progressMinHeight
+		}
+		activityContentH = contentBudget - progressContentH
+		if activityContentH < activityMinHeight {
+			activityContentH = activityMinHeight
+			progressContentH = contentBudget - activityContentH
+			if progressContentH < 1 {
+				progressContentH = 1
+			}
+		}
+		if progressContentH+activityContentH > contentBudget {
+			progressContentH = contentBudget - activityContentH
+			if progressContentH < 1 {
+				progressContentH = 1
+			}
+		}
+
+		// Tasks height within progress pane (subtract static header lines)
+		tasksContentH = progressContentH - progressStaticLines
+		if tasksContentH < 1 {
+			tasksContentH = 1
+		}
 	}
 
 	if outputHeight < 1 {
@@ -569,6 +637,20 @@ func (m *RunningModel) updateOutputSize() {
 	}
 
 	m.output.SetSize(rightWidth, outputHeight)
+
+	// Activity viewport: subtract 2 lines for header ("Activity" + "─────")
+	activityViewportH := activityContentH - 2
+	if activityViewportH < 1 {
+		activityViewportH = 1
+	}
+	m.activityView.SetSize(leftWidth, activityViewportH)
+
+	// Tasks viewport
+	m.tasksView.SetSize(leftWidth, tasksContentH)
+
+	// Sync viewport content after resize
+	m.syncActivityView()
+	m.syncTasksView()
 }
 
 // View implements tea.Model.
@@ -601,10 +683,15 @@ const (
 	activityMinHeight         = 6  // Minimum height for Activity pane content
 	narrowFallbackOutputPct   = 50 // Output pane height % in single-column fallback
 	narrowFallbackProgressPct = 60 // Progress pane height % of remaining in narrow fallback
+	progressStaticLines       = 12 // Lines used by header + usage above the tasks viewport
 )
 
 // renderRunning renders the split-panel execution view.
 func (m RunningModel) renderRunning() string {
+	// Ensure viewport content is up-to-date before rendering.
+	m.syncActivityView()
+	m.syncTasksView()
+
 	var b strings.Builder
 
 	// Title
@@ -774,7 +861,7 @@ func (m RunningModel) renderNarrowLayout(availableHeight int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, outputPanel, progressPanel, activityPanel)
 }
 
-// renderProgressPane renders the Progress pane: header + usage + tasks list.
+// renderProgressPane renders the Progress pane: header + usage + scrollable tasks list.
 func (m RunningModel) renderProgressPane(width, height int) string {
 	var lines []string
 
@@ -807,88 +894,43 @@ func (m RunningModel) renderProgressPane(width, height int) string {
 	lines = append(lines, fmt.Sprintf("Cost:  $%.2f", m.estimatedCost))
 	lines = append(lines, "")
 
-	// Task list with titles and status indicators
+	// Task list header (static)
 	lines = append(lines, styles.SubtleStyle.Render("Tasks"))
 	lines = append(lines, "─────")
 
-	// Calculate how many task lines we can show in remaining space
-	fixedLines := len(lines)
-	taskListMaxLines := height - fixedLines
-	if taskListMaxLines < 0 {
-		taskListMaxLines = 0
-	}
-	if taskListMaxLines > len(m.tasks) {
-		taskListMaxLines = len(m.tasks)
-	}
+	// Render the scrollable tasks viewport below the static header
+	staticContent := strings.Join(lines, "\n")
+	tasksContent := m.tasksView.View()
 
-	lines = append(lines, m.renderTaskList(width, taskListMaxLines)...)
+	// Combine static header with scrollable tasks
+	result := staticContent + "\n" + tasksContent
 
-	// Join lines and pad to height
-	content := strings.Join(lines, "\n")
-	lineCount := len(lines)
-	if lineCount < height {
-		content += strings.Repeat("\n", height-lineCount)
+	// Pad to fill the full height
+	resultLines := strings.Count(result, "\n") + 1
+	if resultLines < height {
+		result += strings.Repeat("\n", height-resultLines)
 	}
 
-	return content
+	return result
 }
 
-// renderActivityPane renders the Activity pane: activity timeline entries.
+// renderActivityPane renders the Activity pane: header + scrollable activity timeline.
 func (m RunningModel) renderActivityPane(width, height int) string {
-	var lines []string
+	// Activity header (static)
+	header := styles.SubtleStyle.Render("Activity") + "\n" + "─────"
 
-	// Activity header
-	lines = append(lines, styles.SubtleStyle.Render("Activity"))
-	lines = append(lines, "─────")
+	// Render the scrollable activity viewport below the header
+	activityContent := m.activityView.View()
 
-	// Calculate how many activity lines we can show
-	fixedLines := len(lines) // header + separator
-	activityMaxLines := height - fixedLines
-	if activityMaxLines < 0 {
-		activityMaxLines = 0
+	result := header + "\n" + activityContent
+
+	// Pad to fill the full height
+	resultLines := strings.Count(result, "\n") + 1
+	if resultLines < height {
+		result += strings.Repeat("\n", height-resultLines)
 	}
 
-	// Show activity entries (most recent)
-	activityStartIdx := 0
-	if len(m.activities) > activityMaxLines {
-		activityStartIdx = len(m.activities) - activityMaxLines
-	}
-
-	if activityMaxLines > 0 {
-		for i := activityStartIdx; i < len(m.activities); i++ {
-			entry := m.activities[i]
-			var activityLine string
-			if entry.IsSeparator {
-				activityLine = styles.SubtleStyle.Render(entry.Text)
-			} else {
-				indicator := "├─"
-				if entry.IsDone {
-					indicator = styles.SuccessStyle.Render("✓")
-				} else if i == len(m.activities)-1 && m.state == stateRunning {
-					indicator = m.spinner.View()
-				}
-				activityLine = fmt.Sprintf("%s %s", indicator, entry.Text)
-			}
-			if len(activityLine) > width {
-				activityLine = activityLine[:width-3] + "..."
-			}
-			lines = append(lines, activityLine)
-		}
-	}
-
-	// If no activities, show placeholder
-	if len(m.activities) == 0 && activityMaxLines > 0 {
-		lines = append(lines, styles.SubtleStyle.Render("  (waiting...)"))
-	}
-
-	// Join lines and pad to height
-	content := strings.Join(lines, "\n")
-	lineCount := len(lines)
-	if lineCount < height {
-		content += strings.Repeat("\n", height-lineCount)
-	}
-
-	return content
+	return result
 }
 
 func (m RunningModel) renderTaskList(width, maxLines int) []string {
@@ -1123,6 +1165,85 @@ func (m *RunningModel) trimActivities() {
 		copy(trimmed, m.activities[len(m.activities)-maxActivityEntries:])
 		m.activities = trimmed
 	}
+}
+
+// syncActivityView converts activity entries to []string lines and feeds them
+// into the activityView ScrollViewport.
+func (m *RunningModel) syncActivityView() {
+	contentWidth := m.activityView.ContentWidth()
+
+	var lines []string
+	if len(m.activities) == 0 {
+		lines = append(lines, styles.SubtleStyle.Render("  (waiting...)"))
+	} else {
+		for i, entry := range m.activities {
+			var line string
+			if entry.IsSeparator {
+				line = styles.SubtleStyle.Render(entry.Text)
+			} else {
+				indicator := "├─"
+				if entry.IsDone {
+					indicator = styles.SuccessStyle.Render("✓")
+				} else if i == len(m.activities)-1 && m.state == stateRunning {
+					indicator = m.spinner.View()
+				}
+				line = fmt.Sprintf("%s %s", indicator, entry.Text)
+			}
+			if contentWidth > 0 && lipgloss.Width(line) > contentWidth {
+				line = truncateWithEllipsis(line, contentWidth)
+			}
+			lines = append(lines, line)
+		}
+	}
+
+	m.activityView.SetLines(lines)
+}
+
+// syncTasksView converts the tasks list to []string lines, feeds them into the
+// tasksView ScrollViewport, and applies auto-follow for the current task.
+func (m *RunningModel) syncTasksView() {
+	contentWidth := m.tasksView.ContentWidth()
+
+	var lines []string
+	for i, task := range m.tasks {
+		title := strings.TrimSpace(task.Title)
+		if title == "" {
+			title = "(untitled)"
+		}
+
+		isCurrent := i+1 == m.currentTask
+		indicator := m.getTaskIndicator(task.Status, isCurrent)
+
+		prefix := fmt.Sprintf("%s %d. ", indicator, i+1)
+		prefixWidth := lipgloss.Width(prefix)
+		if contentWidth > 0 && prefixWidth >= contentWidth {
+			lines = append(lines, truncateWithEllipsis(prefix, contentWidth))
+			continue
+		}
+
+		availableTitleWidth := contentWidth - prefixWidth
+		if availableTitleWidth < 0 {
+			availableTitleWidth = 0
+		}
+		title = truncateWithEllipsis(title, availableTitleWidth)
+
+		lines = append(lines, prefix+title)
+	}
+
+	m.tasksView.SetLines(lines)
+
+	// Auto-follow: ensure the current task is visible when auto-scroll is enabled.
+	// The tasksView's autoScroll state serves as the auto-follow toggle:
+	// user scrolling disables it, reaching the end re-enables it.
+	if m.tasksAutoFollow && m.currentTask > 0 && m.currentTask <= len(m.tasks) {
+		m.tasksView.EnsureVisible(m.currentTask-1, false)
+	}
+}
+
+// updateTasksAutoFollow syncs the tasksAutoFollow flag with the tasksView's
+// auto-scroll state. Call this after forwarding user scroll events to tasksView.
+func (m *RunningModel) updateTasksAutoFollow() {
+	m.tasksAutoFollow = m.tasksView.AutoScroll()
 }
 
 // markLastActivityDone marks the last activity entry as done.

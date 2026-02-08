@@ -173,6 +173,15 @@ func (s ScrollViewport) AtBottom() bool {
 	return s.viewport.AtBottom()
 }
 
+// ContentWidth returns the width available for content (total width minus scrollbar).
+func (s ScrollViewport) ContentWidth() int {
+	w := s.width - 1
+	if w < 0 {
+		return 0
+	}
+	return w
+}
+
 // SetAutoScroll enables or disables auto-scroll. When enabled, the viewport
 // scrolls to the bottom immediately.
 func (s *ScrollViewport) SetAutoScroll(enabled bool) {
