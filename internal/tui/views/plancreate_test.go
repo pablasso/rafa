@@ -100,33 +100,94 @@ func TestPlanCreateModel_BuildExtractionPrompt_OneShot(t *testing.T) {
 	}
 }
 
-func TestPlanCreateModel_Update_SavedMsgAutoRunsPlan(t *testing.T) {
+func TestPlanCreateModel_Update_SavedMsgStaysOnSuccessScreen(t *testing.T) {
 	m := NewPlanCreateModel("design.md")
 	updated, cmd := m.Update(PlanCreateSavedMsg{PlanID: "abc123-test-plan"})
 
-	if cmd == nil {
-		t.Fatal("expected command to auto-run saved plan")
+	if cmd != nil {
+		t.Fatal("expected no command after plan save")
 	}
 	if updated.State() != PlanCreateStateCompleted {
 		t.Fatalf("expected completed state, got %d", updated.State())
+	}
+	if updated.SavedPlanID() != "abc123-test-plan" {
+		t.Fatalf("expected saved plan ID abc123-test-plan, got %s", updated.SavedPlanID())
 	}
 	if updated.IsThinking() {
 		t.Fatal("expected extraction to stop after save")
 	}
 	select {
 	case <-updated.ctx.Done():
-		// expected: extraction context cancelled before auto-run
+		// expected: extraction context cancelled after save
 	default:
 		t.Fatal("expected extraction context to be cancelled after save")
 	}
 
-	msg := cmd()
-	runMsg, ok := msg.(msgs.RunPlanMsg)
-	if !ok {
-		t.Fatalf("expected RunPlanMsg, got %T", msg)
+	updated.SetSize(120, 30)
+	view := updated.View()
+	if !strings.Contains(view, "Plan created: abc123-test-plan") {
+		t.Fatalf("expected success view to include created plan ID, got: %s", view)
 	}
-	if runMsg.PlanID != "abc123-test-plan" {
-		t.Fatalf("expected plan ID abc123-test-plan, got %s", runMsg.PlanID)
+	if !strings.Contains(view, "You can run it anytime from Home > Run Plan.") {
+		t.Fatalf("expected success view to include run-later guidance, got: %s", view)
+	}
+	if strings.Contains(view, "Starting execution...") {
+		t.Fatalf("did not expect auto-run text in success view")
+	}
+	if !strings.Contains(view, "[Enter] Home") {
+		t.Fatalf("expected success action bar to show Enter home option, got: %s", view)
+	}
+}
+
+func TestPlanCreateModel_HandleKeyPress_RealCompletedEnterReturnsHome(t *testing.T) {
+	m := NewPlanCreateModel("design.md")
+	m.state = PlanCreateStateCompleted
+	m.mode = PlanCreateModeReal
+
+	updated, cmd, handled := m.handleKeyPress(tea.KeyMsg{Type: tea.KeyEnter})
+	if !handled {
+		t.Fatal("expected enter key to be handled in real completed state")
+	}
+	if updated.State() != PlanCreateStateCompleted {
+		t.Fatalf("expected state to remain completed, got %d", updated.State())
+	}
+	if cmd == nil {
+		t.Fatal("expected enter key to return home command in real completed state")
+	}
+	msg := cmd()
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Fatalf("expected GoToHomeMsg, got %T", msg)
+	}
+}
+
+func TestPlanCreateModel_HandleKeyPress_RealCompletedIgnoresNonEnter(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  tea.KeyMsg
+	}{
+		{name: "h", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")}},
+		{name: "m", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")}},
+		{name: "q", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}},
+		{name: "ctrl+c", msg: tea.KeyMsg{Type: tea.KeyCtrlC}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewPlanCreateModel("design.md")
+			m.state = PlanCreateStateCompleted
+			m.mode = PlanCreateModeReal
+
+			updated, cmd, handled := m.handleKeyPress(tt.msg)
+			if !handled {
+				t.Fatal("expected key to be handled in real completed state")
+			}
+			if cmd != nil {
+				t.Fatalf("expected no command for %s in real completed state", tt.name)
+			}
+			if updated.State() != PlanCreateStateCompleted {
+				t.Fatalf("expected state to remain completed, got %d", updated.State())
+			}
+		})
 	}
 }
 

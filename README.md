@@ -106,6 +106,7 @@ Optional flags:
 ### Creating a Plan
 
 Select **Create Plan** in the TUI, pick a design document, and follow the prompts.
+After creation succeeds, Rafa stays on a success screen. Press `Enter` to return Home, then use **Run Plan** whenever you want to execute it.
 
 Plans are stored in `.rafa/plans/<id>-<name>/` with:
 

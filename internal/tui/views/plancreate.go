@@ -335,10 +335,9 @@ func (m PlanCreateModel) Update(msg tea.Msg) (PlanCreateModel, tea.Cmd) {
 	case PlanCreateSavedMsg:
 		m.state = PlanCreateStateCompleted
 		m.savedPlanID = msg.PlanID
-		m.addActivity(fmt.Sprintf("✓ Plan saved: %s", msg.PlanID), 0)
-		m.addActivity("Starting plan execution...", 0)
+		m.addActivity(fmt.Sprintf("✓ Plan created: %s", msg.PlanID), 0)
 		m.stopExtractionSession()
-		return m, func() tea.Msg { return msgs.RunPlanMsg{PlanID: msg.PlanID} }
+		return m, nil
 
 	case tea.KeyMsg:
 		newModel, cmd, handled := m.handleKeyPress(msg)
@@ -533,7 +532,15 @@ func (m *PlanCreateModel) savePlan() tea.Cmd {
 // Returns (model, cmd, handled).
 func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cmd, bool) {
 	switch msg.String() {
+	case "enter":
+		if m.state == PlanCreateStateCompleted && m.mode == PlanCreateModeReal {
+			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }, true
+		}
+
 	case "ctrl+c":
+		if m.state == PlanCreateStateCompleted && m.mode == PlanCreateModeReal {
+			return m, nil, true
+		}
 		m.stopExtractionSession()
 		m.state = PlanCreateStateCancelled
 		return m, nil, true
@@ -549,11 +556,17 @@ func (m PlanCreateModel) handleKeyPress(msg tea.KeyMsg) (PlanCreateModel, tea.Cm
 		}
 
 	case "h", "m":
+		if m.state == PlanCreateStateCompleted && m.mode == PlanCreateModeReal {
+			return m, nil, true
+		}
 		if m.state == PlanCreateStateCompleted || m.state == PlanCreateStateCancelled || m.state == PlanCreateStateError {
 			return m, func() tea.Msg { return msgs.GoToHomeMsg{} }, true
 		}
 
 	case "q":
+		if m.state == PlanCreateStateCompleted && m.mode == PlanCreateModeReal {
+			return m, nil, true
+		}
 		if m.state == PlanCreateStateCompleted || m.state == PlanCreateStateCancelled || m.state == PlanCreateStateError {
 			m.cancel()
 			return m, tea.Quit, true
@@ -785,8 +798,8 @@ func (m PlanCreateModel) renderStatusLine() string {
 // renderCompletionMessage shows success and next steps.
 func (m PlanCreateModel) renderRealCompletionMessage() string {
 	var lines []string
-	lines = append(lines, styles.SuccessStyle.Render(fmt.Sprintf("✓ Plan saved: %s", m.savedPlanID)))
-	lines = append(lines, styles.SubtleStyle.Render("Starting execution..."))
+	lines = append(lines, styles.SuccessStyle.Render(fmt.Sprintf("✓ Plan created: %s", m.savedPlanID)))
+	lines = append(lines, styles.SubtleStyle.Render("You can run it anytime from Home > Run Plan."))
 	return strings.Join(lines, "\n")
 }
 
@@ -819,7 +832,7 @@ func (m PlanCreateModel) renderActionBar() string {
 		if m.mode == PlanCreateModeDemoUnsaved {
 			items = []string{"✓ Demo Complete", "Not saved", "[r] Replay", "[h] Home", "[q] Quit"}
 		} else {
-			items = []string{"✓ Complete", "Starting execution...", "[h] Home", "[q] Quit"}
+			items = []string{"✓ Plan created", "[Enter] Home"}
 		}
 	case PlanCreateStateCancelled:
 		items = []string{"[h] Home", "[q] Quit"}

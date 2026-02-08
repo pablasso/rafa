@@ -166,7 +166,7 @@ func processCmd(cmd tea.Cmd) tea.Msg {
 }
 
 // TestCreatePlanFlow tests the complete create flow:
-// Home → FilePicker → Creating → success → Running → Home
+// Home → FilePicker → Creating → success → Home
 func TestCreatePlanFlow(t *testing.T) {
 	_, rafaDir, designPath := setupTestEnvWithDesignDoc(t, `# Test Feature
 This is a test design document.
@@ -233,28 +233,30 @@ This is a test design document.
 	newModel, cmd = m.Update(planSavedMsg)
 	m = newModel.(Model)
 
-	// View should still be PlanCreate (briefly) but return RunPlanMsg immediately
+	// View should remain PlanCreate and not auto-run.
 	if m.currentView != ViewPlanCreate {
 		t.Fatalf("expected ViewPlanCreate after success, got %d", m.currentView)
 	}
+	if cmd != nil {
+		t.Fatal("expected no command from PlanCreateSavedMsg")
+	}
+
+	// Press Enter to return home from success screen.
+	cmd = sendKey(t, &m, "enter")
 	if cmd == nil {
-		t.Fatal("expected command from PlanCreateSavedMsg")
+		t.Fatal("expected command from Enter in plan-create success state")
 	}
 
 	msg = processCmd(cmd)
-	runMsg, ok := msg.(msgs.RunPlanMsg)
-	if !ok {
-		t.Fatalf("expected RunPlanMsg, got %T", msg)
-	}
-	if runMsg.PlanID != "abc123-test-feature" {
-		t.Errorf("expected plan ID abc123-test-feature, got %s", runMsg.PlanID)
+	if _, ok := msg.(msgs.GoToHomeMsg); !ok {
+		t.Fatalf("expected GoToHomeMsg, got %T", msg)
 	}
 
-	// Process run plan transition to Running view
+	// Process transition to Home view.
 	newModel, _ = m.Update(msg)
 	m = newModel.(Model)
-	if m.currentView != ViewRunning {
-		t.Fatalf("expected ViewRunning after auto-run, got %d", m.currentView)
+	if m.currentView != ViewHome {
+		t.Fatalf("expected ViewHome after returning from create success, got %d", m.currentView)
 	}
 }
 

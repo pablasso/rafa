@@ -15,7 +15,7 @@ Add a create-focused demo surface that replays realistic plan-creation activity 
 
 - Persisting plans during create demo.
 - Auto-transitioning create demo into run demo.
-- Changing production create flow behavior (real create still saves and auto-runs).
+- Changing production create flow behavior (real create still saves, then returns to Home when the user confirms).
 
 ## CLI and Options
 
