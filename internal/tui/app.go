@@ -188,7 +188,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			designsDir := filepath.Join(m.repoRoot, "docs", "designs")
 			// Check if docs/designs/ exists and has .md files
 			if hasMarkdownFiles(designsDir) {
-				startDir = designsDir
+				m.filePicker = views.NewPlanFilePickerModel(m.repoRoot)
+				m.filePicker.SetSize(m.width, m.height)
+				return m, m.filePicker.Init()
 			} else {
 				// No design docs exist, show error and return to home
 				m.currentView = ViewHome

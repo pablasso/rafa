@@ -1,6 +1,7 @@
 package views
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,4 +230,151 @@ func TestFilePickerModel_FileAllowedIsTrue(t *testing.T) {
 	if !m.picker.FileAllowed {
 		t.Error("expected FileAllowed to be true")
 	}
+}
+
+func TestNewPlanFilePickerModel_CuratedViewShowsExpectedLocationAndGrouping(t *testing.T) {
+	repoRoot, unplannedPath, plannedPath := setupPlanPickerFixture(t)
+	m := NewPlanFilePickerModel(repoRoot)
+	m.SetSize(100, 30)
+
+	view := m.View()
+
+	if !strings.Contains(view, "Expected location: docs/designs/") {
+		t.Fatal("expected curated subtitle to mention docs/designs/")
+	}
+	if !strings.Contains(view, "No Plan Yet (1)") {
+		t.Fatal("expected No Plan Yet section")
+	}
+	if !strings.Contains(view, "Already Has Plan (1)") {
+		t.Fatal("expected Already Has Plan section")
+	}
+	if !strings.Contains(view, "already has 1 plan") {
+		t.Fatal("expected planned document label to include plan count")
+	}
+
+	unplannedName := filepath.Base(unplannedPath)
+	plannedName := filepath.Base(plannedPath)
+	if strings.Index(view, unplannedName) > strings.Index(view, plannedName) {
+		t.Fatalf("expected unplanned doc %q to appear before planned doc %q", unplannedName, plannedName)
+	}
+}
+
+func TestPlanFilePickerModel_KeyBTogglesToBrowseAndDReturnsToCurated(t *testing.T) {
+	repoRoot, _, _ := setupPlanPickerFixture(t)
+	m := NewPlanFilePickerModel(repoRoot)
+	m.SetSize(100, 30)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	m = updated
+	if cmd == nil {
+		t.Fatal("expected command when switching to browse mode")
+	}
+
+	// Process directory-read message to fully initialize browse view.
+	msg := cmd()
+	updated, _ = m.Update(msg)
+	m = updated
+
+	browseView := m.View()
+	if !strings.Contains(browseView, "d Design Docs") {
+		t.Fatal("expected browse mode status bar to contain d Design Docs")
+	}
+	if strings.Contains(browseView, "Expected location: docs/designs/") {
+		t.Fatal("did not expect curated subtitle in browse mode")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	m = updated
+	curatedView := m.View()
+
+	if !strings.Contains(curatedView, "Expected location: docs/designs/") {
+		t.Fatal("expected to return to curated mode after pressing d")
+	}
+	if !strings.Contains(curatedView, "b Browse") {
+		t.Fatal("expected curated status bar to contain b Browse")
+	}
+}
+
+func TestPlanFilePickerModel_EnterOnPlannedDocStillSelects(t *testing.T) {
+	repoRoot, _, plannedPath := setupPlanPickerFixture(t)
+	m := NewPlanFilePickerModel(repoRoot)
+	m.SetSize(100, 30)
+
+	// Move from first unplanned doc to first planned doc.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated
+	if cmd == nil {
+		t.Fatal("expected enter to return a selection command")
+	}
+
+	msg := cmd()
+	fileMsg, ok := msg.(msgs.FileSelectedMsg)
+	if !ok {
+		t.Fatalf("expected msgs.FileSelectedMsg, got %T", msg)
+	}
+	if fileMsg.Path != plannedPath {
+		t.Fatalf("expected planned path %q, got %q", plannedPath, fileMsg.Path)
+	}
+}
+
+func TestPlanFilePickerModel_ShowsInlineWarningForPlannedSelection(t *testing.T) {
+	repoRoot, _, _ := setupPlanPickerFixture(t)
+	m := NewPlanFilePickerModel(repoRoot)
+	m.SetSize(100, 30)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated
+	view := m.View()
+
+	if !strings.Contains(view, "already has a plan; selecting creates another") {
+		t.Fatal("expected inline warning for planned document selection")
+	}
+}
+
+func setupPlanPickerFixture(t *testing.T) (repoRoot, unplannedPath, plannedPath string) {
+	t.Helper()
+
+	repoRoot = t.TempDir()
+	designsDir := filepath.Join(repoRoot, "docs", "designs")
+	plansDir := filepath.Join(repoRoot, ".rafa", "plans")
+
+	if err := os.MkdirAll(designsDir, 0o755); err != nil {
+		t.Fatalf("failed to create designs dir: %v", err)
+	}
+	if err := os.MkdirAll(plansDir, 0o755); err != nil {
+		t.Fatalf("failed to create plans dir: %v", err)
+	}
+
+	unplannedPath = filepath.Join(designsDir, "alpha.md")
+	plannedPath = filepath.Join(designsDir, "bravo.md")
+
+	if err := os.WriteFile(unplannedPath, []byte("# Alpha"), 0o644); err != nil {
+		t.Fatalf("failed to write unplanned doc: %v", err)
+	}
+	if err := os.WriteFile(plannedPath, []byte("# Bravo"), 0o644); err != nil {
+		t.Fatalf("failed to write planned doc: %v", err)
+	}
+
+	planDir := filepath.Join(plansDir, "abc123-demo")
+	if err := os.MkdirAll(planDir, 0o755); err != nil {
+		t.Fatalf("failed to create plan dir: %v", err)
+	}
+
+	planPayload := map[string]any{
+		"id":         "abc123",
+		"name":       "demo",
+		"sourceFile": "docs/designs/bravo.md",
+	}
+	planJSON, err := json.Marshal(planPayload)
+	if err != nil {
+		t.Fatalf("failed to marshal plan json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(planDir, "plan.json"), planJSON, 0o644); err != nil {
+		t.Fatalf("failed to write plan.json: %v", err)
+	}
+
+	return repoRoot, unplannedPath, plannedPath
 }

@@ -136,8 +136,11 @@ func TestModel_GoToFilePickerMsg_ForPlanCreation_StartsInDocsDesigns(t *testing.
 		t.Errorf("expected currentView to be ViewFilePicker, got %v", updatedModel.currentView)
 	}
 
-	// The file picker should have been initialized (we can't check the internal path directly,
-	// but we can verify it was created)
+	updatedModel.filePicker.SetSize(100, 30)
+	view := updatedModel.filePicker.View()
+	if !strings.Contains(view, "Expected location: docs/designs/") {
+		t.Errorf("expected plan picker to show docs/designs expectation, got: %s", view)
+	}
 }
 
 func TestModel_GoToFilePickerMsg_ForPlanCreation_ShowsErrorWhenNoDesignDocs(t *testing.T) {
