@@ -2,16 +2,18 @@ package components
 
 import "strings"
 
-// RenderScrollbar renders a 1-column vertical scrollbar with track and thumb
-// characters positioned proportionally. viewHeight is the visible area height,
-// contentHeight is the total number of content lines, and yOffset is the
-// current scroll offset (0-based).
+// RenderScrollbar renders a 1-column vertical scrollbar. The scrollbar is
+// hidden (blank gutter) until content exceeds the viewport height; once
+// scrollable, it renders a track and thumb positioned proportionally.
+//
+// viewHeight is the visible area height, contentHeight is the total number of
+// content lines, and yOffset is the current scroll offset (0-based).
 //
 // Track character: │ (subtle)
 // Thumb character: █ (positioned based on scroll percent / visible fraction)
 //
-// When content fits entirely in the viewport, the scrollbar renders as an
-// empty track (all │ characters).
+// When content fits entirely in the viewport, the scrollbar renders as a blank
+// gutter (all spaces) to keep layout width stable without showing a track.
 func RenderScrollbar(viewHeight, contentHeight, yOffset int) string {
 	if viewHeight <= 0 {
 		return ""
@@ -22,9 +24,9 @@ func RenderScrollbar(viewHeight, contentHeight, yOffset int) string {
 		thumb = "█"
 	)
 
-	// When content fits entirely, render empty track.
+	// When content fits entirely, render a hidden gutter.
 	if contentHeight <= viewHeight {
-		return strings.Repeat(track+"\n", viewHeight-1) + track
+		return strings.Repeat(" \n", viewHeight-1) + " "
 	}
 
 	// Thumb size proportional to visible fraction, minimum 1.

@@ -22,10 +22,10 @@ func TestRenderScrollbar_ContentFitsInViewport(t *testing.T) {
 	if len(lines) != 10 {
 		t.Fatalf("expected 10 lines, got %d", len(lines))
 	}
-	// All lines should be track characters when content fits.
+	// All lines should be blank gutter spaces when content fits.
 	for i, line := range lines {
-		if line != "│" {
-			t.Errorf("line %d: expected track │, got %q", i, line)
+		if line != " " {
+			t.Errorf("line %d: expected blank gutter space, got %q", i, line)
 		}
 	}
 }
@@ -36,10 +36,10 @@ func TestRenderScrollbar_ContentEqualsViewport(t *testing.T) {
 	if len(lines) != 10 {
 		t.Fatalf("expected 10 lines, got %d", len(lines))
 	}
-	// Content equals viewport: should be all track (no scrolling needed).
+	// Content equals viewport: should be hidden gutter (no scrolling needed).
 	for i, line := range lines {
-		if line != "│" {
-			t.Errorf("line %d: expected track │, got %q", i, line)
+		if line != " " {
+			t.Errorf("line %d: expected blank gutter space, got %q", i, line)
 		}
 	}
 }
@@ -491,10 +491,10 @@ func TestScrollViewport_View_ShortContent(t *testing.T) {
 		t.Fatalf("expected 10 view lines, got %d", len(viewLines))
 	}
 
-	// Scrollbar should be all track when content fits.
+	// Scrollbar gutter should be hidden when content fits.
 	for i, line := range viewLines {
-		if !strings.HasSuffix(line, "│") {
-			t.Errorf("line %d: expected track-only scrollbar for short content, got %q", i, line)
+		if !strings.HasSuffix(line, " ") {
+			t.Errorf("line %d: expected hidden scrollbar gutter for short content, got %q", i, line)
 		}
 	}
 }
@@ -589,7 +589,7 @@ func TestScrollViewport_SetLines_Empty(t *testing.T) {
 	_ = view // should not panic
 }
 
-func TestScrollViewport_ContentShorterThanViewport_ScrollbarAllTrack(t *testing.T) {
+func TestScrollViewport_ContentShorterThanViewport_ScrollbarHidden(t *testing.T) {
 	sv := NewScrollViewport(20, 10, 100)
 
 	// Only 3 lines in a 10-line viewport
@@ -602,10 +602,13 @@ func TestScrollViewport_ContentShorterThanViewport_ScrollbarAllTrack(t *testing.
 		t.Fatalf("expected 10 view lines, got %d", len(viewLines))
 	}
 
-	// All scrollbar characters should be track (│), not thumb (█)
+	// Hidden gutter should render spaces, not visible scrollbar characters.
 	for i, line := range viewLines {
-		if strings.HasSuffix(line, "█") {
-			t.Errorf("line %d: expected track-only scrollbar for short content, got line ending with thumb: %q", i, line)
+		if strings.HasSuffix(line, "█") || strings.HasSuffix(line, "│") {
+			t.Errorf("line %d: expected hidden scrollbar gutter for short content, got %q", i, line)
+		}
+		if !strings.HasSuffix(line, " ") {
+			t.Errorf("line %d: expected trailing hidden-gutter space, got %q", i, line)
 		}
 	}
 }
@@ -677,10 +680,10 @@ func TestRenderScrollbar_ZeroContent(t *testing.T) {
 	if len(lines) != 10 {
 		t.Fatalf("expected 10 lines, got %d", len(lines))
 	}
-	// All should be track
+	// All should be hidden gutter spaces.
 	for i, line := range lines {
-		if line != "│" {
-			t.Errorf("line %d: expected track, got %q", i, line)
+		if line != " " {
+			t.Errorf("line %d: expected blank gutter space, got %q", i, line)
 		}
 	}
 }

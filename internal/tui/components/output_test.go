@@ -320,6 +320,36 @@ func TestOutputViewport_Scrollbar_AppearsWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestOutputViewport_Scrollbar_HiddenWhenContentFits(t *testing.T) {
+	// Width 21 = 20 content + 1 reserved scrollbar gutter column.
+	ov := NewOutputViewport(21, 5, 100)
+	ov.SetShowScrollbar(true)
+
+	// Content fits in viewport height, so gutter should stay hidden.
+	ov.AddLine("content")
+
+	view := ov.View()
+	viewLines := strings.Split(view, "\n")
+
+	if len(viewLines) != 5 {
+		t.Fatalf("expected 5 view lines, got %d", len(viewLines))
+	}
+
+	if strings.Contains(view, "│") || strings.Contains(view, "█") {
+		t.Error("expected no visible scrollbar characters when content fits")
+	}
+
+	for i, line := range viewLines {
+		runeCount := len([]rune(line))
+		if runeCount != 21 {
+			t.Errorf("line %d: expected 21 runes, got %d: %q", i, runeCount, line)
+		}
+		if !strings.HasSuffix(line, " ") {
+			t.Errorf("line %d: expected hidden scrollbar gutter space at line end, got %q", i, line)
+		}
+	}
+}
+
 func TestOutputViewport_Scrollbar_NotPresentWhenDisabled(t *testing.T) {
 	ov := NewOutputViewport(21, 5, 100)
 	// Scrollbar disabled by default.
