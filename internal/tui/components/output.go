@@ -2,7 +2,6 @@ package components
 
 import (
 	"strings"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -211,7 +210,7 @@ func (o OutputViewport) ComposeWithScrollbar(content string) string {
 
 		b.WriteString(cl)
 		// Pad content to fill the content width so the scrollbar aligns.
-		padding := cw - utf8.RuneCountInString(cl)
+		padding := cw - ansi.StringWidth(cl)
 		if padding > 0 {
 			b.WriteString(strings.Repeat(" ", padding))
 		}

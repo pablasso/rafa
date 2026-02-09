@@ -2,10 +2,10 @@ package components
 
 import (
 	"strings"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const defaultScrollViewportMaxLines = 2000
@@ -158,7 +158,7 @@ func (s ScrollViewport) View() string {
 		if contentWidth < 0 {
 			contentWidth = 0
 		}
-		padding := contentWidth - utf8.RuneCountInString(cl)
+		padding := contentWidth - ansi.StringWidth(cl)
 		if padding > 0 {
 			b.WriteString(strings.Repeat(" ", padding))
 		}

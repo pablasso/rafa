@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/pablasso/rafa/internal/executor"
 	"github.com/pablasso/rafa/internal/plan"
 	"github.com/pablasso/rafa/internal/tui/components"
@@ -753,21 +754,32 @@ func computeLayout(width, height int) layoutDims {
 			contentBudget = 3
 		}
 
-		d.outputContentH = contentBudget * narrowFallbackOutputPct / 100
-		if d.outputContentH < 3 {
-			d.outputContentH = 3
+		// Output pane has 2 static header lines ("Output" + blank) above the scrollable viewport.
+		// outputContentH tracks the viewport height, not the full pane inner height.
+		outputPaneInnerH := contentBudget * narrowFallbackOutputPct / 100
+		if outputPaneInnerH < 3 {
+			// Minimum 3 so the viewport can be at least 1 line tall.
+			outputPaneInnerH = 3
 		}
-		remaining := contentBudget - d.outputContentH
+		if outputPaneInnerH > contentBudget {
+			outputPaneInnerH = contentBudget
+		}
+
+		remaining := contentBudget - outputPaneInnerH
 		if remaining < 2 {
-			remaining = 2
-			// Reconcile: shrink output so total stays within budget when possible.
-			if d.outputContentH+remaining > contentBudget {
-				d.outputContentH = contentBudget - remaining
-				if d.outputContentH < 1 {
-					d.outputContentH = 1
-				}
+			// Try to reclaim space from output while keeping its minimum.
+			need := 2 - remaining
+			if outputPaneInnerH-need >= 3 {
+				outputPaneInnerH -= need
+				remaining += need
 			}
 		}
+
+		d.outputContentH = outputPaneInnerH - 2
+		if d.outputContentH < 1 {
+			d.outputContentH = 1
+		}
+
 		d.progressContentH = remaining * narrowFallbackProgressPct / 100
 		if d.progressContentH < 1 {
 			d.progressContentH = 1
@@ -782,7 +794,8 @@ func computeLayout(width, height int) layoutDims {
 			d.tasksContentH = 1
 		}
 
-		d.outputPaneH = d.outputContentH + borderPerPane
+		// Output pane outer height includes 2 header lines and 2 border lines.
+		d.outputPaneH = d.outputContentH + 4
 		d.progressPaneH = d.progressContentH + borderPerPane
 		d.activityPaneH = d.activityContentH + borderPerPane
 	} else {
@@ -945,26 +958,18 @@ func (m RunningModel) renderRunning() string {
 	var b strings.Builder
 
 	// Title
-	title := styles.TitleStyle.Render(fmt.Sprintf("Running: %s-%s", m.planID, m.planName))
+	// Override TitleStyle's bottom margin here so layout math can reliably
+	// assume the title occupies exactly one row.
+	title := styles.TitleStyle.Copy().MarginBottom(0).Render(fmt.Sprintf("Running: %s-%s", m.planID, m.planName))
 	titleLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, title)
 	b.WriteString(titleLine)
 	b.WriteString("\n")
 
-	// Reserve space for title line (1) + status bar (1)
-	availableHeight := m.height - 2
-	if availableHeight < 5 {
-		availableHeight = 5
-	}
-
-	// Calculate minimum total width needed for two-column layout.
-	// Each bordered pane has 2 border chars + 2*1 padding = 4 extra width.
-	panelChrome := 4
-	minTwoColWidth := (leftMinWidth + panelChrome) + (outputMinWidth + panelChrome)
-
-	if m.width < minTwoColWidth {
-		b.WriteString(m.renderNarrowLayout(availableHeight))
+	d := computeLayout(m.width, m.height)
+	if d.narrow {
+		b.WriteString(m.renderNarrowLayout(d))
 	} else {
-		b.WriteString(m.renderWideLayout(availableHeight))
+		b.WriteString(m.renderWideLayout(d))
 	}
 
 	b.WriteString("\n")
@@ -986,133 +991,58 @@ func (m RunningModel) renderRunning() string {
 	return b.String()
 }
 
+func renderPane(style lipgloss.Style, innerW, innerH int, content string) string {
+	if innerW < 0 {
+		innerW = 0
+	}
+	if innerH < 0 {
+		innerH = 0
+	}
+
+	// lipgloss applies Width/Height before borders, so these dimensions should
+	// include padding but exclude borders. Borders are added after sizing.
+	padW := style.GetHorizontalPadding()
+	padH := style.GetVerticalPadding()
+	return style.
+		Width(innerW + padW).
+		Height(innerH + padH).
+		Render(content)
+}
+
 // renderWideLayout renders the two-column layout: left (Progress + Activity) | right (Output).
-func (m RunningModel) renderWideLayout(availableHeight int) string {
-	panelChrome := 4 // 2 border chars + 2*1 padding per pane
+func (m RunningModel) renderWideLayout(d layoutDims) string {
+	progressStyle := m.paneStyle(focusTasks).Padding(0, 1)
+	activityStyle := m.paneStyle(focusActivity).Padding(0, 1)
+	outputStyle := m.paneStyle(focusOutput).Padding(0, 1)
 
-	// Calculate column widths (content area, excluding borders/padding)
-	leftWidth := (m.width * leftWidthPercent / 100) - panelChrome
-	if leftWidth < leftMinWidth {
-		leftWidth = leftMinWidth
-	}
+	progressContent := m.renderProgressPane(d.leftWidth, d.progressContentH)
+	activityContent := m.renderActivityPane(d.leftWidth, d.activityContentH)
+	// Output pane inner height includes 2 static header lines.
+	outputInnerH := d.outputContentH + 2
+	rightContent := m.renderRightPanel(d.rightWidth, outputInnerH)
 
-	rightWidth := m.width - leftWidth - 2*panelChrome
-	if rightWidth < outputMinWidth {
-		rightWidth = outputMinWidth
-	}
+	progressPanel := renderPane(progressStyle, d.leftWidth, d.progressContentH, progressContent)
+	activityPanel := renderPane(activityStyle, d.leftWidth, d.activityContentH, activityContent)
+	rightPanel := renderPane(outputStyle, d.rightWidth, outputInnerH, rightContent)
 
-	// Split left column vertically into Progress (top) and Activity (bottom).
-	// Each bordered pane has 2 vertical border lines, so total height for
-	// two stacked panes = progressContentH + activityContentH + 4 (2 borders each).
-	leftTotalHeight := availableHeight
-	// We have two panes stacked, each with 2 lines of vertical border.
-	contentBudget := leftTotalHeight - 4 // 2 top/bottom borders per pane = 4 total
-	if contentBudget < 2 {
-		contentBudget = 2
-	}
-
-	progressContentH := contentBudget * progressHeightPct / 100
-	if progressContentH < progressMinHeight {
-		progressContentH = progressMinHeight
-	}
-	activityContentH := contentBudget - progressContentH
-	if activityContentH < activityMinHeight {
-		activityContentH = activityMinHeight
-		progressContentH = contentBudget - activityContentH
-		if progressContentH < 1 {
-			progressContentH = 1
-		}
-	}
-	// Guard against total exceeding budget (when both minimums exceed budget).
-	if progressContentH+activityContentH > contentBudget {
-		progressContentH = contentBudget - activityContentH
-		if progressContentH < 1 {
-			progressContentH = 1
-		}
-	}
-
-	// Build Progress pane (top-left) — highlighted when focusTasks is active
-	progressContent := m.renderProgressPane(leftWidth, progressContentH)
-	progressStyle := m.paneStyle(focusTasks).
-		Width(leftWidth).
-		Height(progressContentH).
-		Padding(0, 1)
-	progressPanel := progressStyle.Render(progressContent)
-
-	// Build Activity pane (bottom-left)
-	activityContent := m.renderActivityPane(leftWidth, activityContentH)
-	activityStyle := m.paneStyle(focusActivity).
-		Width(leftWidth).
-		Height(activityContentH).
-		Padding(0, 1)
-	activityPanel := activityStyle.Render(activityContent)
-
-	// Stack Progress and Activity vertically
 	leftColumn := lipgloss.JoinVertical(lipgloss.Left, progressPanel, activityPanel)
-
-	// Build Output pane (right)
-	outputContentH := leftTotalHeight - 2 // single pane: 2 border lines
-	if outputContentH < 1 {
-		outputContentH = 1
-	}
-	rightContent := m.renderRightPanel(rightWidth, outputContentH)
-	rightStyle := m.paneStyle(focusOutput).
-		Width(rightWidth).
-		Height(outputContentH).
-		Padding(0, 1)
-	rightPanel := rightStyle.Render(rightContent)
-
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightPanel)
 }
 
 // renderNarrowLayout renders a single-column fallback: Output top, Progress middle, Activity bottom.
-func (m RunningModel) renderNarrowLayout(availableHeight int) string {
-	panelChrome := 2            // vertical borders per pane (top + bottom)
-	contentWidth := m.width - 4 // 2 border chars + 2*1 padding
-	if contentWidth < 1 {
-		contentWidth = 1
-	}
+func (m RunningModel) renderNarrowLayout(d layoutDims) string {
+	outputStyle := m.paneStyle(focusOutput).Padding(0, 1)
+	progressStyle := m.paneStyle(focusTasks).Padding(0, 1)
+	activityStyle := m.paneStyle(focusActivity).Padding(0, 1)
 
-	// Distribute height among three stacked panes (3 * 2 border lines = 6).
-	contentBudget := availableHeight - 3*panelChrome
-	if contentBudget < 3 {
-		contentBudget = 3
-	}
+	outputInnerH := d.outputContentH + 2
+	outputContent := m.renderRightPanel(d.rightWidth, outputInnerH)
+	progressContent := m.renderProgressPane(d.leftWidth, d.progressContentH)
+	activityContent := m.renderActivityPane(d.leftWidth, d.activityContentH)
 
-	outputContentH := contentBudget * narrowFallbackOutputPct / 100
-	if outputContentH < 3 {
-		outputContentH = 3
-	}
-	remaining := contentBudget - outputContentH
-	progressContentH := remaining * narrowFallbackProgressPct / 100
-	if progressContentH < 1 {
-		progressContentH = 1
-	}
-	activityContentH := remaining - progressContentH
-	if activityContentH < 1 {
-		activityContentH = 1
-	}
-
-	// Output (top)
-	outputContent := m.renderRightPanel(contentWidth, outputContentH)
-	outputPanel := m.paneStyle(focusOutput).
-		Width(contentWidth).
-		Padding(0, 1).
-		Height(outputContentH).Render(outputContent)
-
-	// Progress (middle)
-	progressContent := m.renderProgressPane(contentWidth, progressContentH)
-	progressPanel := m.paneStyle(focusTasks).
-		Width(contentWidth).
-		Padding(0, 1).
-		Height(progressContentH).Render(progressContent)
-
-	// Activity (bottom)
-	activityContent := m.renderActivityPane(contentWidth, activityContentH)
-	activityPanel := m.paneStyle(focusActivity).
-		Width(contentWidth).
-		Padding(0, 1).
-		Height(activityContentH).Render(activityContent)
+	outputPanel := renderPane(outputStyle, d.rightWidth, outputInnerH, outputContent)
+	progressPanel := renderPane(progressStyle, d.leftWidth, d.progressContentH, progressContent)
+	activityPanel := renderPane(activityStyle, d.leftWidth, d.activityContentH, activityContent)
 
 	return lipgloss.JoinVertical(lipgloss.Left, outputPanel, progressPanel, activityPanel)
 }
@@ -1551,13 +1481,13 @@ func truncateWithEllipsis(s string, maxLen int) string {
 	if maxLen <= 0 {
 		return ""
 	}
-	if len(s) <= maxLen {
+	if ansi.StringWidth(s) <= maxLen {
 		return s
 	}
 	if maxLen <= 3 {
-		return s[:maxLen]
+		return ansi.Truncate(s, maxLen, "")
 	}
-	return s[:maxLen-3] + "..."
+	return ansi.Truncate(s, maxLen, "...")
 }
 
 func isToolMarkerLine(chunk string) bool {
