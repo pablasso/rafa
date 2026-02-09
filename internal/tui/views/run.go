@@ -1242,20 +1242,17 @@ func (m RunningModel) renderDone() string {
 	b.WriteString("\n\n")
 
 	// Task summary
-	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, styles.SubtleStyle.Render("Task Summary:")))
-	b.WriteString("\n")
-
+	var summaryLines []string
+	summaryLines = append(summaryLines, styles.SubtleStyle.Render("Task Summary:"))
 	for i, task := range m.tasks {
 		indicator := m.getTaskIndicator(task.Status, false)
-		taskLine := fmt.Sprintf("%s %d. %s", indicator, i+1, task.Title)
-		b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, taskLine))
-		b.WriteString("\n")
+		summaryLines = append(summaryLines, fmt.Sprintf("%s %d. %s", indicator, i+1, task.Title))
 	}
-	b.WriteString("\n")
+	b.WriteString(centerBlock(m.width, strings.Join(summaryLines, "\n")))
+	b.WriteString("\n\n")
 
 	// Options
-	homeOption := styles.SelectedStyle.Render("[Enter]") + " Return to home"
-	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, homeOption))
+	b.WriteString(m.renderCompletionOptions())
 	b.WriteString("\n")
 
 	// Fill remaining space
@@ -1290,20 +1287,17 @@ func (m RunningModel) renderCancelled() string {
 	b.WriteString("\n\n")
 
 	// Task summary
-	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, styles.SubtleStyle.Render("Task Summary:")))
-	b.WriteString("\n")
-
+	var summaryLines []string
+	summaryLines = append(summaryLines, styles.SubtleStyle.Render("Task Summary:"))
 	for i, task := range m.tasks {
 		indicator := m.getTaskIndicator(task.Status, false)
-		taskLine := fmt.Sprintf("%s %d. %s", indicator, i+1, task.Title)
-		b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, taskLine))
-		b.WriteString("\n")
+		summaryLines = append(summaryLines, fmt.Sprintf("%s %d. %s", indicator, i+1, task.Title))
 	}
-	b.WriteString("\n")
+	b.WriteString(centerBlock(m.width, strings.Join(summaryLines, "\n")))
+	b.WriteString("\n\n")
 
 	// Options
-	homeOption := styles.SelectedStyle.Render("[Enter]") + " Return to home"
-	b.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, homeOption))
+	b.WriteString(m.renderCompletionOptions())
 	b.WriteString("\n")
 
 	// Fill remaining space
@@ -1321,6 +1315,39 @@ func (m RunningModel) renderCancelled() string {
 	b.WriteString(components.NewStatusBar().Render(m.width, statusItems))
 
 	return b.String()
+}
+
+func (m RunningModel) renderCompletionOptions() string {
+	options := []struct {
+		shortcut string
+		label    string
+		selected bool
+	}{
+		{shortcut: "[Enter]", label: "Return to home", selected: true},
+		{shortcut: "[q]", label: "Quit", selected: false},
+	}
+
+	maxShortcutWidth := 0
+	for _, option := range options {
+		width := lipgloss.Width(option.shortcut)
+		if width > maxShortcutWidth {
+			maxShortcutWidth = width
+		}
+	}
+
+	lines := make([]string, 0, len(options))
+	for _, option := range options {
+		shortcut := padRight(option.shortcut, maxShortcutWidth)
+		line := shortcut + " " + option.label
+		if option.selected {
+			line = styles.SelectedStyle.Render(shortcut) + " " + option.label
+		} else {
+			line = styles.SubtleStyle.Render(line)
+		}
+		lines = append(lines, line)
+	}
+
+	return centerBlock(m.width, strings.Join(lines, "\n"))
 }
 
 // countCompleted returns the number of completed tasks.

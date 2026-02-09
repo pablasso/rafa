@@ -611,8 +611,87 @@ func TestRunningModel_View_Done_Success(t *testing.T) {
 	if !strings.Contains(view, "[Enter]") {
 		t.Error("expected view to contain '[Enter]' option")
 	}
+	if !strings.Contains(view, "[q]") {
+		t.Error("expected view to contain '[q]' option")
+	}
 	if !strings.Contains(view, "Enter Home") {
 		t.Error("expected view to contain 'Enter Home' in status bar")
+	}
+}
+
+func TestRunningModel_View_Done_OptionsAligned(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.tasks[0].Status = "completed"
+	m.state = stateDone
+	m.finalSuccess = true
+	m.finalMessage = "Completed 1/1 tasks in 00:05"
+	m.SetSize(100, 24)
+
+	view := stripANSI(m.View())
+	lines := strings.Split(view, "\n")
+
+	enterStart := -1
+	quitStart := -1
+
+	for _, line := range lines {
+		if strings.Contains(line, "[Enter]") && strings.Contains(line, "Return to home") {
+			enterStart = strings.Index(line, "[Enter]")
+		}
+		if strings.Contains(line, "[q]") && strings.Contains(line, "Quit") {
+			quitStart = strings.Index(line, "[q]")
+		}
+	}
+
+	if enterStart == -1 {
+		t.Fatal("expected [Enter] option line in done view")
+	}
+	if quitStart == -1 {
+		t.Fatal("expected [q] option line in done view")
+	}
+	if enterStart != quitStart {
+		t.Fatalf("expected options to start at same column, got enter=%d quit=%d", enterStart, quitStart)
+	}
+}
+
+func TestRunningModel_View_Done_TaskSummaryAligned(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Short task", Status: plan.TaskStatusCompleted},
+		{ID: "t02", Title: "A much longer task title to vary line length", Status: plan.TaskStatusCompleted},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.tasks[0].Status = "completed"
+	m.tasks[1].Status = "completed"
+	m.state = stateDone
+	m.finalSuccess = true
+	m.finalMessage = "Completed 2/2 tasks in 00:05"
+	m.SetSize(120, 24)
+
+	view := stripANSI(m.View())
+	lines := strings.Split(view, "\n")
+
+	firstTaskStart := -1
+	secondTaskStart := -1
+
+	for _, line := range lines {
+		if strings.Contains(line, "1. Short task") {
+			firstTaskStart = strings.Index(line, "1. Short task")
+		}
+		if strings.Contains(line, "2. A much longer task title to vary line length") {
+			secondTaskStart = strings.Index(line, "2. A much longer task title to vary line length")
+		}
+	}
+
+	if firstTaskStart == -1 {
+		t.Fatal("expected first task line in done view")
+	}
+	if secondTaskStart == -1 {
+		t.Fatal("expected second task line in done view")
+	}
+	if firstTaskStart != secondTaskStart {
+		t.Fatalf("expected task lines to start at same column, got first=%d second=%d", firstTaskStart, secondTaskStart)
 	}
 }
 
