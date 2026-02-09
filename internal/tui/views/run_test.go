@@ -547,11 +547,11 @@ func TestRunningModel_View_Running(t *testing.T) {
 	}
 
 	// Check for left panel header with task info
-	if !strings.Contains(view, "Task 2/3") {
-		t.Error("expected view to contain 'Task 2/3'")
+	if !strings.Contains(view, "Task:") || !strings.Contains(view, "2/3") {
+		t.Error("expected view to contain task label/value")
 	}
-	if !strings.Contains(view, "Attempt 1/5") {
-		t.Error("expected view to contain 'Attempt 1/5'")
+	if !strings.Contains(view, "Attempt:") || !strings.Contains(view, "1/5") {
+		t.Error("expected view to contain attempt label/value")
 	}
 
 	// Check for Activity section
@@ -1763,16 +1763,24 @@ func TestRunningModel_View_RendersTokenSummary(t *testing.T) {
 	m, _ = m.Update(UsageMsg{InputTokens: 5000, OutputTokens: 2000, CostUSD: 0.10})
 
 	view := m.View()
+	plain := stripANSI(view)
+
+	if !strings.Contains(plain, "Task:") {
+		t.Error("expected view to contain 'Task:' label")
+	}
+	if !strings.Contains(plain, "Attempt:") {
+		t.Error("expected view to contain 'Attempt:' label")
+	}
 
 	// Should contain Total time and Tokens used summary lines
-	if !strings.Contains(view, "Total time:") {
+	if !strings.Contains(plain, "Total time:") {
 		t.Error("expected view to contain 'Total time:' label")
 	}
-	if !strings.Contains(view, "Tokens used:") {
+	if !strings.Contains(plain, "Tokens used:") {
 		t.Error("expected view to contain 'Tokens used:' label")
 	}
 	// Should contain formatted tokens
-	if !strings.Contains(view, "7.0k") {
+	if !strings.Contains(plain, "7.0k") {
 		t.Error("expected view to contain formatted token count '7.0k'")
 	}
 }

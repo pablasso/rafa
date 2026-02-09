@@ -1052,25 +1052,24 @@ func (m RunningModel) renderProgressPane(width, height int) string {
 	var lines []string
 
 	// Header: Task N/M, Attempt, elapsed, total tokens
-	taskLine := fmt.Sprintf("Task 0/%d", m.totalTasks)
+	taskValue := fmt.Sprintf("0/%d", m.totalTasks)
 	if m.currentTask > 0 && m.currentTask <= len(m.tasks) {
 		title := strings.TrimSpace(m.tasks[m.currentTask-1].Title)
 		if title != "" {
-			taskLine = fmt.Sprintf("Task %d/%d: %s", m.currentTask, m.totalTasks, title)
+			taskValue = fmt.Sprintf("%d/%d - %s", m.currentTask, m.totalTasks, title)
 		} else {
-			taskLine = fmt.Sprintf("Task %d/%d", m.currentTask, m.totalTasks)
+			taskValue = fmt.Sprintf("%d/%d", m.currentTask, m.totalTasks)
 		}
 	}
-	taskLine = truncateWithEllipsis(taskLine, width)
-	lines = append(lines, taskLine)
+	lines = append(lines, renderProgressStatLine("Task", taskValue, width))
 
 	if m.attempt > 0 {
-		lines = append(lines, fmt.Sprintf("Attempt %d/%d", m.attempt, m.maxAttempts))
+		lines = append(lines, renderProgressStatLine("Attempt", fmt.Sprintf("%d/%d", m.attempt, m.maxAttempts), width))
 	}
 
 	elapsed := time.Since(m.startTime)
-	lines = append(lines, fmt.Sprintf("Total time: %s", m.formatDuration(elapsed)))
-	lines = append(lines, fmt.Sprintf("Tokens used: %s", formatTokens(m.totalTokens)))
+	lines = append(lines, renderProgressStatLine("Total time", m.formatDuration(elapsed), width))
+	lines = append(lines, renderProgressStatLine("Tokens used", formatTokens(m.totalTokens), width))
 	lines = append(lines, "")
 
 	// Task list header (static)
@@ -1091,6 +1090,33 @@ func (m RunningModel) renderProgressPane(width, height int) string {
 	}
 
 	return result
+}
+
+func renderProgressStatLine(label, value string, width int) string {
+	labelText := label + ":"
+	if width <= 0 {
+		return styles.SubtleStyle.Render(labelText)
+	}
+
+	if width <= ansi.StringWidth(labelText) {
+		return styles.SubtleStyle.Render(truncateWithEllipsis(labelText, width))
+	}
+
+	valueWidth := width - ansi.StringWidth(labelText) - 1
+	if valueWidth < 0 {
+		valueWidth = 0
+	}
+	if valueWidth > 0 {
+		value = truncateWithEllipsis(value, valueWidth)
+	} else {
+		value = ""
+	}
+
+	line := styles.SubtleStyle.Render(labelText)
+	if value != "" {
+		line += " " + lipgloss.NewStyle().Bold(true).Render(value)
+	}
+	return line
 }
 
 // renderActivityPane renders the Activity pane: header + scrollable activity timeline.
