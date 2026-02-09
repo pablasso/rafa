@@ -150,6 +150,30 @@ func TestRunningModel_Update_TaskCompletedMsg(t *testing.T) {
 	}
 }
 
+func TestSectionHeaderLines_UnderlineMatchesLabelWidth(t *testing.T) {
+	tests := []struct {
+		label string
+	}{
+		{label: "Tasks"},
+		{label: "Activity"},
+		{label: "Output"},
+	}
+
+	for _, tt := range tests {
+		lines := sectionHeaderLines(tt.label)
+		if len(lines) != 2 {
+			t.Fatalf("expected 2 header lines, got %d", len(lines))
+		}
+		if !strings.Contains(lines[0], tt.label) {
+			t.Errorf("expected first line to contain label %q, got %q", tt.label, lines[0])
+		}
+		wantUnderline := strings.Repeat("─", len(tt.label))
+		if lines[1] != wantUnderline {
+			t.Errorf("expected underline %q, got %q", wantUnderline, lines[1])
+		}
+	}
+}
+
 func TestRunningModel_Update_TaskFailedMsg(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},

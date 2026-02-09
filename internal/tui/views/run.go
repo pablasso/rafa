@@ -760,7 +760,7 @@ func computeLayout(width, height int) layoutDims {
 			contentBudget = 3
 		}
 
-		// Output pane has 2 static header lines ("Output" + blank) above the scrollable viewport.
+		// Output pane has 2 static header lines ("Output" + underline) above the scrollable viewport.
 		// outputContentH tracks the viewport height, not the full pane inner height.
 		outputPaneInnerH := contentBudget * narrowFallbackOutputPct / 100
 		if outputPaneInnerH < 3 {
@@ -1076,8 +1076,7 @@ func (m RunningModel) renderProgressPane(width, height int) string {
 	lines = append(lines, "")
 
 	// Task list header (static)
-	lines = append(lines, styles.SubtleStyle.Render("Tasks"))
-	lines = append(lines, "─────")
+	lines = append(lines, sectionHeaderLines("Tasks")...)
 
 	// Render the scrollable tasks viewport below the static header
 	staticContent := strings.Join(lines, "\n")
@@ -1165,10 +1164,22 @@ func renderProgressStatLines(label, value string, width int) []string {
 	return lines
 }
 
+func sectionHeaderLines(label string) []string {
+	underlineWidth := ansi.StringWidth(label)
+	if underlineWidth < 1 {
+		underlineWidth = 1
+	}
+
+	return []string{
+		styles.SubtleStyle.Render(label),
+		strings.Repeat("─", underlineWidth),
+	}
+}
+
 // renderActivityPane renders the Activity pane: header + scrollable activity timeline.
 func (m RunningModel) renderActivityPane(width, height int) string {
 	// Activity header (static)
-	header := styles.SubtleStyle.Render("Activity") + "\n" + "─────"
+	header := strings.Join(sectionHeaderLines("Activity"), "\n")
 
 	// Render the scrollable activity viewport below the header
 	activityContent := m.activityView.View()
@@ -1245,8 +1256,7 @@ func (m RunningModel) renderRightPanel(width, height int) string {
 	var lines []string
 
 	// Header
-	lines = append(lines, styles.SubtleStyle.Render("Output"))
-	lines = append(lines, "")
+	lines = append(lines, sectionHeaderLines("Output")...)
 
 	// Get raw viewport content (without scrollbar) so we can apply the
 	// inline spinner before the scrollbar column is appended.
