@@ -397,9 +397,11 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		// Reset per-task counters without clearing plan-wide activity history
 		m.resetTaskUsage()
 		m.pendingOutputSeparator = false
-		// Append a separator line for this task/attempt
-		separator := fmt.Sprintf("── Task %d/%d: %s (Attempt %d/%d) ──",
-			msg.TaskNum, msg.Total, msg.Title, msg.Attempt, m.maxAttempts)
+		// Append a concise separator line for this task/attempt.
+		separator := fmt.Sprintf("Starting task %d", msg.TaskNum)
+		if msg.Attempt > 1 {
+			separator = fmt.Sprintf("Retrying task %d (attempt %d/%d)", msg.TaskNum, msg.Attempt, m.maxAttempts)
+		}
 		m.activities = append(m.activities, RunActivityEntry{
 			Text:        separator,
 			Timestamp:   time.Now(),
@@ -749,7 +751,7 @@ func computeLayout(width, height int) layoutDims {
 		d.leftOuterW = width
 		d.rightOuterW = width
 
-		availableHeight := height - 2 // title + status bar
+		availableHeight := height - 3 // title + spacer + status bar
 		if availableHeight < 3 {
 			availableHeight = 3
 		}
@@ -818,7 +820,7 @@ func computeLayout(width, height int) layoutDims {
 			d.rightOuterW = 1
 		}
 
-		availableHeight := height - 2
+		availableHeight := height - 3 // title + spacer + status bar
 		if availableHeight < 4 {
 			availableHeight = 4
 		}
@@ -980,7 +982,8 @@ func (m RunningModel) renderRunning() string {
 		b.WriteString(m.renderWideLayout(d))
 	}
 
-	b.WriteString("\n")
+	// Add a visual spacer before the status legend.
+	b.WriteString("\n\n")
 
 	// Status bar with focus indicator and scroll hints
 	focusHint := "Focus: " + focusLabel(m.focus)
@@ -1455,6 +1458,10 @@ func (m *RunningModel) syncActivityView() {
 	} else {
 		for i, entry := range m.activities {
 			if entry.IsSeparator {
+				// Add breathing room before task boundary markers, except at the top.
+				if len(lines) > 0 {
+					lines = append(lines, "")
+				}
 				separatorLines := wrapTextToLines(entry.Text, contentWidth)
 				for _, line := range separatorLines {
 					lines = append(lines, styles.SubtleStyle.Render(line))

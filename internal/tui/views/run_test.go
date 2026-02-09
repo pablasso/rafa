@@ -619,6 +619,34 @@ func TestRunningModel_View_Done_Success(t *testing.T) {
 	}
 }
 
+func TestRunningModel_View_Running_BlankLineBeforeStatusBar(t *testing.T) {
+	tasks := []plan.Task{
+		{ID: "t01", Title: "Task One", Status: plan.TaskStatusPending},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.tasks[0].Status = "running"
+	m.currentTask = 1
+	m.attempt = 1
+	m.SetSize(120, 30)
+
+	view := stripANSI(m.View())
+	lines := strings.Split(view, "\n")
+
+	statusLineIdx := -1
+	for i, line := range lines {
+		if strings.Contains(line, "Running...") && strings.Contains(line, "Focus:") {
+			statusLineIdx = i
+			break
+		}
+	}
+	if statusLineIdx <= 0 {
+		t.Fatalf("expected to find running status bar line, got view:\n%s", view)
+	}
+	if strings.TrimSpace(lines[statusLineIdx-1]) != "" {
+		t.Errorf("expected blank line before status bar legend, got %q", lines[statusLineIdx-1])
+	}
+}
+
 func TestRunningModel_View_Done_OptionsAligned(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Task One", Status: plan.TaskStatusCompleted},
@@ -1861,14 +1889,8 @@ func TestRunningModel_TaskStartedMsg_ActivitiesPersistAcrossTasks(t *testing.T) 
 	if !m.activities[1].IsSeparator {
 		t.Error("expected second activity to be a separator")
 	}
-	if !strings.Contains(m.activities[1].Text, "Task 2/2") {
-		t.Errorf("expected separator to contain 'Task 2/2', got %s", m.activities[1].Text)
-	}
-	if !strings.Contains(m.activities[1].Text, "Task Two") {
-		t.Errorf("expected separator to contain 'Task Two', got %s", m.activities[1].Text)
-	}
-	if !strings.Contains(m.activities[1].Text, "Attempt 1/") {
-		t.Errorf("expected separator to contain attempt info, got %s", m.activities[1].Text)
+	if !strings.Contains(m.activities[1].Text, "Starting task 2") {
+		t.Errorf("expected separator to contain 'Starting task 2', got %s", m.activities[1].Text)
 	}
 	// taskTokens should be reset
 	if m.taskTokens != 0 {
@@ -1883,7 +1905,7 @@ func TestRunningModel_TaskStartedMsg_ActivitiesPersistAcrossTasks(t *testing.T) 
 	}
 }
 
-func TestRunningModel_TaskStartedMsg_SeparatorContainsTaskAndAttemptInfo(t *testing.T) {
+func TestRunningModel_TaskStartedMsg_SeparatorUsesConciseStartCopy(t *testing.T) {
 	tasks := []plan.Task{
 		{ID: "t01", Title: "Implement auth", Status: plan.TaskStatusPending},
 		{ID: "t02", Title: "Add tests", Status: plan.TaskStatusPending},
@@ -1913,7 +1935,7 @@ func TestRunningModel_TaskStartedMsg_SeparatorContainsTaskAndAttemptInfo(t *test
 	if !sep1.IsSeparator {
 		t.Error("expected first entry to be a separator")
 	}
-	if !strings.Contains(sep1.Text, "Task 1/3") || !strings.Contains(sep1.Text, "Implement auth") || !strings.Contains(sep1.Text, "Attempt 1/") {
+	if !strings.Contains(sep1.Text, "Starting task 1") {
 		t.Errorf("separator 1 content unexpected: %s", sep1.Text)
 	}
 
@@ -1921,7 +1943,7 @@ func TestRunningModel_TaskStartedMsg_SeparatorContainsTaskAndAttemptInfo(t *test
 	if !sep2.IsSeparator {
 		t.Error("expected third entry to be a separator")
 	}
-	if !strings.Contains(sep2.Text, "Task 2/3") || !strings.Contains(sep2.Text, "Add tests") {
+	if !strings.Contains(sep2.Text, "Starting task 2") {
 		t.Errorf("separator 2 content unexpected: %s", sep2.Text)
 	}
 
@@ -1929,7 +1951,7 @@ func TestRunningModel_TaskStartedMsg_SeparatorContainsTaskAndAttemptInfo(t *test
 	if !sep3.IsSeparator {
 		t.Error("expected fifth entry to be a separator")
 	}
-	if !strings.Contains(sep3.Text, "Task 3/3") || !strings.Contains(sep3.Text, "Session management") || !strings.Contains(sep3.Text, "Attempt 2/") {
+	if !strings.Contains(sep3.Text, "Retrying task 3") || !strings.Contains(sep3.Text, "attempt 2/") {
 		t.Errorf("separator 3 content unexpected: %s", sep3.Text)
 	}
 
