@@ -559,9 +559,9 @@ func TestRunningModel_View_Running(t *testing.T) {
 		t.Error("expected view to contain 'Activity' header")
 	}
 
-	// Check for Usage section
-	if !strings.Contains(view, "Usage") {
-		t.Error("expected view to contain 'Usage' header")
+	// Check for token summary in progress panel
+	if !strings.Contains(view, "Tokens used:") {
+		t.Error("expected view to contain 'Tokens used:'")
 	}
 
 	// Check for output panel
@@ -1057,8 +1057,8 @@ func TestRunningModel_View_TwoPaneLeftColumn(t *testing.T) {
 	view := m.View()
 
 	// The view should contain separate Progress and Activity sections
-	if !strings.Contains(view, "Usage") {
-		t.Error("expected Progress pane to contain 'Usage' section")
+	if !strings.Contains(view, "Tokens used:") {
+		t.Error("expected Progress pane to contain 'Tokens used:'")
 	}
 	if !strings.Contains(view, "Tasks") {
 		t.Error("expected Progress pane to contain 'Tasks' section")
@@ -1098,8 +1098,8 @@ func TestRunningModel_View_NarrowLayoutFallback(t *testing.T) {
 	if !strings.Contains(view, "Output") {
 		t.Error("expected narrow layout to contain 'Output'")
 	}
-	if !strings.Contains(view, "Usage") {
-		t.Error("expected narrow layout to contain 'Usage'")
+	if !strings.Contains(view, "Tokens used:") {
+		t.Error("expected narrow layout to contain 'Tokens used:'")
 	}
 	if !strings.Contains(view, "Activity") {
 		t.Error("expected narrow layout to contain 'Activity'")
@@ -1752,7 +1752,7 @@ func TestRunningModel_View_RendersActivityTimeline(t *testing.T) {
 	}
 }
 
-func TestRunningModel_View_RendersUsageSection(t *testing.T) {
+func TestRunningModel_View_RendersTokenSummary(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
 	m.SetSize(100, 30)
@@ -1764,20 +1764,12 @@ func TestRunningModel_View_RendersUsageSection(t *testing.T) {
 
 	view := m.View()
 
-	// Should contain Usage header
-	if !strings.Contains(view, "Usage") {
-		t.Error("expected view to contain 'Usage' header")
+	// Should contain Total time and Tokens used summary lines
+	if !strings.Contains(view, "Total time:") {
+		t.Error("expected view to contain 'Total time:' label")
 	}
-	// Should contain Task and Plan labels
-	if !strings.Contains(view, "Task:") {
-		t.Error("expected view to contain 'Task:' label")
-	}
-	if !strings.Contains(view, "Plan:") {
-		t.Error("expected view to contain 'Plan:' label")
-	}
-	// Should contain Cost label
-	if !strings.Contains(view, "Cost:") {
-		t.Error("expected view to contain 'Cost:' label")
+	if !strings.Contains(view, "Tokens used:") {
+		t.Error("expected view to contain 'Tokens used:' label")
 	}
 	// Should contain formatted tokens
 	if !strings.Contains(view, "7.0k") {
@@ -2802,8 +2794,8 @@ func TestRunningModel_NarrowLayout_SingleColumn(t *testing.T) {
 	if !strings.Contains(view, "Tasks") {
 		t.Error("expected narrow layout to contain 'Tasks'")
 	}
-	if !strings.Contains(view, "Usage") {
-		t.Error("expected narrow layout to contain 'Usage'")
+	if !strings.Contains(view, "Tokens used:") {
+		t.Error("expected narrow layout to contain 'Tokens used:'")
 	}
 
 	// In narrow layout, all panes should span the full width

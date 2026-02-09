@@ -942,11 +942,11 @@ const (
 	leftMinWidth              = 24 // Minimum width for left column content
 	outputMinWidth            = 36 // Minimum width for output column content
 	progressHeightPct         = 45 // Progress pane gets ~45% of left column height
-	progressMinHeight         = 16 // Minimum height for Progress pane content (header+usage+tasks)
+	progressMinHeight         = 14 // Minimum height for Progress pane content (header+metrics+tasks)
 	activityMinHeight         = 6  // Minimum height for Activity pane content
 	narrowFallbackOutputPct   = 50 // Output pane height % in single-column fallback
 	narrowFallbackProgressPct = 60 // Progress pane height % of remaining in narrow fallback
-	progressStaticLines       = 12 // Lines used by header + usage above the tasks viewport
+	progressStaticLines       = 8  // Lines used by header + metrics above the tasks viewport
 )
 
 // renderRunning renders the split-panel execution view.
@@ -1047,11 +1047,11 @@ func (m RunningModel) renderNarrowLayout(d layoutDims) string {
 	return lipgloss.JoinVertical(lipgloss.Left, outputPanel, progressPanel, activityPanel)
 }
 
-// renderProgressPane renders the Progress pane: header + usage + scrollable tasks list.
+// renderProgressPane renders the Progress pane: header + summary + scrollable tasks list.
 func (m RunningModel) renderProgressPane(width, height int) string {
 	var lines []string
 
-	// Header: Task N/M, Attempt, Elapsed
+	// Header: Task N/M, Attempt, elapsed, total tokens
 	taskLine := fmt.Sprintf("Task 0/%d", m.totalTasks)
 	if m.currentTask > 0 && m.currentTask <= len(m.tasks) {
 		title := strings.TrimSpace(m.tasks[m.currentTask-1].Title)
@@ -1069,15 +1069,8 @@ func (m RunningModel) renderProgressPane(width, height int) string {
 	}
 
 	elapsed := time.Since(m.startTime)
-	lines = append(lines, m.formatDuration(elapsed))
-	lines = append(lines, "")
-
-	// Usage section
-	lines = append(lines, styles.SubtleStyle.Render("Usage"))
-	lines = append(lines, "─────")
-	lines = append(lines, fmt.Sprintf("Task:  %s", formatTokens(m.taskTokens)))
-	lines = append(lines, fmt.Sprintf("Plan:  %s", formatTokens(m.totalTokens)))
-	lines = append(lines, fmt.Sprintf("Cost:  $%.2f", m.estimatedCost))
+	lines = append(lines, fmt.Sprintf("Total time: %s", m.formatDuration(elapsed)))
+	lines = append(lines, fmt.Sprintf("Tokens used: %s", formatTokens(m.totalTokens)))
 	lines = append(lines, "")
 
 	// Task list header (static)
