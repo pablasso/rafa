@@ -6,6 +6,8 @@ A task loop runner for AI coding agents. Implements Geoffrey Huntley's [Ralph Wi
 
 Rafa helps you implement a technical design by running AI agents in a loop until each task succeeds. You write the design, Rafa handles the execution. One agent per task at a time.
 
+![Rafa in action](rafa.png)
+
 ## Philosophy
 
 You own the design. Rafa owns the execution.
