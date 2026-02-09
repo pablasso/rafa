@@ -4,15 +4,15 @@ A task loop runner for AI coding agents. Implements Geoffrey Huntley's [Ralph Wi
 
 ## What it does
 
-Rafa helps you implement a technical design by running AI agents in a loop until each task succeeds. You write the design, Rafa handles the execution. One agent, one task at a time.
+Rafa helps you implement a technical design by running AI agents in a loop until each task succeeds. You write the design, Rafa handles the execution. One agent per task at a time.
 
 ## Philosophy
 
 You own the design. Rafa owns the execution.
 
-Fresh context on every task. Fresh context on every retry. Agents commit after each completed task. Progress is tracked. You can walk away.
+New agent on every task. New agent on every retry. Agents commit after each completed task. Progress is tracked. You can walk away until the loop is completed.
 
-Users only review after plans are implemented.
+You only review after the complete plan is implemented.
 
 ## Status
 
@@ -20,7 +20,7 @@ Experimental. Use at your own risk.
 
 ## Prerequisites
 
-- Git (repository must be initialized)
+- Git (repository must be initialized with `git init` if needed)
 - [Claude Code](https://claude.ai/code) installed and authenticated
 
 ## Installation
@@ -31,94 +31,42 @@ curl -fsSL https://raw.githubusercontent.com/pablasso/rafa/main/scripts/install.
 
 To upgrade, run the same command again.
 
-### Building from Source
+## Quick Start
+
+1. Open the repository you want Rafa to operate in:
 
 ```bash
-git clone https://github.com/pablasso/rafa.git
-cd rafa
-make build
-# Optionally install to PATH
-make install
+cd /path/to/your/repo
 ```
 
-## Getting Started
-
-### Launch the TUI
+2. Launch the TUI:
 
 ```bash
 rafa
 ```
 
-Note: Rafa is TUI-only in this release. Run `rafa` with no arguments.
+3. In the TUI, use **Create Plan** to select your design document and create a plan.
 
-The interactive interface guides you through creating and running plans.
-Rafa will create `.rafa/` automatically when you save your first plan.
+> Note: Rafa requires you to already have a technical design doc created. This design is what you would do for any critical changes, right? RIGHT?
+>
+> If you're not used to have this back and forth with your agent, [these skills may be a good place to start](https://github.com/pablasso/skills).
 
-## Usage
+4. Use **Run Plan** to execute tasks sequentially.
 
-### Interactive TUI (Default)
+Rafa creates `.rafa/` automatically when you save your first plan.
 
-Run `rafa` with no arguments to launch the interactive interface:
 
-```bash
-rafa
-```
-
-The TUI allows you to:
-- Create new plans from design documents
-- Run existing plans with real-time progress
-- Monitor task execution with split-view output
-
-**Navigation:**
-- Arrow keys or `j`/`k` to navigate
-- `Enter` to select
-- `Esc` to go back
-- `Ctrl+C` to cancel or quit
-
-### Demo Mode
-
-Demo mode is opt-in and launched with `--demo`.
-
-Run demo (default demo mode):
-
-```bash
-rafa --demo
-# equivalent to:
-rafa --demo --demo-mode=run
-```
-
-Create-plan demo (unsaved, create view only):
-
-```bash
-rafa --demo --demo-mode=create
-```
-
-Create-plan demo behavior:
-- Replays realistic create-plan activity in the Create Plan view
-- Extracts and validates `PLAN_APPROVED_JSON` from replayed output
-- Does **not** write `.rafa/plans/.../plan.json`
-- Does **not** auto-transition to running view
-
-Optional flags:
-- `--demo-preset=quick|medium|slow` (run and create demo pacing)
-- `--demo-scenario=success|flaky|fail` (run demo only; not valid with `--demo-mode=create`)
+## Behaviors
 
 ### Creating a Plan
-
-Select **Create Plan** in the TUI, pick a design document, and follow the prompts.
-After creation succeeds, Rafa stays on a success screen. Press `Enter` to return Home, then use **Run Plan** whenever you want to execute it.
 
 Plans are stored in `.rafa/plans/<id>-<name>/` with:
 
 - `plan.json` - Plan state and task definitions
 - `progress.log` - Event log (JSON lines)
-- `output.log` - Agent output (not yet captured)
+- `output.log` - Captured agent output stream
 
 ### Running a Plan
-
-Select **Run Plan** in the TUI, pick a plan, and Rafa will execute tasks sequentially. Each task runs in a fresh Claude Code session with the task context, description, and acceptance criteria.
-
-**Behavior:**
 
 - Starts from the first pending task (skips completed ones)
 - Retries failed tasks up to 5 times with fresh agent sessions
@@ -138,55 +86,6 @@ Press `Ctrl+C` during execution. Rafa will:
 3. Save state
 4. Release the lock
 
-## Monitoring & Debugging
-
-### Check Plan State
-
-```bash
-cat .rafa/plans/*-<name>/plan.json | jq
-```
-
-Key fields:
-
-- `status` - `not_started`, `in_progress`, `completed`, `failed`
-- `tasks[].status` - `pending`, `in_progress`, `completed`, `failed`
-- `tasks[].attempts` - Number of attempts made
-
-### Watch Progress Log
-
-```bash
-tail -f .rafa/plans/*-<name>/progress.log | jq
-```
-
-Events logged:
-
-- `plan_started` - Plan execution began
-- `task_started` - Task attempt started (includes attempt number)
-- `task_completed` - Task succeeded
-- `task_failed` - Task attempt failed
-- `plan_completed` - All tasks done
-- `plan_cancelled` - User interrupted
-- `plan_failed` - Task exhausted max attempts
-
-### Debug a Stuck Task
-
-1. Check the task's acceptance criteria in `plan.json`
-2. Review recent events in `progress.log`
-3. Manually run the task prompt to debug:
-
-```bash
-# Extract the task and run it manually
-cat .rafa/plans/*-<name>/plan.json | jq '.tasks[0]'
-```
-
-### Lock Issues
-
-If rafa reports "plan is already running" but nothing is running:
-
-```bash
-rm .rafa/plans/*-<name>/run.lock
-```
-
 ## Plan Structure
 
 ```
@@ -195,7 +94,7 @@ rm .rafa/plans/*-<name>/run.lock
     abc123-my-feature/
       plan.json        # Plan state
       progress.log     # Event log (JSON lines)
-      output.log       # Agent output (placeholder)
+      output.log       # Captured agent output stream
       run.lock         # Lock file (exists during execution)
 ```
 
@@ -222,30 +121,21 @@ rm .rafa/plans/*-<name>/run.lock
 }
 ```
 
-## Uninstall
+## Deinitialize a Repository
 
-Remove the binary:
-
-```bash
-rm $(which rafa)
-```
-
-Remove Rafa data from a specific repository:
+Remove Rafa data from the current repository:
 
 ```bash
 rm -rf .rafa/
 ```
 
-## Not Yet Implemented
+## Uninstall
 
-- Output capture to `output.log`
-- AGENTS.md suggestions post-run
-- Human input detection
-- Headless/CI mode
+Remove the binary:
 
-## Development
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and release process.
+```bash
+rm "$(command -v rafa)"
+```
 
 ## License
 

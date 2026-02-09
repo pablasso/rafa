@@ -1,9 +1,11 @@
 # Contributing to Rafa
 
+This guide is for contributors and maintainers. For installation and day-to-day usage, see the README.
+
 ## Development Setup
 
 Prerequisites:
-- Go 1.21+
+- Go 1.25.6+
 - Git
 - Make
 
@@ -23,7 +25,6 @@ make build
 - `make fmt` - Format code
 - `make check-fmt` - Check formatting
 - `make build` - Build binary
-- `make install` - Install to PATH
 - `make release-dry-run` - Test release locally
 
 ### Hot Reload
@@ -49,7 +50,7 @@ To exit, close the terminal tab/pane.
 
 ### Demo Mode (TUI)
 
-Demo mode is opt-in via `--demo`.
+Demo mode is opt-in via `--demo`. It is useful to make TUI changes without having to create or run real plans.
 
 1. Build or run the dev loop:
    ```bash
@@ -92,9 +93,53 @@ go run ./scripts/gen_demo_create_fixture.go \
 
 The create fixture generator enforces a realism rule: `--source-doc` must not already be referenced as `sourceFile` in any `.rafa/plans/*/plan.json`.
 
-### Code Formatting
+## Plan Monitoring & Troubleshooting
 
-Run `make fmt` before committing. CI checks formatting.
+### Check Plan State
+
+```bash
+cat .rafa/plans/*-<name>/plan.json | jq
+```
+
+Key fields:
+
+- `status` - `not_started`, `in_progress`, `completed`, `failed`
+- `tasks[].status` - `pending`, `in_progress`, `completed`, `failed`
+- `tasks[].attempts` - Number of attempts made
+
+### Watch Progress Log
+
+```bash
+tail -f .rafa/plans/*-<name>/progress.log | jq
+```
+
+Events logged:
+
+- `plan_started` - Plan execution began
+- `task_started` - Task attempt started (includes attempt number)
+- `task_completed` - Task succeeded
+- `task_failed` - Task attempt failed
+- `plan_completed` - All tasks done
+- `plan_cancelled` - User interrupted
+- `plan_failed` - Task exhausted max attempts
+
+### Debug a Stuck Task
+
+1. Check the task's acceptance criteria in `plan.json`
+2. Review recent events in `progress.log`
+3. Manually inspect the task payload:
+
+```bash
+cat .rafa/plans/*-<name>/plan.json | jq '.tasks[0]'
+```
+
+### Lock Issues
+
+If Rafa reports "plan is already running" but nothing is running:
+
+```bash
+rm .rafa/plans/*-<name>/run.lock
+```
 
 ## Debugging Crashes
 
