@@ -1990,6 +1990,7 @@ func TestFormatToolUseEntry(t *testing.T) {
 		{"Edit", "short.go"},
 		{"Bash", "go test ./..."},
 		{"Task", "Search codebase"},
+		{"Write", "/very/long/path/that/used/to/be/shortened/internal/session/session_manager.go"},
 		{"Read", ""},
 	}
 
@@ -2003,10 +2004,81 @@ func TestFormatToolUseEntry(t *testing.T) {
 		if tt.target != "" && !strings.Contains(result, ":") {
 			t.Errorf("formatToolUseEntry(%q, %q) = %q, expected to contain ':'", tt.toolName, tt.target, result)
 		}
+		// Target text should be preserved so it can wrap in the UI.
+		if tt.target != "" && !strings.Contains(result, tt.target) {
+			t.Errorf("formatToolUseEntry(%q, %q) = %q, expected to contain full target", tt.toolName, tt.target, result)
+		}
 		// If target is empty, should just be tool name
 		if tt.target == "" && result != tt.toolName {
 			t.Errorf("formatToolUseEntry(%q, %q) = %q, expected %q", tt.toolName, tt.target, result, tt.toolName)
 		}
+	}
+}
+
+func TestRenderProgressStatLines_WrapsLongValues(t *testing.T) {
+	lines := renderProgressStatLines(
+		"Task",
+		"1/1 - Implement session management package with robust concurrency handling",
+		24,
+	)
+
+	if len(lines) < 2 {
+		t.Fatalf("expected wrapped stat to span multiple lines, got %d", len(lines))
+	}
+
+	plain := stripANSI(strings.Join(lines, "\n"))
+	if strings.Contains(plain, "...") {
+		t.Errorf("expected wrapped stat without ellipsis, got %q", plain)
+	}
+	if !strings.Contains(plain, "robust concurrency") || !strings.Contains(plain, "handling") {
+		t.Errorf("expected wrapped stat to contain full value tail, got %q", plain)
+	}
+}
+
+func TestRunningModel_SyncTasksView_WrapsLongTaskTitles(t *testing.T) {
+	tasks := []plan.Task{
+		{
+			ID:     "t01",
+			Title:  "Implement session management package with robust concurrency handling and retry safety",
+			Status: plan.TaskStatusInProgress,
+		},
+	}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.currentTask = 1
+	m.attempt = 1
+	m.tasksView.SetSize(24, 10)
+	m.syncTasksView()
+
+	plain := stripANSI(m.tasksView.View())
+	if strings.Contains(plain, "...") {
+		t.Errorf("expected wrapped task title without ellipsis, got %q", plain)
+	}
+	if !strings.Contains(plain, "retry") || !strings.Contains(plain, "safety") {
+		t.Errorf("expected wrapped task title to include full tail text, got %q", plain)
+	}
+}
+
+func TestRunningModel_SyncActivityView_WrapsLongToolTarget(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.activityView.SetSize(28, 10)
+
+	target := "/very/long/path/to/internal/session/session_manager.go with extra arguments and context"
+	m, _ = m.Update(ToolUseMsg{ToolName: "Read", ToolTarget: target})
+
+	if len(m.activities) != 1 {
+		t.Fatalf("expected one activity, got %d", len(m.activities))
+	}
+	if m.activities[0].Text != "Read: "+target {
+		t.Errorf("expected full target preserved in activity text, got %q", m.activities[0].Text)
+	}
+
+	plain := stripANSI(m.activityView.View())
+	if strings.Contains(plain, "...") {
+		t.Errorf("expected wrapped activity text without ellipsis, got %q", plain)
+	}
+	if !strings.Contains(plain, "extra arguments") || !strings.Contains(plain, "context") {
+		t.Errorf("expected wrapped activity text to include full tail text, got %q", plain)
 	}
 }
 

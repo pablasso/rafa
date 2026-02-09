@@ -407,8 +407,12 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 			IsSeparator: true,
 		})
 		m.trimActivities()
-		m.syncActivityView()
-		m.syncTasksView()
+		if m.width > 0 && m.height > 0 {
+			m.updateOutputSize()
+		} else {
+			m.syncActivityView()
+			m.syncTasksView()
+		}
 		return m, nil
 
 	case TaskCompletedMsg:
@@ -884,8 +888,12 @@ func (m *RunningModel) updateOutputSize() {
 	}
 	m.activityView.SetSize(d.leftWidth, activityViewportH)
 
-	// Tasks viewport
-	m.tasksView.SetSize(d.leftWidth, d.tasksContentH)
+	// Tasks viewport size is dynamic because wrapped stat lines above can vary.
+	tasksViewportH := d.progressContentH - m.progressStaticLineCount(d.leftWidth)
+	if tasksViewportH < 1 {
+		tasksViewportH = 1
+	}
+	m.tasksView.SetSize(d.leftWidth, tasksViewportH)
 
 	// Sync viewport content after resize
 	m.syncActivityView()
@@ -1052,24 +1060,16 @@ func (m RunningModel) renderProgressPane(width, height int) string {
 	var lines []string
 
 	// Header: Task N/M, Attempt, elapsed, total tokens
-	taskValue := fmt.Sprintf("0/%d", m.totalTasks)
-	if m.currentTask > 0 && m.currentTask <= len(m.tasks) {
-		title := strings.TrimSpace(m.tasks[m.currentTask-1].Title)
-		if title != "" {
-			taskValue = fmt.Sprintf("%d/%d - %s", m.currentTask, m.totalTasks, title)
-		} else {
-			taskValue = fmt.Sprintf("%d/%d", m.currentTask, m.totalTasks)
-		}
-	}
-	lines = append(lines, renderProgressStatLine("Task", taskValue, width))
+	taskValue := m.currentTaskValue()
+	lines = append(lines, renderProgressStatLines("Task", taskValue, width)...)
 
 	if m.attempt > 0 {
-		lines = append(lines, renderProgressStatLine("Attempt", fmt.Sprintf("%d/%d", m.attempt, m.maxAttempts), width))
+		lines = append(lines, renderProgressStatLines("Attempt", fmt.Sprintf("%d/%d", m.attempt, m.maxAttempts), width)...)
 	}
 
 	elapsed := time.Since(m.startTime)
-	lines = append(lines, renderProgressStatLine("Total time", m.formatDuration(elapsed), width))
-	lines = append(lines, renderProgressStatLine("Tokens used", formatTokens(m.totalTokens), width))
+	lines = append(lines, renderProgressStatLines("Total time", m.formatDuration(elapsed), width)...)
+	lines = append(lines, renderProgressStatLines("Tokens used", formatTokens(m.totalTokens), width)...)
 	lines = append(lines, "")
 
 	// Task list header (static)
@@ -1092,31 +1092,74 @@ func (m RunningModel) renderProgressPane(width, height int) string {
 	return result
 }
 
-func renderProgressStatLine(label, value string, width int) string {
+func (m RunningModel) currentTaskValue() string {
+	taskValue := fmt.Sprintf("0/%d", m.totalTasks)
+	if m.currentTask > 0 && m.currentTask <= len(m.tasks) {
+		title := strings.TrimSpace(m.tasks[m.currentTask-1].Title)
+		if title != "" {
+			taskValue = fmt.Sprintf("%d/%d - %s", m.currentTask, m.totalTasks, title)
+		} else {
+			taskValue = fmt.Sprintf("%d/%d", m.currentTask, m.totalTasks)
+		}
+	}
+	return taskValue
+}
+
+func (m RunningModel) progressStaticLineCount(width int) int {
+	count := 0
+	count += len(renderProgressStatLines("Task", m.currentTaskValue(), width))
+	if m.attempt > 0 {
+		count += len(renderProgressStatLines("Attempt", fmt.Sprintf("%d/%d", m.attempt, m.maxAttempts), width))
+	}
+	count += len(renderProgressStatLines("Total time", m.formatDuration(time.Since(m.startTime)), width))
+	count += len(renderProgressStatLines("Tokens used", formatTokens(m.totalTokens), width))
+	count += 1 // spacer line before tasks header
+	count += 2 // "Tasks" + separator
+	return count
+}
+
+func renderProgressStatLines(label, value string, width int) []string {
 	labelText := label + ":"
 	if width <= 0 {
-		return styles.SubtleStyle.Render(labelText)
+		return []string{styles.SubtleStyle.Render(labelText)}
 	}
 
 	if width <= ansi.StringWidth(labelText) {
-		return styles.SubtleStyle.Render(truncateWithEllipsis(labelText, width))
+		labelLines := wrapTextToLines(labelText, width)
+		if len(labelLines) == 0 {
+			return []string{styles.SubtleStyle.Render(labelText)}
+		}
+		lines := make([]string, 0, len(labelLines))
+		for _, line := range labelLines {
+			lines = append(lines, styles.SubtleStyle.Render(line))
+		}
+		return lines
 	}
 
 	valueWidth := width - ansi.StringWidth(labelText) - 1
 	if valueWidth < 0 {
 		valueWidth = 0
 	}
-	if valueWidth > 0 {
-		value = truncateWithEllipsis(value, valueWidth)
-	} else {
-		value = ""
+	if valueWidth == 0 {
+		return []string{styles.SubtleStyle.Render(labelText)}
 	}
 
-	line := styles.SubtleStyle.Render(labelText)
-	if value != "" {
-		line += " " + lipgloss.NewStyle().Bold(true).Render(value)
+	valueLines := wrapTextToLines(value, valueWidth)
+	if len(valueLines) == 0 {
+		return []string{styles.SubtleStyle.Render(labelText)}
 	}
-	return line
+
+	lines := make([]string, 0, len(valueLines))
+	lines = append(lines, styles.SubtleStyle.Render(labelText)+" "+lipgloss.NewStyle().Bold(true).Render(valueLines[0]))
+
+	if len(valueLines) > 1 {
+		indent := strings.Repeat(" ", ansi.StringWidth(labelText)+1)
+		for _, line := range valueLines[1:] {
+			lines = append(lines, indent+lipgloss.NewStyle().Bold(true).Render(line))
+		}
+	}
+
+	return lines
 }
 
 // renderActivityPane renders the Activity pane: header + scrollable activity timeline.
@@ -1411,22 +1454,25 @@ func (m *RunningModel) syncActivityView() {
 		lines = append(lines, styles.SubtleStyle.Render("  (waiting...)"))
 	} else {
 		for i, entry := range m.activities {
-			var line string
 			if entry.IsSeparator {
-				line = styles.SubtleStyle.Render(entry.Text)
-			} else {
-				indicator := "├─"
-				if entry.IsDone {
-					indicator = styles.SuccessStyle.Render("✓")
-				} else if i == len(m.activities)-1 && m.state == stateRunning {
-					indicator = m.spinner.View()
+				separatorLines := wrapTextToLines(entry.Text, contentWidth)
+				for _, line := range separatorLines {
+					lines = append(lines, styles.SubtleStyle.Render(line))
 				}
-				line = fmt.Sprintf("%s %s", indicator, entry.Text)
+				continue
 			}
-			if contentWidth > 0 && lipgloss.Width(line) > contentWidth {
-				line = truncateWithEllipsis(line, contentWidth)
+
+			indicator := "├─"
+			if entry.IsDone {
+				indicator = styles.SuccessStyle.Render("✓")
+			} else if i == len(m.activities)-1 && m.state == stateRunning {
+				indicator = m.spinner.View()
 			}
-			lines = append(lines, line)
+			prefix := indicator + " "
+			entryLines := wrapPrefixedText(prefix, entry.Text, contentWidth)
+			for _, line := range entryLines {
+				lines = append(lines, line)
+			}
 		}
 	}
 
@@ -1439,6 +1485,7 @@ func (m *RunningModel) syncTasksView() {
 	contentWidth := m.tasksView.ContentWidth()
 
 	var lines []string
+	currentTaskLineIdx := -1
 	for i, task := range m.tasks {
 		title := strings.TrimSpace(task.Title)
 		if title == "" {
@@ -1449,19 +1496,12 @@ func (m *RunningModel) syncTasksView() {
 		indicator := m.getTaskIndicator(task.Status, isCurrent)
 
 		prefix := fmt.Sprintf("%s %d. ", indicator, i+1)
-		prefixWidth := lipgloss.Width(prefix)
-		if contentWidth > 0 && prefixWidth >= contentWidth {
-			lines = append(lines, truncateWithEllipsis(prefix, contentWidth))
-			continue
+		if isCurrent {
+			currentTaskLineIdx = len(lines)
 		}
 
-		availableTitleWidth := contentWidth - prefixWidth
-		if availableTitleWidth < 0 {
-			availableTitleWidth = 0
-		}
-		title = truncateWithEllipsis(title, availableTitleWidth)
-
-		lines = append(lines, prefix+title)
+		taskLines := wrapPrefixedText(prefix, title, contentWidth)
+		lines = append(lines, taskLines...)
 	}
 
 	m.tasksView.SetLines(lines)
@@ -1469,8 +1509,8 @@ func (m *RunningModel) syncTasksView() {
 	// Auto-follow: ensure the current task is visible when auto-scroll is enabled.
 	// The tasksView's autoScroll state serves as the auto-follow toggle:
 	// user scrolling disables it, reaching the end re-enables it.
-	if m.tasksAutoFollow && m.currentTask > 0 && m.currentTask <= len(m.tasks) {
-		m.tasksView.EnsureVisible(m.currentTask-1, false)
+	if m.tasksAutoFollow && currentTaskLineIdx >= 0 {
+		m.tasksView.EnsureVisible(currentTaskLineIdx, false)
 	}
 }
 
@@ -1501,10 +1541,55 @@ func (m RunningModel) isToolRunning() bool {
 func formatToolUseEntry(toolName, target string) string {
 	entry := toolName
 	if target != "" {
-		shortened := shortenPathForActivity(target, 25)
-		entry += ": " + shortened
+		entry += ": " + target
 	}
 	return entry
+}
+
+func wrapTextToLines(text string, width int) []string {
+	if text == "" {
+		return []string{""}
+	}
+	if width <= 0 {
+		return []string{text}
+	}
+	return strings.Split(ansi.Wrap(text, width, "/"), "\n")
+}
+
+func wrapPrefixedText(prefix, text string, width int) []string {
+	if width <= 0 {
+		if prefix == "" && text == "" {
+			return nil
+		}
+		return []string{prefix + text}
+	}
+	if prefix == "" {
+		return wrapTextToLines(text, width)
+	}
+	if text == "" {
+		return wrapTextToLines(prefix, width)
+	}
+
+	prefixWidth := ansi.StringWidth(prefix)
+	if prefixWidth >= width {
+		return wrapTextToLines(prefix+text, width)
+	}
+
+	valueWidth := width - prefixWidth
+	valueLines := wrapTextToLines(text, valueWidth)
+	if len(valueLines) == 0 {
+		return []string{prefix}
+	}
+
+	lines := make([]string, 0, len(valueLines))
+	lines = append(lines, prefix+valueLines[0])
+
+	indent := strings.Repeat(" ", prefixWidth)
+	for _, line := range valueLines[1:] {
+		lines = append(lines, indent+line)
+	}
+
+	return lines
 }
 
 // shortenPathForActivity truncates a path/target to fit in the activity timeline.
