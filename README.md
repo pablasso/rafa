@@ -16,7 +16,7 @@ Users only review after plans are implemented.
 
 ## Status
 
-**v0.3.1** - Experimental. TUI version, dogfooding.
+Experimental. Use at your own risk.
 
 ## Prerequisites
 
