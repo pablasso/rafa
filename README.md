@@ -12,13 +12,17 @@ Rafa helps you implement a technical design by running AI agents in a loop until
 
 You own the design. Rafa owns the execution.
 
-New agent on every task. New agent on every retry. Agents commit after each completed task. Progress is tracked. You can walk away until the loop is completed.
+New agent on every task. New agent on every retry. Agents code review and commit after each completed task. Progress is tracked. You can walk away until the loop is completed.
 
 You only review after the complete plan is implemented.
 
 ## Status
 
-Experimental. Use at your own risk.
+⚠️ Experimental. Use at your own risk.
+
+While Rafa is good at completing loops without needing user intervention, it is still giving a lot of agency to the models to make decisions. So again, use at your own risk.
+
+The implementation can only be as good as your technical design.
 
 ## Prerequisites
 
