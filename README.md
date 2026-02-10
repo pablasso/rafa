@@ -143,6 +143,10 @@ Remove the binary:
 rm "$(command -v rafa)"
 ```
 
+## Contributing
+
+For development setup, workflow, testing, and release details, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 [MIT](LICENSE)
