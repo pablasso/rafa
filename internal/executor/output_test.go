@@ -767,9 +767,11 @@ func TestStreamingWriter_Hooks_EmitToolLifecycleAndUsage(t *testing.T) {
 	eventsChan := make(chan string, 10)
 
 	var (
+		gotToolID     string
+		gotParentID   string
 		gotToolName   string
 		gotToolTarget string
-		gotToolResult bool
+		gotToolResult string
 		gotInput      int64
 		gotOutput     int64
 		gotCost       float64
@@ -779,12 +781,14 @@ func TestStreamingWriter_Hooks_EmitToolLifecycleAndUsage(t *testing.T) {
 		underlying: io.Discard,
 		eventsChan: eventsChan,
 		hooks: StreamHooks{
-			OnToolUse: func(toolName, toolTarget string) {
+			OnToolUse: func(toolID, parentToolID, toolName, toolTarget string) {
+				gotToolID = toolID
+				gotParentID = parentToolID
 				gotToolName = toolName
 				gotToolTarget = toolTarget
 			},
-			OnToolResult: func() {
-				gotToolResult = true
+			OnToolResult: func(toolID string) {
+				gotToolResult = toolID
 			},
 			OnUsage: func(inputTokens, outputTokens int64, costUSD float64) {
 				gotInput = inputTokens
@@ -794,28 +798,120 @@ func TestStreamingWriter_Hooks_EmitToolLifecycleAndUsage(t *testing.T) {
 		},
 	}
 
-	toolUse := `{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Read","input":{"file_path":"internal/tui/views/run.go"}}}}` + "\n"
-	toolResult := `{"type":"user","message":{"content":[{"type":"tool_result"}]}}` + "\n"
+	toolUse := `{"type":"stream_event","parent_tool_use_id":"tool_parent","event":{"type":"content_block_start","content_block":{"type":"tool_use","id":"tool_read_1","name":"Read","input":{"file_path":"internal/tui/views/run.go"}}}}` + "\n"
+	toolResult := `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool_read_1"}]}}` + "\n"
 	usage := `{"type":"result","usage":{"input_tokens":123,"output_tokens":45},"total_cost_usd":0.007}` + "\n"
 
 	sw.Write([]byte(toolUse))
 	sw.Write([]byte(toolResult))
 	sw.Write([]byte(usage))
 
+	if gotToolID != "tool_read_1" {
+		t.Fatalf("expected tool ID tool_read_1, got %q", gotToolID)
+	}
+	if gotParentID != "tool_parent" {
+		t.Fatalf("expected parent tool ID tool_parent, got %q", gotParentID)
+	}
 	if gotToolName != "Read" {
 		t.Fatalf("expected tool name Read, got %q", gotToolName)
 	}
 	if gotToolTarget != "internal/tui/views/run.go" {
 		t.Fatalf("expected tool target internal/tui/views/run.go, got %q", gotToolTarget)
 	}
-	if !gotToolResult {
-		t.Fatalf("expected tool result hook to be called")
+	if gotToolResult != "tool_read_1" {
+		t.Fatalf("expected tool result for tool_read_1, got %q", gotToolResult)
 	}
 	if gotInput != 123 || gotOutput != 45 {
 		t.Fatalf("expected usage tokens 123/45, got %d/%d", gotInput, gotOutput)
 	}
 	if gotCost != 0.007 {
 		t.Fatalf("expected cost 0.007, got %f", gotCost)
+	}
+}
+
+func TestStreamingWriter_Hooks_AssistantToolUseIncludesParentAndTarget(t *testing.T) {
+	var (
+		gotToolID     string
+		gotParentID   string
+		gotToolName   string
+		gotToolTarget string
+	)
+
+	sw := &streamingWriter{
+		underlying: io.Discard,
+		hooks: StreamHooks{
+			OnToolUse: func(toolID, parentToolID, toolName, toolTarget string) {
+				gotToolID = toolID
+				gotParentID = parentToolID
+				gotToolName = toolName
+				gotToolTarget = toolTarget
+			},
+		},
+	}
+
+	assistant := `{"type":"assistant","parent_tool_use_id":"tool_parent","message":{"content":[{"type":"tool_use","id":"tool_child","name":"Read","input":{"file_path":"internal/tui/views/run.go"}}]}}` + "\n"
+	if _, err := sw.Write([]byte(assistant)); err != nil {
+		t.Fatalf("write assistant error: %v", err)
+	}
+
+	if gotToolID != "tool_child" {
+		t.Fatalf("expected tool ID tool_child, got %q", gotToolID)
+	}
+	if gotParentID != "tool_parent" {
+		t.Fatalf("expected parent tool ID tool_parent, got %q", gotParentID)
+	}
+	if gotToolName != "Read" {
+		t.Fatalf("expected tool name Read, got %q", gotToolName)
+	}
+	if gotToolTarget != "internal/tui/views/run.go" {
+		t.Fatalf("expected tool target internal/tui/views/run.go, got %q", gotToolTarget)
+	}
+}
+
+func TestStreamingWriter_Hooks_StreamAndAssistantToolUseSameID(t *testing.T) {
+	type hookCall struct {
+		ID         string
+		ParentID   string
+		Name       string
+		TargetPath string
+	}
+	var calls []hookCall
+
+	sw := &streamingWriter{
+		underlying: io.Discard,
+		hooks: StreamHooks{
+			OnToolUse: func(toolID, parentToolID, toolName, toolTarget string) {
+				calls = append(calls, hookCall{
+					ID:         toolID,
+					ParentID:   parentToolID,
+					Name:       toolName,
+					TargetPath: toolTarget,
+				})
+			},
+		},
+	}
+
+	streamTool := `{"type":"stream_event","parent_tool_use_id":"tool_parent","event":{"type":"content_block_start","content_block":{"type":"tool_use","id":"tool_same","name":"Read","input":{}}}}` + "\n"
+	assistantTool := `{"type":"assistant","parent_tool_use_id":"tool_parent","message":{"content":[{"type":"tool_use","id":"tool_same","name":"Read","input":{"file_path":"internal/tui/views/run.go"}}]}}` + "\n"
+
+	if _, err := sw.Write([]byte(streamTool)); err != nil {
+		t.Fatalf("write stream tool error: %v", err)
+	}
+	if _, err := sw.Write([]byte(assistantTool)); err != nil {
+		t.Fatalf("write assistant tool error: %v", err)
+	}
+
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 tool use callbacks, got %d", len(calls))
+	}
+	if calls[0].ID != "tool_same" || calls[1].ID != "tool_same" {
+		t.Fatalf("expected both callbacks to have tool_same ID, got %#v", calls)
+	}
+	if calls[0].TargetPath != "" {
+		t.Fatalf("expected first callback to have empty target, got %q", calls[0].TargetPath)
+	}
+	if calls[1].TargetPath != "internal/tui/views/run.go" {
+		t.Fatalf("expected second callback to include target path, got %q", calls[1].TargetPath)
 	}
 }
 

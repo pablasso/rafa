@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,14 +55,19 @@ func (r paneRect) contains(px, py int) bool {
 
 // maxActivityEntries caps the in-memory activity entries to prevent unbounded growth.
 const maxActivityEntries = 2000
+const outputQuietThinkingThreshold = 1200 * time.Millisecond
 
 // RunActivityEntry represents a single item in the activity timeline.
 // Similar to ActivityEntry in conversation.go but specific to plan execution.
 type RunActivityEntry struct {
-	Text        string
-	Timestamp   time.Time
-	IsDone      bool // Whether this activity is complete
-	IsSeparator bool // Whether this is a task/attempt separator line
+	Text         string
+	Timestamp    time.Time
+	IsDone       bool // Whether this activity is complete
+	IsSeparator  bool // Whether this is a task/attempt separator line
+	ToolID       string
+	ParentToolID string
+	ToolName     string
+	ToolTarget   string
 }
 
 // RunningModel is the model for the execution monitor view.
@@ -112,6 +118,10 @@ type RunningModel struct {
 
 	// Number of currently running tools for output thinking indicator.
 	activeToolCount int
+
+	// Spinner fallback tracking when no output arrives for a while.
+	lastOutputAt time.Time
+	now          func() time.Time
 
 	// When true, insert a separator before the next non-marker output chunk.
 	// This preserves readability when tool marker lines are hidden.
@@ -180,12 +190,16 @@ type PlanCancelledMsg struct{}
 
 // ToolUseMsg indicates a tool is being used during task execution.
 type ToolUseMsg struct {
-	ToolName   string
-	ToolTarget string // File path, pattern, or description depending on tool
+	ToolID       string
+	ParentToolID string
+	ToolName     string
+	ToolTarget   string // File path, pattern, or description depending on tool
 }
 
 // ToolResultMsg indicates a tool has completed execution.
-type ToolResultMsg struct{}
+type ToolResultMsg struct {
+	ToolID string
+}
 
 // UsageMsg contains token usage information from a result event.
 type UsageMsg struct {
@@ -221,6 +235,7 @@ func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string,
 
 	output := components.NewOutputViewport(80, 20, 0) // Will be resized
 	output.SetShowScrollbar(true)
+	nowFn := time.Now
 
 	return RunningModel{
 		state:           stateRunning,
@@ -240,6 +255,8 @@ func NewRunningModel(planID, planName string, tasks []plan.Task, planDir string,
 		outputChan:      make(chan string, 100), // Buffered channel
 		planDir:         planDir,
 		plan:            p,
+		lastOutputAt:    nowFn(),
+		now:             nowFn,
 	}
 }
 
@@ -307,14 +324,16 @@ func (m *RunningModel) StartExecutor(program *tea.Program) tea.Cmd {
 			m.planDir,
 			m.outputChan,
 			executor.StreamHooks{
-				OnToolUse: func(toolName, toolTarget string) {
+				OnToolUse: func(toolID, parentToolID, toolName, toolTarget string) {
 					program.Send(ToolUseMsg{
-						ToolName:   toolName,
-						ToolTarget: toolTarget,
+						ToolID:       toolID,
+						ParentToolID: parentToolID,
+						ToolName:     toolName,
+						ToolTarget:   toolTarget,
 					})
 				},
-				OnToolResult: func() {
-					program.Send(ToolResultMsg{})
+				OnToolResult: func(toolID string) {
+					program.Send(ToolResultMsg{ToolID: toolID})
 				},
 				OnUsage: func(inputTokens, outputTokens int64, costUSD float64) {
 					program.Send(UsageMsg{
@@ -397,6 +416,7 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		// Reset per-task counters without clearing plan-wide activity history
 		m.resetTaskUsage()
 		m.pendingOutputSeparator = false
+		m.lastOutputAt = m.currentTime()
 		// Append a concise separator line for this task/attempt.
 		separator := fmt.Sprintf("Starting task %d", msg.TaskNum)
 		if msg.Attempt > 1 {
@@ -404,7 +424,7 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		}
 		m.activities = append(m.activities, RunActivityEntry{
 			Text:        separator,
-			Timestamp:   time.Now(),
+			Timestamp:   m.currentTime(),
 			IsDone:      true,
 			IsSeparator: true,
 		})
@@ -442,18 +462,17 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		return m, nil
 
 	case ToolUseMsg:
-		// Add tool use to activity timeline
-		m.addActivity(msg.ToolName, msg.ToolTarget)
-		m.activeToolCount++
+		// Add tool use to activity timeline (with de-dupe by ToolID).
+		m.addOrUpdateActivity(msg)
+		m.recomputeActiveToolCount()
 		m.syncActivityView()
 		return m, nil
 
 	case ToolResultMsg:
-		// Mark last activity as done
-		m.markLastActivityDone()
-		if m.activeToolCount > 0 {
-			m.activeToolCount--
-		}
+		// Mark activity done by ToolID when available; otherwise fall back
+		// to the most recent unfinished entry.
+		m.markActivityDone(msg.ToolID)
+		m.recomputeActiveToolCount()
 		m.syncActivityView()
 		return m, nil
 
@@ -496,6 +515,9 @@ func (m RunningModel) Update(msg tea.Msg) (RunningModel, tea.Cmd) {
 		}
 		m.pendingOutputSeparator = false
 		m.output.AppendChunk(chunk)
+		if chunk != "" {
+			m.lastOutputAt = m.currentTime()
+		}
 		return m, m.listenForOutput()
 
 	case AssistantBoundaryMsg:
@@ -1261,7 +1283,7 @@ func (m RunningModel) renderRightPanel(width, height int) string {
 	// Get raw viewport content (without scrollbar) so we can apply the
 	// inline spinner before the scrollbar column is appended.
 	outputView := m.output.ViewContent()
-	if m.state == stateRunning && m.isToolRunning() {
+	if m.shouldShowOutputSpinner() {
 		outputView = insertInlineSpinner(outputView, m.spinner.View())
 	}
 	outputView = m.output.ComposeWithScrollbar(outputView)
@@ -1436,13 +1458,45 @@ func (m RunningModel) countCompleted() int {
 	return count
 }
 
-// addActivity adds an entry to the activity timeline.
-func (m *RunningModel) addActivity(toolName, toolTarget string) {
-	entry := formatToolUseEntry(toolName, toolTarget)
+// addOrUpdateActivity upserts an activity entry using ToolID when available.
+func (m *RunningModel) addOrUpdateActivity(msg ToolUseMsg) {
+	toolName := strings.TrimSpace(msg.ToolName)
+	if toolName == "" {
+		toolName = "Tool"
+	}
+
+	if msg.ToolID != "" {
+		for i := len(m.activities) - 1; i >= 0; i-- {
+			entry := &m.activities[i]
+			if entry.IsSeparator || entry.ToolID != msg.ToolID {
+				continue
+			}
+			if entry.ToolName == "" {
+				entry.ToolName = toolName
+			}
+			if entry.ParentToolID == "" && msg.ParentToolID != "" {
+				entry.ParentToolID = msg.ParentToolID
+			}
+			if entry.ToolTarget == "" && msg.ToolTarget != "" {
+				entry.ToolTarget = msg.ToolTarget
+			}
+			// Rebuild text so late-enriched targets become visible.
+			entry.Text = formatToolUseEntry(entry.ToolName, entry.ToolTarget)
+			if entry.Timestamp.IsZero() {
+				entry.Timestamp = m.currentTime()
+			}
+			return
+		}
+	}
+
 	m.activities = append(m.activities, RunActivityEntry{
-		Text:      entry,
-		Timestamp: time.Now(),
-		IsDone:    false,
+		Text:         formatToolUseEntry(toolName, msg.ToolTarget),
+		Timestamp:    m.currentTime(),
+		IsDone:       false,
+		ToolID:       msg.ToolID,
+		ParentToolID: msg.ParentToolID,
+		ToolName:     toolName,
+		ToolTarget:   msg.ToolTarget,
 	})
 	m.trimActivities()
 }
@@ -1465,30 +1519,87 @@ func (m *RunningModel) syncActivityView() {
 	var lines []string
 	if len(m.activities) == 0 {
 		lines = append(lines, styles.SubtleStyle.Render("  (waiting...)"))
-	} else {
-		for i, entry := range m.activities {
-			if entry.IsSeparator {
-				// Add breathing room before task boundary markers, except at the top.
-				if len(lines) > 0 {
-					lines = append(lines, "")
-				}
-				separatorLines := wrapTextToLines(entry.Text, contentWidth)
-				for _, line := range separatorLines {
-					lines = append(lines, styles.SubtleStyle.Render(line))
-				}
+		m.activityView.SetLines(lines)
+		return
+	}
+
+	taskParentIDs := make(map[string]struct{})
+	for _, entry := range m.activities {
+		if entry.IsSeparator {
+			continue
+		}
+		if entry.ToolName == "Task" && entry.ToolID != "" {
+			taskParentIDs[entry.ToolID] = struct{}{}
+		}
+	}
+
+	hiddenChildren := make(map[int]bool)
+	nestedCounts := make(map[string]map[string]int)
+	for i, entry := range m.activities {
+		if entry.IsSeparator || entry.ParentToolID == "" {
+			continue
+		}
+		if _, isNested := taskParentIDs[entry.ParentToolID]; !isNested {
+			continue
+		}
+		hiddenChildren[i] = true
+		if nestedCounts[entry.ParentToolID] == nil {
+			nestedCounts[entry.ParentToolID] = make(map[string]int)
+		}
+		name := entry.ToolName
+		if name == "" {
+			name = "Tool"
+		}
+		nestedCounts[entry.ParentToolID][name]++
+	}
+
+	lastVisibleRunningIdx := -1
+	if m.state == stateRunning || m.state == stateCancelling {
+		for i := len(m.activities) - 1; i >= 0; i-- {
+			entry := m.activities[i]
+			if entry.IsSeparator || entry.IsDone || hiddenChildren[i] {
 				continue
 			}
+			lastVisibleRunningIdx = i
+			break
+		}
+	}
 
-			indicator := "├─"
-			if entry.IsDone {
-				indicator = styles.SuccessStyle.Render("✓")
-			} else if i == len(m.activities)-1 && m.state == stateRunning {
-				indicator = m.spinner.View()
+	for i, entry := range m.activities {
+		if entry.IsSeparator {
+			// Add breathing room before task boundary markers, except at the top.
+			if len(lines) > 0 {
+				lines = append(lines, "")
 			}
-			prefix := indicator + " "
-			entryLines := wrapPrefixedText(prefix, entry.Text, contentWidth)
-			for _, line := range entryLines {
-				lines = append(lines, line)
+			separatorLines := wrapTextToLines(entry.Text, contentWidth)
+			for _, line := range separatorLines {
+				lines = append(lines, styles.SubtleStyle.Render(line))
+			}
+			continue
+		}
+		if hiddenChildren[i] {
+			continue
+		}
+
+		indicator := "├─"
+		if entry.IsDone {
+			indicator = styles.SuccessStyle.Render("✓")
+		} else if i == lastVisibleRunningIdx {
+			indicator = m.spinner.View()
+		}
+		prefix := indicator + " "
+		entryLines := wrapPrefixedText(prefix, entry.Text, contentWidth)
+		for _, line := range entryLines {
+			lines = append(lines, line)
+		}
+
+		if entry.ToolName == "Task" && entry.ToolID != "" {
+			if counts := nestedCounts[entry.ToolID]; len(counts) > 0 {
+				summary := formatNestedSummary(counts)
+				summaryLines := wrapPrefixedText("   ", summary, contentWidth)
+				for _, line := range summaryLines {
+					lines = append(lines, styles.SubtleStyle.Render(line))
+				}
 			}
 		}
 	}
@@ -1537,11 +1648,42 @@ func (m *RunningModel) updateTasksAutoFollow() {
 	m.tasksAutoFollow = m.tasksView.AutoScroll()
 }
 
-// markLastActivityDone marks the last activity entry as done.
-func (m *RunningModel) markLastActivityDone() {
-	if len(m.activities) > 0 {
-		m.activities[len(m.activities)-1].IsDone = true
+// markActivityDone marks a matching activity entry as done.
+// It prefers a direct ToolID match, then falls back to the most recent
+// unfinished non-separator entry.
+func (m *RunningModel) markActivityDone(toolID string) {
+	if toolID != "" {
+		for i := len(m.activities) - 1; i >= 0; i-- {
+			if m.activities[i].IsSeparator || m.activities[i].IsDone {
+				continue
+			}
+			if m.activities[i].ToolID == toolID {
+				m.activities[i].IsDone = true
+				return
+			}
+		}
 	}
+	for i := len(m.activities) - 1; i >= 0; i-- {
+		if m.activities[i].IsSeparator || m.activities[i].IsDone {
+			continue
+		}
+		m.activities[i].IsDone = true
+		return
+	}
+}
+
+// recomputeActiveToolCount recalculates unresolved tool entries.
+func (m *RunningModel) recomputeActiveToolCount() {
+	count := 0
+	for _, entry := range m.activities {
+		if entry.IsSeparator {
+			continue
+		}
+		if !entry.IsDone {
+			count++
+		}
+	}
+	m.activeToolCount = count
 }
 
 // resetTaskUsage resets per-task counters without clearing the plan-wide activity history.
@@ -1552,6 +1694,64 @@ func (m *RunningModel) resetTaskUsage() {
 
 func (m RunningModel) isToolRunning() bool {
 	return m.activeToolCount > 0
+}
+
+func (m RunningModel) hasRunningTask() bool {
+	if m.currentTask > 0 && m.currentTask <= len(m.tasks) && m.tasks[m.currentTask-1].Status == "running" {
+		return true
+	}
+	for _, task := range m.tasks {
+		if task.Status == "running" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m RunningModel) shouldShowOutputSpinner() bool {
+	if m.state != stateRunning {
+		return false
+	}
+	if m.isToolRunning() {
+		return true
+	}
+	if !m.hasRunningTask() {
+		return false
+	}
+	if m.lastOutputAt.IsZero() {
+		return false
+	}
+	return m.currentTime().Sub(m.lastOutputAt) >= outputQuietThinkingThreshold
+}
+
+func (m RunningModel) currentTime() time.Time {
+	if m.now != nil {
+		return m.now()
+	}
+	return time.Now()
+}
+
+func formatNestedSummary(counts map[string]int) string {
+	type item struct {
+		Name  string
+		Count int
+	}
+	items := make([]item, 0, len(counts))
+	for name, count := range counts {
+		items = append(items, item{Name: name, Count: count})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Count == items[j].Count {
+			return items[i].Name < items[j].Name
+		}
+		return items[i].Count > items[j].Count
+	})
+
+	parts := make([]string, 0, len(items))
+	for _, it := range items {
+		parts = append(parts, fmt.Sprintf("%s x%d", it.Name, it.Count))
+	}
+	return "↳ nested: " + strings.Join(parts, ", ")
 }
 
 // formatToolUseEntry formats a tool use entry for the activity timeline.

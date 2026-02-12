@@ -30,8 +30,8 @@ type OutputWriter interface {
 // StreamHooks provides callbacks for structured stream events.
 // All callbacks are optional.
 type StreamHooks struct {
-	OnToolUse           func(toolName, toolTarget string)
-	OnToolResult        func()
+	OnToolUse           func(toolID, parentToolID, toolName, toolTarget string)
+	OnToolResult        func(toolID string)
 	OnUsage             func(inputTokens, outputTokens int64, costUSD float64)
 	OnAssistantBoundary func()
 }
@@ -166,10 +166,10 @@ func (s *streamingWriter) Write(p []byte) (n int, err error) {
 		// Parse JSON and extract displayable text plus structured events.
 		parsed := parseStreamLineDetails(line)
 		if parsed.ToolUse != nil {
-			s.emitToolUse(parsed.ToolUse.Name, parsed.ToolUse.Target)
+			s.emitToolUse(parsed.ToolUse.ID, parsed.ToolUse.ParentToolID, parsed.ToolUse.Name, parsed.ToolUse.Target)
 		}
-		if parsed.ToolResult {
-			s.emitToolResult()
+		if parsed.ToolResult != nil {
+			s.emitToolResult(parsed.ToolResult.ToolID)
 		}
 		if parsed.Usage != nil {
 			s.emitUsage(parsed.Usage.InputTokens, parsed.Usage.OutputTokens, parsed.Usage.CostUSD)
@@ -215,15 +215,15 @@ func (s *streamingWriter) flushOutput() {
 	s.outputBuf.Reset()
 }
 
-func (s *streamingWriter) emitToolUse(toolName, toolTarget string) {
+func (s *streamingWriter) emitToolUse(toolID, parentToolID, toolName, toolTarget string) {
 	if s.hooks.OnToolUse != nil {
-		s.hooks.OnToolUse(toolName, toolTarget)
+		s.hooks.OnToolUse(toolID, parentToolID, toolName, toolTarget)
 	}
 }
 
-func (s *streamingWriter) emitToolResult() {
+func (s *streamingWriter) emitToolResult(toolID string) {
 	if s.hooks.OnToolResult != nil {
-		s.hooks.OnToolResult()
+		s.hooks.OnToolResult(toolID)
 	}
 }
 
@@ -243,14 +243,20 @@ type parsedStreamLine struct {
 	Text              string
 	Flush             bool
 	ToolUse           *toolUseEvent
-	ToolResult        bool
+	ToolResult        *toolResultEvent
 	Usage             *usageEvent
 	AssistantBoundary bool
 }
 
 type toolUseEvent struct {
-	Name   string
-	Target string
+	ID           string
+	ParentToolID string
+	Name         string
+	Target       string
+}
+
+type toolResultEvent struct {
+	ToolID string
 }
 
 type usageEvent struct {
@@ -261,10 +267,11 @@ type usageEvent struct {
 
 // streamEvent represents the JSON structure from Claude's stream-json output.
 type streamEvent struct {
-	Type    string `json:"type"`
-	Subtype string `json:"subtype,omitempty"`
-	IsError bool   `json:"is_error,omitempty"`
-	Event   *struct {
+	Type            string `json:"type"`
+	Subtype         string `json:"subtype,omitempty"`
+	IsError         bool   `json:"is_error,omitempty"`
+	ParentToolUseID string `json:"parent_tool_use_id,omitempty"`
+	Event           *struct {
 		Type         string `json:"type"`
 		Delta        *streamDelta
 		ContentBlock *streamContentBlock `json:"content_block,omitempty"`
@@ -285,16 +292,19 @@ type streamDelta struct {
 }
 
 type streamContentBlock struct {
+	ID    string                 `json:"id,omitempty"`
 	Type  string                 `json:"type"`
 	Name  string                 `json:"name,omitempty"`
 	Input map[string]interface{} `json:"input,omitempty"`
 }
 
 type streamContent struct {
-	Type  string                 `json:"type"`
-	Text  string                 `json:"text,omitempty"`
-	Name  string                 `json:"name,omitempty"`
-	Input map[string]interface{} `json:"input,omitempty"`
+	ID        string                 `json:"id,omitempty"`
+	Type      string                 `json:"type"`
+	Text      string                 `json:"text,omitempty"`
+	Name      string                 `json:"name,omitempty"`
+	Input     map[string]interface{} `json:"input,omitempty"`
+	ToolUseID string                 `json:"tool_use_id,omitempty"`
 }
 
 // FormatStreamLine parses a JSON stream line and extracts displayable text.
@@ -340,8 +350,10 @@ func parseStreamLineDetails(line string) parsedStreamLine {
 					name := event.Event.ContentBlock.Name
 					return parsedStreamLine{
 						ToolUse: &toolUseEvent{
-							Name:   name,
-							Target: extractToolTarget(name, event.Event.ContentBlock.Input),
+							ID:           event.Event.ContentBlock.ID,
+							ParentToolID: event.ParentToolUseID,
+							Name:         name,
+							Target:       extractToolTarget(name, event.Event.ContentBlock.Input),
 						},
 					}
 				}
@@ -351,12 +363,31 @@ func parseStreamLineDetails(line string) parsedStreamLine {
 		}
 	case "assistant":
 		// Assistant turn boundary - flush any buffered delta text.
-		return parsedStreamLine{Flush: true, AssistantBoundary: true}
+		parsed := parsedStreamLine{Flush: true, AssistantBoundary: true}
+		if event.Message != nil {
+			for _, c := range event.Message.Content {
+				if c.Type == "tool_use" && c.Name != "" {
+					parsed.ToolUse = &toolUseEvent{
+						ID:           c.ID,
+						ParentToolID: event.ParentToolUseID,
+						Name:         c.Name,
+						Target:       extractToolTarget(c.Name, c.Input),
+					}
+					break
+				}
+			}
+		}
+		return parsed
 	case "user":
 		if event.Message != nil {
 			for _, c := range event.Message.Content {
 				if c.Type == "tool_result" {
-					return parsedStreamLine{ToolResult: true, Flush: true}
+					return parsedStreamLine{
+						ToolResult: &toolResultEvent{
+							ToolID: c.ToolUseID,
+						},
+						Flush: true,
+					}
 				}
 			}
 		}

@@ -1511,6 +1511,74 @@ func TestRunningModel_Update_ToolUseMsg_MultipleToolUses(t *testing.T) {
 	}
 }
 
+func TestRunningModel_Update_ToolUseMsg_UpsertsByToolID(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	m, _ = m.Update(ToolUseMsg{ToolID: "tool_read", ToolName: "Read"})
+	m, _ = m.Update(ToolUseMsg{
+		ToolID:       "tool_read",
+		ParentToolID: "tool_parent",
+		ToolName:     "Read",
+		ToolTarget:   "/path/to/file.go",
+	})
+
+	if len(m.activities) != 1 {
+		t.Fatalf("expected one deduped activity entry, got %d", len(m.activities))
+	}
+	if m.activities[0].ToolID != "tool_read" {
+		t.Fatalf("expected tool ID tool_read, got %q", m.activities[0].ToolID)
+	}
+	if m.activities[0].ParentToolID != "tool_parent" {
+		t.Fatalf("expected parent tool ID tool_parent, got %q", m.activities[0].ParentToolID)
+	}
+	if !strings.Contains(m.activities[0].Text, "file.go") {
+		t.Fatalf("expected enriched activity text to contain file target, got %q", m.activities[0].Text)
+	}
+	if m.activeToolCount != 1 {
+		t.Fatalf("expected activeToolCount=1, got %d", m.activeToolCount)
+	}
+}
+
+func TestRunningModel_Update_ToolResultMsg_MarksMatchingToolID(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	m, _ = m.Update(ToolUseMsg{ToolID: "read_1", ToolName: "Read", ToolTarget: "/file1.go"})
+	m, _ = m.Update(ToolUseMsg{ToolID: "edit_1", ToolName: "Edit", ToolTarget: "/file2.go"})
+
+	m, _ = m.Update(ToolResultMsg{ToolID: "read_1"})
+
+	if !m.activities[0].IsDone {
+		t.Fatal("expected matching read_1 activity to be marked done")
+	}
+	if m.activities[1].IsDone {
+		t.Fatal("expected non-matching edit_1 activity to remain running")
+	}
+	if m.activeToolCount != 1 {
+		t.Fatalf("expected activeToolCount=1 after one completion, got %d", m.activeToolCount)
+	}
+}
+
+func TestRunningModel_Update_ToolResultMsg_WithoutIDFallsBackToLatestUnfinished(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+
+	m, _ = m.Update(ToolUseMsg{ToolID: "read_1", ToolName: "Read", ToolTarget: "/file1.go"})
+	m, _ = m.Update(ToolUseMsg{ToolID: "edit_1", ToolName: "Edit", ToolTarget: "/file2.go"})
+	m, _ = m.Update(ToolResultMsg{})
+
+	if !m.activities[1].IsDone {
+		t.Fatal("expected latest unfinished entry to be marked done")
+	}
+	if m.activities[0].IsDone {
+		t.Fatal("expected earlier entry to remain unfinished")
+	}
+	if m.activeToolCount != 1 {
+		t.Fatalf("expected activeToolCount=1 after fallback completion, got %d", m.activeToolCount)
+	}
+}
+
 func TestRunningModel_Update_ToolResultMsg_MarksLastActivityDone(t *testing.T) {
 	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
 	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
@@ -1601,6 +1669,79 @@ func TestRunningModel_View_OutputThinkingIndicator_ShownOnlyWhileToolRunning(t *
 	rightAfter := m.renderRightPanel(56, 20)
 	if strings.Contains(rightAfter, m.spinner.View()) {
 		t.Fatalf("did not expect spinner after tool result")
+	}
+}
+
+func TestRunningModel_ActivityHybridSummary_HidesNestedTaskChildren(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(120, 40)
+
+	m, _ = m.Update(ToolUseMsg{
+		ToolID:     "task_parent",
+		ToolName:   "Task",
+		ToolTarget: "Explore plan creation code",
+	})
+	m, _ = m.Update(ToolUseMsg{
+		ToolID:       "child_read",
+		ParentToolID: "task_parent",
+		ToolName:     "Read",
+		ToolTarget:   "/nested/a.go",
+	})
+	m, _ = m.Update(ToolResultMsg{ToolID: "child_read"})
+	m, _ = m.Update(ToolUseMsg{
+		ToolID:       "child_grep",
+		ParentToolID: "task_parent",
+		ToolName:     "Grep",
+		ToolTarget:   "PlanCreateModel",
+	})
+	m, _ = m.Update(ToolResultMsg{ToolID: "child_grep"})
+
+	plain := stripANSI(m.activityView.View())
+	if !strings.Contains(plain, "Task: Explore plan creation") {
+		t.Fatalf("expected top-level Task row in activity view, got %q", plain)
+	}
+	if strings.Contains(plain, "/nested/a.go") {
+		t.Fatalf("expected nested child details to be hidden, got %q", plain)
+	}
+	if !strings.Contains(plain, "nested:") {
+		t.Fatalf("expected hybrid nested summary row, got %q", plain)
+	}
+	if !strings.Contains(plain, "Read x1") || !strings.Contains(plain, "Grep x1") {
+		t.Fatalf("expected nested summary counts for Read and Grep, got %q", plain)
+	}
+}
+
+func TestRunningModel_OutputSpinner_FallbackAfterQuietThinkingThreshold(t *testing.T) {
+	tasks := []plan.Task{{ID: "t01", Title: "Task", Status: plan.TaskStatusPending}}
+	m := NewRunningModel("abc123", "my-plan", tasks, "", nil)
+	m.SetSize(100, 30)
+
+	base := time.Unix(1700000000, 0)
+	now := base
+	m.now = func() time.Time { return now }
+	m.lastOutputAt = now
+	m.currentTask = 1
+	m.tasks[0].Status = "running"
+
+	m, _ = m.Update(OutputLineMsg{Line: "Still working..."})
+
+	now = base.Add(1100 * time.Millisecond)
+	before := m.renderRightPanel(56, 20)
+	if strings.Contains(before, m.spinner.View()) {
+		t.Fatalf("did not expect fallback spinner before threshold, got %q", before)
+	}
+
+	now = base.Add(1300 * time.Millisecond)
+	after := m.renderRightPanel(56, 20)
+	if !strings.Contains(after, m.spinner.View()) {
+		t.Fatalf("expected fallback spinner after quiet threshold, got %q", after)
+	}
+
+	m.state = stateDone
+	doneView := m.renderRightPanel(56, 20)
+	if strings.Contains(doneView, m.spinner.View()) {
+		t.Fatalf("did not expect spinner in done state, got %q", doneView)
 	}
 }
 
