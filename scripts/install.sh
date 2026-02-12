@@ -90,13 +90,13 @@ detect_arch() {
     ARCH="$(uname -m)"
     case "$ARCH" in
         x86_64|amd64)
-            ARCH="x64"
+            ARCH="amd64"
             ;;
         arm64|aarch64)
             ARCH="arm64"
             ;;
         *)
-            error "Unsupported architecture: $ARCH. Rafa supports x64 (x86_64) and arm64."
+            error "Unsupported architecture: $ARCH. Rafa supports amd64 (x86_64) and arm64."
             ;;
     esac
     echo "$ARCH"
@@ -188,8 +188,8 @@ verify_checksum() {
     CHECKSUMS_FILE="$2"
     BINARY_NAME="$3"
 
-    # Use word boundary matching to avoid partial matches (e.g., rafa-linux-arm64 matching rafa-linux-arm64-v2)
-    EXPECTED_CHECKSUM=$(grep -w "$BINARY_NAME" "$CHECKSUMS_FILE" | awk '{print $1}')
+    # Match exact filename in 2nd column of checksums.txt
+    EXPECTED_CHECKSUM=$(awk -v name="$BINARY_NAME" '$2 == name {print $1}' "$CHECKSUMS_FILE")
     if [ -z "$EXPECTED_CHECKSUM" ]; then
         error "Could not find checksum for $BINARY_NAME in checksums.txt"
     fi
@@ -204,7 +204,7 @@ verify_checksum() {
     fi
 
     if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
-        error "Checksum verification failed!\nExpected: $EXPECTED_CHECKSUM\nActual:   $ACTUAL_CHECKSUM\nThe downloaded file may be corrupted. Please try again."
+        error "Checksum verification failed for $BINARY_NAME. Expected $EXPECTED_CHECKSUM but got $ACTUAL_CHECKSUM. The downloaded file may be corrupted."
     fi
 
     info "Checksum verified successfully"
@@ -220,8 +220,8 @@ main() {
         VERSION=$(get_latest_version)
     fi
 
-    BINARY_NAME="rafa-${OS}-${ARCH}"
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}"
+    ARCHIVE_NAME="rafa_${OS}_${ARCH}.tar.gz"
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE_NAME}"
     CHECKSUM_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt"
 
     # Determine install directory
@@ -234,10 +234,10 @@ main() {
     TMP_DIR=$(mktemp -d)
     trap 'rm -rf "$TMP_DIR"' EXIT
 
-    # Download binary
-    info "Downloading ${BINARY_NAME}..."
-    if ! curl -fsSL "$DOWNLOAD_URL" -o "${TMP_DIR}/${BINARY_NAME}" 2>/dev/null; then
-        error "Failed to download ${BINARY_NAME} from ${DOWNLOAD_URL}\nPlease check the version exists and your network connection."
+    # Download archive
+    info "Downloading ${ARCHIVE_NAME}..."
+    if ! curl -fsSL "$DOWNLOAD_URL" -o "${TMP_DIR}/${ARCHIVE_NAME}" 2>/dev/null; then
+        error "Failed to download ${ARCHIVE_NAME} from ${DOWNLOAD_URL}. Please check that version ${VERSION} exists and your network connection."
     fi
 
     # Download checksums
@@ -247,7 +247,22 @@ main() {
     fi
 
     # Verify checksum
-    verify_checksum "${TMP_DIR}/${BINARY_NAME}" "${TMP_DIR}/checksums.txt" "$BINARY_NAME"
+    verify_checksum "${TMP_DIR}/${ARCHIVE_NAME}" "${TMP_DIR}/checksums.txt" "$ARCHIVE_NAME"
+
+    # Extract binary from archive
+    info "Extracting ${ARCHIVE_NAME}..."
+    if ! tar -xzf "${TMP_DIR}/${ARCHIVE_NAME}" -C "$TMP_DIR" 2>/dev/null; then
+        error "Failed to extract ${ARCHIVE_NAME}. The archive may be corrupted."
+    fi
+
+    if [ -f "${TMP_DIR}/rafa" ]; then
+        EXTRACTED_BINARY="${TMP_DIR}/rafa"
+    else
+        EXTRACTED_BINARY=$(find "$TMP_DIR" -type f -name rafa | head -n 1)
+    fi
+    if [ -z "$EXTRACTED_BINARY" ] || [ ! -f "$EXTRACTED_BINARY" ]; then
+        error "Could not find rafa binary inside ${ARCHIVE_NAME}"
+    fi
 
     # Create install directory if it doesn't exist
     if [ ! -d "$INSTALL_DIR" ]; then
@@ -257,11 +272,11 @@ main() {
 
     # Install binary
     if [ -w "$INSTALL_DIR" ]; then
-        mv "${TMP_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/rafa"
+        mv "${EXTRACTED_BINARY}" "${INSTALL_DIR}/rafa"
         chmod +x "${INSTALL_DIR}/rafa"
     else
         info "Installing to ${INSTALL_DIR} (requires sudo)..."
-        sudo mv "${TMP_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/rafa" || error "Failed to install binary. Do you have sudo access?"
+        sudo mv "${EXTRACTED_BINARY}" "${INSTALL_DIR}/rafa" || error "Failed to install binary. Do you have sudo access?"
         sudo chmod +x "${INSTALL_DIR}/rafa"
     fi
 
