@@ -37,6 +37,12 @@ curl -fsSL https://raw.githubusercontent.com/pablasso/rafa/main/scripts/install.
 
 To upgrade, run the same command again.
 
+To check your installed version:
+
+```bash
+rafa --version
+```
+
 ## Quick Start
 
 1. Open the repository you want Rafa to operate in:

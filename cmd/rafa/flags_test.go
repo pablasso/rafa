@@ -15,6 +15,9 @@ func TestParseArgs_NoArgs(t *testing.T) {
 	if res.ShowHelp {
 		t.Fatalf("expected ShowHelp=false")
 	}
+	if res.ShowVersion {
+		t.Fatalf("expected ShowVersion=false")
+	}
 	if res.Options.Demo != nil {
 		t.Fatalf("expected demo disabled")
 	}
@@ -137,6 +140,32 @@ func TestParseArgs_PositionalArgsError(t *testing.T) {
 	}
 }
 
+func TestParseArgs_VersionLong(t *testing.T) {
+	res, err := parseArgs([]string{"--version"})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !res.ShowVersion {
+		t.Fatalf("expected ShowVersion=true")
+	}
+	if res.ShowHelp {
+		t.Fatalf("expected ShowHelp=false")
+	}
+}
+
+func TestParseArgs_VersionShort(t *testing.T) {
+	res, err := parseArgs([]string{"-v"})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !res.ShowVersion {
+		t.Fatalf("expected ShowVersion=true")
+	}
+	if res.ShowHelp {
+		t.Fatalf("expected ShowHelp=false")
+	}
+}
+
 func TestParseArgs_Help(t *testing.T) {
 	res, err := parseArgs([]string{"--help"})
 	if err != nil {
@@ -145,7 +174,13 @@ func TestParseArgs_Help(t *testing.T) {
 	if !res.ShowHelp {
 		t.Fatalf("expected ShowHelp=true")
 	}
+	if !strings.Contains(res.HelpText, "Rafa is a task loop runner for AI coding agents.") {
+		t.Fatalf("expected help text to include summary line, got: %s", res.HelpText)
+	}
 	if !strings.Contains(res.HelpText, "-demo") {
 		t.Fatalf("expected help text to include demo flags, got: %s", res.HelpText)
+	}
+	if !strings.Contains(res.HelpText, "-version") {
+		t.Fatalf("expected help text to include version flags, got: %s", res.HelpText)
 	}
 }

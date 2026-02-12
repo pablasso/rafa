@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pablasso/rafa/internal/tui"
+	"github.com/pablasso/rafa/internal/version"
 )
 
 func main() {
@@ -29,6 +30,10 @@ func main() {
 	}
 	if parsed.ShowHelp {
 		fmt.Fprintln(os.Stdout, parsed.HelpText)
+		os.Exit(0)
+	}
+	if parsed.ShowVersion {
+		fmt.Fprintf(os.Stdout, "Rafa %s\nCommit: %s\nBuilt:  %s\n", version.Version, version.CommitSHA, version.BuildDate)
 		os.Exit(0)
 	}
 
